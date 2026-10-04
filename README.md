@@ -17,9 +17,21 @@ Run development checks in Podman:
 ```sh
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
-./infra/dev.sh exec web bun test apps/web/tests/foundation.test.ts
+./infra/test.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
 
-The foundation integration tests add labeled regression uploads to the database. GPU/model checks and their corpus limits are documented in `docs/development/acceptance.md` and `docs/development/pilot-scope.md`. Use the existing lockfiles for builds. API secrets are passed only to the worker, never to browser code or built images.
+The regression runner migrates a fresh disposable PostgreSQL database and uses a separate storage directory; it does not write to your workspace database. Browser and live video evaluations add labeled test uploads to the running workspace. GPU/model checks and their corpus limits are documented in `docs/development/acceptance.md` and `docs/development/pilot-scope.md`. Use the existing lockfiles for builds. API secrets are passed only to the worker, never to browser code or built images.
+
+Text/Markdown and meeting video staging work now. Videos use the pinned `OpenMOSS-Team/MOSS-Transcribe-Diarize` model on the local GPU and the configured Qwen model for visual annotations. The measured pilot limit is **five minutes per video**. Speaker labels are anonymous and must be checked; MOSS merged both synthetic voices in the frozen fixture. Correcting labels/text creates a new revision and preserves the original. Download Markdown, JSON, or an offline ZIP with both transcripts and referenced frames. The ZIP excludes the original recording.
+
+To regenerate and run maintained media checks:
+
+```sh
+podman run --rm -v "$PWD/data:/data" -v "$PWD/evals:/evals:ro" -v "$PWD/services/media:/service/source:ro" localhost/chronicler-media:dev python source/fixtures.py
+podman run --rm -v "$PWD/data:/data" -v "$PWD/services/media:/service/source:ro" localhost/chronicler-media:dev python source/test_media.py
+podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:interpreter:video
+```
+
+The live video runner proves application behavior and visual references. `services/media/evaluate.py` evaluates the separately frozen speech gates, including the currently failing speaker threshold. Do not interpret a successful application test as a passed diarization quality gate. PPTX/PDF/image adapters, explicit push, Chronicler memory and Researcher answers are later milestones.

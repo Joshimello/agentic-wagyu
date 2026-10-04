@@ -11,10 +11,16 @@
     "check": "bun run --cwd apps/web check",
     "build": "bun run --cwd apps/web build",
     "test": "bun test apps/web/tests/*.test.ts",
-    "test:foundation": "bun test apps/web/tests/foundation.test.ts",
-    "test:llm:live": "bun apps/web/tests/llm-live.ts"
+    "test:foundation": "bun test apps/web/tests/persistence.test.ts",
+    "test:llm:live": "bun apps/web/tests/llm-live.ts",
+    "eval:interpreter:video": "bun apps/web/tests/video-live.ts",
+    "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests"
   },
   "dependencies": {
     "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9",
+    "prettier-plugin-svelte": "4.1.1"
   }
 }

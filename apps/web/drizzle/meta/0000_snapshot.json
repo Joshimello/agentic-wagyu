@@ -53,9 +53,7 @@
         "assets_sha256_unique": {
           "name": "assets_sha256_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "sha256"
-          ]
+          "columns": ["sha256"]
         }
       },
       "policies": {},
@@ -93,9 +91,7 @@
         "memory_commits_version_unique": {
           "name": "memory_commits_version_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "version"
-          ]
+          "columns": ["version"]
         }
       },
       "policies": {},
@@ -132,12 +128,8 @@
           "name": "job_outbox_id_interpretation_runs_id_fk",
           "tableFrom": "job_outbox",
           "tableTo": "interpretation_runs",
-          "columnsFrom": [
-            "id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -212,12 +204,8 @@
           "name": "staging_revisions_upload_id_uploads_id_fk",
           "tableFrom": "staging_revisions",
           "tableTo": "uploads",
-          "columnsFrom": [
-            "upload_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["upload_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -225,12 +213,8 @@
           "name": "staging_revisions_run_id_interpretation_runs_id_fk",
           "tableFrom": "staging_revisions",
           "tableTo": "interpretation_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -311,12 +295,8 @@
           "name": "interpretation_runs_upload_id_uploads_id_fk",
           "tableFrom": "interpretation_runs",
           "tableTo": "uploads",
-          "columnsFrom": [
-            "upload_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["upload_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -375,12 +355,8 @@
           "name": "uploads_asset_id_assets_id_fk",
           "tableFrom": "uploads",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
