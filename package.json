@@ -1,0 +1,12 @@
+{
+  "name": "chronicler", "private": true, "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "test:contracts": "bun test apps/web/tests/contracts.test.ts",
+    "check": "bun run --cwd apps/web check",
+    "build": "bun run --cwd apps/web build",
+    "test": "bun test apps/web/tests"
+  },
+  "dependencies": {"zod": "4.3.6"}
+}

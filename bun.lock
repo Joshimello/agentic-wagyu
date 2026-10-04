@@ -1,0 +1,21 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "chronicler",
+      "dependencies": {
+        "zod": "4.3.6",
+      },
+    },
+    "apps/web": {
+      "name": "@chronicler/web",
+      "version": "0.1.0",
+    },
+  },
+  "packages": {
+    "@chronicler/web": ["@chronicler/web@workspace:apps/web"],
+
+    "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
+  }
+}
