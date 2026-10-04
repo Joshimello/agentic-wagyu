@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-05. Status: implementation plan; application code is not implemented.
+Updated: 2026-10-05. Status: M0 contracts and local runtime accepted; implementation in progress. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
