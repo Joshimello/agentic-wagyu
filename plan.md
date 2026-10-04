@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-05. Status: M0 and M1 accepted; M2 in progress. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-04. Status: M0 and M1 accepted; M2 implemented and functionally verified, with the frozen speaker-separation quality gate unresolved. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
@@ -34,7 +34,7 @@ Detailed module plans:
 - Explicit push is required before staged evidence affects memory. Researcher uses committed memory and evidence admitted by completed pushes.
 - Preserve unresolved conflicts and history; offer optional correction.
 
-Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. The workspace is not yet a Git repository. Recheck during setup; container GPU access and model/runtime compatibility have not been tested. Start local ASR on one GPU with concurrency one.
+Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. Git is initialized and implementation changes are committed locally. MOSS CUDA inference and NVIDIA CDI access passed inside rootless Podman on GPU 0, with concurrency one. Initial measured video duration is capped at five minutes; speaker quality remains an explicit open gate.
 
 The configured gateway passed live, synthetic-data checks on 2026-10-05 from Bun under Podman: requested model discovery, text chat, JSON Schema output, function-call/result round trip, image input, streaming, and Responses API. The supplied root base URL works for both chat and Responses routes. See the [API verification record](docs/development/llm-api-check.md). These checks establish basic request compatibility; full SDK integration, research-quality evaluation, embedding access, and sustained-load behavior remain milestone work.
 
@@ -188,7 +188,7 @@ Answers distinguish recorded assertions, source quotations/observations, inferen
 
 ## 7. Testable milestones
 
-Commands are proposed implementation contracts; none exist yet. The Bun commands below run inside the appropriate Podman development/test container. Deterministic tests use stored model proposals, real PostgreSQL, and fixture media. Paid/model/GPU evaluations run separately. Temporary milestone selectors are consolidated into permanent product-oriented scripts during M8.
+Implemented commands and Podman invocations are documented in [README.md](README.md); commands for later milestones remain proposed contracts. The Bun commands below run inside the appropriate Podman development/test container. Deterministic tests use stored model proposals, real PostgreSQL, and fixture media. Model/GPU evaluations run separately. Regression tests use a freshly migrated disposable database through `./infra/test.sh`. Temporary milestone selectors are consolidated into permanent product-oriented scripts during M8.
 
 ### M0 — Lifecycle contracts and fixtures
 
@@ -202,7 +202,7 @@ Commands are proposed implementation contracts; none exist yet. The Bun commands
 
 **Deliver:** Bun workspace/lockfile, single app, Drizzle migrations/services, PostgreSQL, shared storage, worker entrypoint, durable queue, upload/status UI, simple text staging adapter, Podman Containerfiles/orchestration, and initial Git commits.
 
-**Test:** `bun run test:milestone M1`: fresh migration, duplicate upload with distinct metadata, crash/restart after upload and around job enqueue, source lookup. Build/start the stack with Podman from locked dependencies and verify Bun driver/queue/SDK compatibility and worker shutdown.
+**Test:** `./infra/test.sh` (fresh disposable database; invokes Bun tests): fresh migration, duplicate upload with distinct metadata, crash/restart after upload and around job enqueue, source lookup. Build/start the stack with Podman from locked dependencies and verify Bun driver/queue/SDK compatibility and worker shutdown. `bun run test:llm:live` checks the configured SDK and streaming; Chromium checks the actual localhost UI.
 
 **Pass:** every accepted upload is processed or visibly retryable; no duplicate publication; secrets stay server-side; worker imports run outside the SvelteKit request runtime. Web, worker, database, and media services run through Podman; GPU visibility and durable volume mounts are verified. A clean container rebuild works and the reproducible foundation is committed.
 
