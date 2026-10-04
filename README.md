@@ -18,6 +18,8 @@ Run development checks in Podman:
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
 ./infra/dev.sh exec web bun test apps/web/tests/foundation.test.ts
+podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
+podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
 
 The foundation integration tests add labeled regression uploads to the database. GPU/model checks and their corpus limits are documented in `docs/development/acceptance.md` and `docs/development/pilot-scope.md`. Use the existing lockfiles for builds. API secrets are passed only to the worker, never to browser code or built images.

@@ -22,7 +22,7 @@ services:
   web:
     image: localhost/chronicler-web:dev
     build: {context: .., dockerfile: infra/web.Containerfile, target: development}
-    command: ["sh", "-c", "bun run --cwd apps/web db:migrate && bun apps/web/build"]
+    command: ["sh", "-c", "bun run --cwd apps/web db:migrate && exec bun apps/web/build"]
     environment:
       DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
       DATA_ROOT: /data
