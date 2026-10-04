@@ -1,0 +1,13 @@
+# Private environment configuration
+.env
+.env.*
+!.env.example
+
+# Local evidence, model caches, and generated output
+data/
+node_modules/
+.svelte-kit/
+build/
+reports/
+__pycache__/
+.venv/
