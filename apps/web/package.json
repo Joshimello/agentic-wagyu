@@ -1,1 +1,31 @@
-{"name":"@chronicler/web","private":true,"type":"module","version":"0.1.0"}
+{
+  "name": "@chronicler/web",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "drizzle-orm": "0.45.3",
+    "openai": "7.27.0",
+    "pg-boss": "12.36.0",
+    "postgres": "3.4.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@sveltejs/adapter-bun": "1.0.0",
+    "@sveltejs/kit": "3.0.0",
+    "@types/bun": "1.4.2",
+    "drizzle-kit": "0.31.11",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "typescript": "5.9.3",
+    "vite": "8.3.2"
+  },
+  "scripts": {
+    "dev": "bun --bun vite",
+    "build": "bun --bun vite build",
+    "check": "bun --bun svelte-kit sync && bun --bun svelte-check --tsconfig tsconfig.json",
+    "db:generate": "bun --bun drizzle-kit generate",
+    "db:migrate": "bun src/lib/server/db/migrate.ts",
+    "test:browser": "bun --bun playwright test"
+  }
+}
