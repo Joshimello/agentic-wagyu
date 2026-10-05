@@ -46,6 +46,7 @@ services:
     restart: unless-stopped
   worker:
     image: localhost/chronicler-web:dev
+    stop_grace_period: 45s
     command: ["bun", "apps/web/workers/run.ts"]
     env_file: ["../.env"]
     environment:
