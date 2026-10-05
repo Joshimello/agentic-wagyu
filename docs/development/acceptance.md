@@ -1,36 +1,19 @@
-# Implementation acceptance
+# Implementation acceptance evidence
 
-## Lifecycle contracts and local runtime (M0)
+## Foundation and durable uploads
 
-Accepted 2026-10-04: six Bun contract tests (21 assertions) and two Python JSON Schema tests pass inside Podman. Tests cover invalid locators/references, immutable revision selection, partial coverage acknowledgment, state transitions and committed query scope. Synthetic meeting video, matching PPTX deck, labeled timing, expected facts and historical A/B/C scenarios are generated from the committed fixture specification. No upload or staging revision grants memory authority.
+M0 and M1 were accepted on 2026-10-04. Contract tests cover invalid locators/references, immutable revision selection, partial coverage acknowledgment, state transitions, and committed query scope. Disposable PostgreSQL tests cover migrations, immutable bytes with distinct upload metadata, visible unsupported-source failures, crash/restart and outbox dispatch, concurrent corrections, and concurrent retry clicks. Uploading or interpreting evidence cannot publish memory.
 
-The pinned MOSS Transformers runtime was tested with PyTorch 2.9.0+cu128, CUDA 12.8, BF16 and SDPA on one CDI-exposed RTX PRO 6000 Blackwell GPU. Cold model load including initial weight download: 26.86 seconds. Thirty-second fixture inference: 2.33 seconds, 1.79 GiB peak allocated GPU memory, 11 segments. Repeated five-minute inference: 17.94 seconds, 2.43 GiB peak allocated memory, 108 segments. Neither output hit the generation limit. Allocated memory is a PyTorch metric, not total GPU reservation. Initial supported duration is capped at five minutes, one inference at a time. Model/cache data persist under ignored `data/cache`.
+Runtime uses Bun 1.4.2, locked dependencies, rootless Podman, PostgreSQL/pgvector, and the official OpenAI-compatible SDK against the configured self-hosted model. The pinned MOSS runtime is PyTorch 2.9.0+cu128, Transformers 5.6.0, BF16/SDPA on GPU 0. Model: `OpenMOSS-Team/MOSS-Transcribe-Diarize`; model revision: `704aa4a9c304e8520be88901e0d1960158ef5b15`; runtime revision: `61bc29cd4120be7b5d3b761b64cd5dff57263642`.
 
-The frozen synthetic speech evaluation returned perfect normalized transcription and acceptable timestamps but **one speaker label for two synthetic voices**. Runtime feasibility passes M0; the M2 quality gate remains open. This finding must not be hidden by lowering the frozen speaker threshold. A real-meeting quality claim requires human speech recordings; this corpus does not establish that claim.
+## Real meeting staging
 
-## Application and durable upload foundation (M1)
+On 2026-10-05 the user replaced the generated-media pilot with three supplied recordings: `2026-09-08.mp4`, `2026-09-15.mp4`, and `2026-09-22.mp4`. Their verified container durations are 3,904,107; 9,407,851; and 6,567,400 milliseconds. All contain audio and video. Source hashes and user-provided language/participant context are in `evals/meetings.json`.
 
-Accepted 2026-10-04: four PostgreSQL/Bun integration tests (19 assertions), the Chromium upload/review test, type checking with zero errors/warnings, live official OpenAI SDK text/streaming requests, and fresh development/production image builds pass. PostgreSQL 17 with pgvector 0.8.2 migrates through Drizzle. Identical bytes share one immutable asset while retaining distinct upload context. Tests exercise concurrent publication, retryable unsupported sources, process exit after upload, replay after queue insertion before outbox acknowledgment, and graceful worker exit. No memory commits are created.
+Twenty development uploads and their synthetic staging records, generated pilot media, and temporary reports were removed after verifying that the workspace contained no accepted memory or other uploads. Original supplied footage, database/model-cache volumes, migrations, and lasting regression coverage were preserved. Subsequent checks on real evidence must not modify its spoken text or metadata merely to test corrections.
 
-The stack runs in rootless Podman, with only localhost:5173 exposed. GPU 0 is visible in the media service. Database/assets survive container replacement and restart. A production image starts and imports worker modules independently of SvelteKit. Web shutdown drains requests and closes PostgreSQL connections; worker shutdown stops dispatch and drains the queue handler. The browser runner uses the real localhost origin, preserving the application CSRF checks. A `--no-cache` web build installs from `bun.lock` and succeeds.
+Long meetings now use contiguous three-minute ASR sections with atomic checkpoints, original-video timestamp offsets, bounded visual-agent context, and keyframe seeking for contact sheets. Speaker IDs are scoped by section and are not added up as distinct participants. The worker's two-hour job lease accommodates long recordings; failure retries resume completed sections within the same run. An explicit reprocess creates a new run and revision.
 
-## Video staging (M2)
+The maintained Bun regressions passed with section coverage, offset, local speaker identity, missing/incompatible checkpoints, and out-of-section ASR interval checks. Five Python media checks passed using real recording frames/audio: malformed asset/frame requests, variable presentation timestamps, delayed audio, and seeking into the middle/end of a long video. Podman type checking reported zero errors or warnings. Final real-corpus application, browser, timing, and speaker observations are recorded below when available.
 
-Implemented and functionally verified 2026-10-04; **not fully accepted because the frozen speaker gate fails**.
-
-The running worker uses the pinned MOSS model and `pro6000/qwen38-flash-next` through the official SDK. The visual agent has one bounded contact-sheet tool (at most three sheets, eight frames each, five rounds). Frame requests use container milliseconds; generated images record requested and actual presentation times. Spoken text is stored independently of observations. Only referenced frames enter the staging manifest. Sparse visual coverage and speaker uncertainty are shown in the UI. Media access is restricted to content-addressed assets; models never receive SQL or arbitrary filesystem tools. An atomic ASR checkpoint survives publication retries.
-
-Live upload → worker → video staging → correction → export → reprocess passed. One recorded run produced four annotations and eight referenced frames. All references resolved, and Friday, 12 customers and green status were recovered. Old revisions survived correction, stale edits returned conflict, byte-range video requests worked, the offline ZIP contained both transcript views and frames with relative links, and reprocessing preserved history. Memory stayed empty throughout. Another run explicitly reported that spoken status and the slide shown at that time differed.
-
-Final regression checks: 15 Bun tests / 56 assertions against a freshly migrated disposable PostgreSQL database; four Python media tests; two Python cross-language schema tests; two Chromium workflow tests; zero type-check errors/warnings. Media tests cover variable frame rates, delayed audio, invalid timestamps and path restrictions. A live MOSS request limited to eight tokens returned `truncated=true`, and regression tests verify that incomplete or invalid ASR output remains visible with explicit warnings. Simultaneous correction/reprocess actions are serialized without overwriting history or adding duplicate retry runs. Release images exclude evaluations/browser reports/model probes and credentials.
-
-| Frozen quality gate | Result |
-| --- | --- |
-| Normalized word error rate ≤25% | 0%, pass |
-| ≥95% turn boundaries within 2 seconds | 100%, pass; observed errors 40–365 ms |
-| All visual references valid | 100%, pass |
-| Friday, 12 customers, green status recovered | Pass |
-| Inference ≤900 seconds; allocated GPU memory ≤80 GiB | Pass, including five-minute benchmark |
-| At least two anonymous speakers | **Fail: MOSS returned only S01** |
-
-Two general prompt alternatives did not solve the merged synthetic voices; the default upstream prompt remains in production. Thresholds and fixture gold were not weakened or rewritten. Correcting speaker labels is supported but does not count as a passed automatic diarization gate. Real human meeting speech is needed to assess actual speaker separation, and a model/runtime improvement must pass the unchanged synthetic gate before M2 can be marked fully accepted. Recordings longer than five minutes are deliberately rejected with a visible retryable error until separately benchmarked.
+Transcription and speaker accuracy are pending human reference annotations. The retired artificial speaker-count threshold no longer blocks this corpus, but successful end-to-end staging must not be described as verified diarization accuracy. See `pilot-scope.md` for the replacement evaluation policy.

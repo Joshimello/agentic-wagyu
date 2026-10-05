@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-04. Status: M0 and M1 accepted; M2 implemented and functionally verified, with the frozen speaker-separation quality gate unresolved. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-05. Status: M0 and M1 accepted; M2 now evaluates the supplied real Mandarin meetings. The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
@@ -34,11 +34,11 @@ Detailed module plans:
 - Explicit push is required before staged evidence affects memory. Researcher uses committed memory and evidence admitted by completed pushes.
 - Preserve unresolved conflicts and history; offer optional correction.
 
-Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. Git is initialized and implementation changes are committed locally. MOSS CUDA inference and NVIDIA CDI access passed inside rootless Podman on GPU 0, with concurrency one. Initial measured video duration is capped at five minutes; speaker quality remains an explicit open gate.
+Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. Git is initialized and implementation changes are committed locally. MOSS CUDA inference and NVIDIA CDI access passed inside rootless Podman on GPU 0, with concurrency one. Real meetings of about 65–157 minutes process in checkpointed three-minute audio sections; speaker IDs are scoped to each section. The operational duration ceiling is four hours, with one GPU inference at a time. Cross-section speaker matching and reference-based accuracy remain open.
 
 The configured gateway passed live, synthetic-data checks on 2026-10-05 from Bun under Podman: requested model discovery, text chat, JSON Schema output, function-call/result round trip, image input, streaming, and Responses API. The supplied root base URL works for both chat and Responses routes. See the [API verification record](docs/development/llm-api-check.md). These checks establish basic request compatibility; full SDK integration, research-quality evaluation, embedding access, and sustained-load behavior remain milestone work.
 
-Languages, recording lengths, pilot artifacts, API/disk budgets, and deadline remain open. Multi-user/public hosting, connectors, graph databases, recommendations, and autonomous memory upkeep remain deferred.
+The user supplied mostly Mandarin recordings, approximately 65, 109, and 157 minutes, with perhaps ten participants and mostly nonoverlapping speech. Participant count is uncertain and is not a required model output. Human quality annotations, API/disk budgets, and deadline remain open. Multi-user/public hosting, connectors, graph databases, recommendations, and autonomous memory upkeep remain deferred.
 
 ## 3. Repository structure and runtime
 
@@ -192,7 +192,7 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 ### M0 — Lifecycle contracts and fixtures
 
-**Deliver:** staging/push/memory/query schemas, transition rules, fixture video/deck, expected assertions, historical scenarios, and local runtime feasibility report.
+**Deliver:** staging/push/memory/query schemas, transition rules, real recording corpus, expected invariant assertions, historical scenarios, and local runtime feasibility report.
 
 **Test:** `bun run test:contracts` validates TS/Python representations, source locators, exact push revision pinning, and read scope. Run MOSS smoke and representative-duration tests inside the Podman media container on one GPU.
 
@@ -210,9 +210,9 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 **Deliver:** local MOSS transcript, frame/contact-sheet tool, visual annotations, staging viewer, correction revisions, readable export.
 
-**Test:** `bun run eval:interpreter:video`: labeled transcript/visual references, variable FPS/audio offsets, output truncation, bad frame requests, correction/retry.
+**Test:** `bun run eval:interpreter:video` inspects the imported real recordings without mutation: full timeline, evidence references, readable frames, pinned exports, portable bundles, range requests, and empty memory. Lasting regressions cover variable FPS/audio offsets, section joining/checkpoints, truncation, bad frame requests, correction/history, and retry. Human-reviewed excerpts are required for transcription and speaker-quality scores.
 
-**Pass:** all evidence references resolve; enriched view preserves spoken text separately from annotations; omissions are visible; meet the frozen quality thresholds. User can inspect a video with memory still empty.
+**Pass:** all evidence references resolve; enriched view preserves spoken text separately from annotations; omissions and section-local speaker identities are visible; user can inspect real meetings with memory still empty. Record application acceptance separately from human-reviewed transcription/diarization quality. Freeze real-corpus quality thresholds before scoring human annotations; the retired synthetic threshold is no longer an acceptance requirement.
 
 ### M3 — PPTX/PDF/image staging and batch selection
 

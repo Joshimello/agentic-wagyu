@@ -1,5 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.8.22-python3.12-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg espeak-ng fonts-dejavu-core git libgomp1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core git libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /service
 COPY services/media/pyproject.toml services/media/uv.lock ./
 RUN uv sync --frozen --no-dev

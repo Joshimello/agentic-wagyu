@@ -8,6 +8,7 @@ mkdir -p "$test_data"
 cleanup() {
   podman rm -f "$test_container" >/dev/null 2>&1 || true
   podman exec chronicler_database_1 dropdb --force -U chronicler "$database_name" >/dev/null 2>&1 || true
+  rm -rf "$test_data"
 }
 trap cleanup EXIT
 podman exec chronicler_database_1 createdb -U chronicler "$database_name"

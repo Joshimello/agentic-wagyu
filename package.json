@@ -14,6 +14,7 @@
     "test:foundation": "bun test apps/web/tests/persistence.test.ts",
     "test:llm:live": "bun apps/web/tests/llm-live.ts",
     "eval:interpreter:video": "bun apps/web/tests/video-live.ts",
+    "import:recordings": "bun apps/web/tools/import-recordings.ts",
     "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests"
   },
   "dependencies": {

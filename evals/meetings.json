@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "scope": "User-supplied real meetings; no human transcript or speaker gold yet",
+  "language": "mostly Mandarin Chinese",
+  "speakerContext": "Mostly one person at a time; approximately ten participants, uncertain; do not force a count",
+  "qualityStatus": "Human transcription and speaker accuracy review pending",
+  "recordings": [
+    {
+      "filename": "2026-09-08.mp4",
+      "sha256": "aae1befe631a01dfcc84f52a1d5c424baede447e337d5e6651e69e971037877c",
+      "durationMs": 3904107,
+      "originSeconds": 0.0,
+      "hasAudio": true,
+      "hasVideo": true
+    },
+    {
+      "filename": "2026-09-15.mp4",
+      "sha256": "e05d14a9bd1ae4ce09c209dde58cbefd98577ea27c36ef64e2685756eb3e44f1",
+      "durationMs": 9407851,
+      "originSeconds": 0.0,
+      "hasAudio": true,
+      "hasVideo": true
+    },
+    {
+      "filename": "2026-09-22.mp4",
+      "sha256": "5949584c2a509e792ed7ed772e532dabc07ad3d36477968f12c8c5f6f4795ba8",
+      "durationMs": 6567400,
+      "originSeconds": 0.0,
+      "hasAudio": true,
+      "hasVideo": true
+    }
+  ]
+}
