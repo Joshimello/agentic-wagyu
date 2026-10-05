@@ -29,6 +29,12 @@ for (const recording of corpus.recordings) {
   );
   const spoken = stage.primitives.filter((p) => p.kind === 'text');
   check(spoken.length > 0, 'No extracted speech');
+  if (stage.context)
+    check(
+      stage.context.readSegments === spoken.length &&
+        stage.context.totalSegments === spoken.length,
+      'Visual planner did not read the full transcript',
+    );
   check(stage.annotations.length > 0, 'No validated visual context');
   for (const p of stage.primitives)
     if (p.kind === 'image') {
@@ -101,6 +107,9 @@ for (const recording of corpus.recordings) {
       segments: r.segments.length,
       localSpeakerLabels: [...new Set(r.segments.map((s: any) => s.speaker))],
       truncated: r.truncated,
+      incomplete: r.incomplete ?? false,
+      cached: r.cached ?? null,
+      lastSpeechEndSeconds: Math.max(0, ...r.segments.map((s: any) => s.end)),
     });
   }
   reports.push({
@@ -115,9 +124,18 @@ for (const recording of corpus.recordings) {
     contextQuestions: stage.context?.questions.length ?? null,
     speakerSuggestions: stage.speakerSuggestions?.length ?? null,
     sectionCount: sections.length,
+    latestRunKind: upload.run.inputRevisionId
+      ? 'visual-context-only'
+      : 'source-processing',
     inferenceSeconds: sections.reduce((n, s) => n + s.elapsedSeconds, 0),
+    totalRunSeconds:
+      (Date.parse(upload.run.updatedAt) - Date.parse(upload.run.createdAt)) /
+      1000,
+    timingScope:
+      'Inference is stored model execution time; total is enqueue-to-ready including waiting, media work, and visual research. Cached sections retain the original inference measurement.',
     peakGiB: Math.max(...sections.map((s) => s.peakGiB)),
     truncatedSections: sections.filter((s) => s.truncated).length,
+    incompleteSections: sections.filter((s) => s.incomplete).length,
     sections,
     warnings: stage.coverage.warnings,
     transcriptionAccuracy: 'unreviewed',
