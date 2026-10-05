@@ -149,29 +149,14 @@ export async function buildVideo(
       joinAudioSections(meta.durationMs, values, windowMs),
     );
   }
-  let windowMs = 90 * 60 * 1000;
-  let result = await transcribeWindows(windowMs);
-  if (
-    (result.incomplete || result.truncated) &&
-    meta.durationMs > 30 * 60 * 1000 &&
-    meta.hasAudio
-  ) {
-    await onProgress(
-      'Long-pass coverage is uncertain; recovering speech in 30-minute windows',
-    );
-    windowMs = 30 * 60 * 1000;
-    result = await transcribeWindows(windowMs);
-    result.warnings = [
-      ...(result.warnings ?? []),
-      'The long MOSS pass ended early or reached its output limit. Speech was recovered in 30-minute windows; speaker matching across windows remains unverified.',
-    ];
-  }
+  const windowMs = 30 * 60 * 1000;
+  const result = await transcribeWindows(windowMs);
   const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
   await Bun.write(temp, JSON.stringify(result));
   await rename(temp, `${cacheDir}/asr.json`);
   applyTranscript(stage, result);
   stage.provenance = {
-    adapter: 'video-3-context',
+    adapter: 'video-4-context',
     model: result.model,
     modelRevision: result.revision,
     promptVersion: contextPromptVersion,

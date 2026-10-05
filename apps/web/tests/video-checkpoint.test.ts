@@ -40,12 +40,12 @@ test('interrupted audio processing resumes saved sections and rejects a mismatch
     init?: RequestInit,
   ) => {
     if (String(url).endsWith('/probe'))
-      return Response.json({ durationMs: 5401000, hasAudio: true });
+      return Response.json({ durationMs: 1801000, hasAudio: true });
     if (!String(url).endsWith('/transcribe'))
       throw new Error('Unexpected external call');
     const body = JSON.parse(String(init?.body));
     calls.push(body.startMs);
-    if (body.startMs === 5400000 && !interrupted) {
+    if (body.startMs === 1800000 && !interrupted) {
       interrupted = true;
       return Response.json({ detail: 'Interrupted' }, { status: 500 });
     }
@@ -63,20 +63,20 @@ test('interrupted audio processing resumes saved sections and rejects a mismatch
     ).rejects.toThrow('Interrupted');
     const ready = await buildVideo(stage(), key, runId, async () => {});
     validateStage(ready);
-    expect(calls).toEqual([0, 5400000, 5400000]);
+    expect(calls).toEqual([0, 1800000, 1800000]);
     expect(ready.primitives).toHaveLength(2);
     expect(ready.primitives[1].locator).toMatchObject({
-      startMs: 5400000,
-      endMs: 5400500,
+      startMs: 1800000,
+      endMs: 1800500,
     });
-    const path = `${config.dataRoot}/runs/${runId}/part-5400000-0.json`;
+    const path = `${config.dataRoot}/runs/${runId}/part-1800000-0.json`;
     const saved = await Bun.file(path).json();
     await Bun.write(
       path,
       JSON.stringify({ ...saved, storageKey: `assets/bb/${'b'.repeat(64)}` }),
     );
     await buildVideo(stage(), key, runId, async () => {});
-    expect(calls).toEqual([0, 5400000, 5400000, 0]);
+    expect(calls).toEqual([0, 1800000, 1800000, 0]);
   } finally {
     globalThis.fetch = previousFetch;
     await rm(`${config.dataRoot}/runs/${runId}`, {
@@ -86,7 +86,7 @@ test('interrupted audio processing resumes saved sections and rejects a mismatch
   }
 });
 
-test('early-ending long ASR falls back to checkpointed longer windows without conflating speakers', async () => {
+test('video uses only 30-minute windows, preserves coverage warnings, and never conflates speakers', async () => {
   const runId = crypto.randomUUID(),
     key = `assets/aa/${'a'.repeat(64)}`;
   const originalFetch = globalThis.fetch;
@@ -130,7 +130,8 @@ test('early-ending long ASR falls back to checkpointed longer windows without co
       model: 'MOSS',
       revision: 'pinned',
       truncated: false,
-      incomplete: body.durationMs > 1800000,
+      incomplete: body.startMs === 1800000,
+      warnings: body.startMs === 1800000 ? ['Possible early model stop'] : [],
       segments: [
         { start: 0, end: 0.5, speaker: 'S01', text: 'Recovered speech' },
       ],
@@ -140,7 +141,6 @@ test('early-ending long ASR falls back to checkpointed longer windows without co
     const value = await buildVideo(make(), key, runId, async () => {});
     validateStage(value);
     expect(calls).toEqual([
-      [0, 3904107],
       [0, 1800000],
       [1800000, 1800000],
       [3600000, 304107],
@@ -153,10 +153,11 @@ test('early-ending long ASR falls back to checkpointed longer windows without co
       value.primitives.map((p) => (p.kind === 'text' ? p.speaker : null)),
     ).toEqual(['Part 1 · S01', 'Part 2 · S01', 'Part 3 · S01']);
     expect(value.coverage.warnings.join(' ')).toContain(
-      'long MOSS pass ended early',
+      'Possible early model stop',
     );
+    expect(value.coverage.complete).toBe(false);
     await buildVideo(make(), key, runId, async () => {});
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(3);
   } finally {
     globalThis.fetch = originalFetch;
     await rm(`${config.dataRoot}/runs/${runId}`, {
