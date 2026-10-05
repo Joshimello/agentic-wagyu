@@ -18,6 +18,11 @@ services:
     build: {context: .., dockerfile: infra/media.Containerfile}
     devices: ["nvidia.com/gpu=0"]
     volumes: ["../data:/data", "../data/cache:/cache"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8000/health',timeout=3))['ok']"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     restart: unless-stopped
   web:
     image: localhost/chronicler-web:dev
@@ -48,7 +53,7 @@ services:
       DATA_ROOT: /data
       MEDIA_URL: http://media:8000
     volumes: ["../data:/data"]
-    depends_on: {web: {condition: service_healthy}}
+    depends_on: {web: {condition: service_healthy}, media: {condition: service_healthy}}
     restart: unless-stopped
 volumes:
   database:

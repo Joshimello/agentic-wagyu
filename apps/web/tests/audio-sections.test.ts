@@ -67,7 +67,8 @@ test('local ASR timestamps cannot escape into an adjacent audio section', () => 
     { ...part(1000), segments: [] },
   ]);
   expect(joined.segments).toEqual([]);
-  expect(joined.truncated).toBe(true);
+  expect(joined.truncated).toBe(false);
+  expect(joined.incomplete).toBe(true);
   expect(joined.warnings.join(' ')).toContain(
     'Invalid local ASR intervals were omitted',
   );

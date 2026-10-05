@@ -28,7 +28,7 @@ export function joinAudioSections(durationMs: number, values: unknown[]) {
     );
     if (valid.length !== part.segments.length) {
       part.segments = valid;
-      part.truncated = true;
+      part.incomplete = true;
       part.warnings = [
         ...(part.warnings ?? []),
         'Invalid local ASR intervals were omitted; section speech may be incomplete.',
@@ -47,6 +47,7 @@ export function joinAudioSections(durationMs: number, values: unknown[]) {
     model: parts[0].model,
     revision: parts[0].revision,
     truncated: parts.some((p) => p.truncated),
+    incomplete: parts.some((p) => p.incomplete),
     segments: parts.flatMap((part, index) =>
       part.segments.map((segment) => ({
         ...segment,

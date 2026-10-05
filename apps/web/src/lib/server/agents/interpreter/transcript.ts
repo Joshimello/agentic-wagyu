@@ -11,6 +11,7 @@ export const asrSchema = z.object({
     }),
   ),
   truncated: z.boolean(),
+  incomplete: z.boolean().optional(),
   model: z.string(),
   revision: z.string(),
   warnings: z.array(z.string()).optional(),
@@ -19,7 +20,7 @@ export const asrSchema = z.object({
 export function applyTranscript(stage: Stage, value: unknown) {
   const result = asrSchema.parse(value);
   const warnings = [...(result.warnings ?? [])];
-  let complete = true;
+  let complete = !result.incomplete;
   if (result.truncated) {
     warnings.push(
       'ASR output reached its token limit; trailing speech may be missing',
