@@ -1,0 +1,1 @@
+ALTER TABLE "interpretation_runs" ADD COLUMN "input_revision_id" uuid;

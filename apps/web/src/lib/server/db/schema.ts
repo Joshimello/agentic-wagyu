@@ -39,6 +39,7 @@ export const runs = pgTable('interpretation_runs', {
   attempts: integer('attempts').notNull().default(0),
   error: text('error'),
   revisionId: uuid('revision_id'),
+  inputRevisionId: uuid('input_revision_id'),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()

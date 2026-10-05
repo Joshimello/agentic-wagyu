@@ -46,12 +46,24 @@ export async function correctStage(uploadId: string, value: unknown) {
       correction.edits.length
     )
       throw new Error('Duplicate correction');
+    const changed = new Set<string>();
     for (const edit of correction.edits) {
       const p = stage.primitives.find((p) => p.id === edit.primitiveId);
       if (!p || p.kind !== 'text')
         throw new Error('Correction refers to missing text');
+      if (p.text !== edit.text || p.speaker !== edit.speaker) changed.add(p.id);
       p.text = edit.text;
       p.speaker = edit.speaker;
+    }
+    if (stage.speakerSuggestions) {
+      const previous = stage.speakerSuggestions.length;
+      stage.speakerSuggestions = stage.speakerSuggestions.filter(
+        (s) => !s.transcriptIds.some((ref) => changed.has(ref)),
+      );
+      if (stage.speakerSuggestions.length < previous)
+        stage.coverage.warnings.push(
+          'Speaker name suggestions citing corrected speech were removed; revisit visual context to regenerate them.',
+        );
     }
     stage.metadata.label = correction.label;
     stage.metadata.sourceTime = correction.sourceTime;
@@ -59,19 +71,17 @@ export async function correctStage(uploadId: string, value: unknown) {
       ? 'user'
       : 'unknown';
     stage.provenance.adapter = 'user-correction-1';
-    if (correction.edits.length && stage.annotations.length)
+    if (changed.size && stage.annotations.length)
       stage.coverage.warnings.push(
         'Visual annotations were retained from the previous revision; review them after text corrections.',
       );
     validateStage(stage);
-    await tx
-      .insert(revisions)
-      .values({
-        id: stage.id,
-        uploadId,
-        parentRevisionId: base.id,
-        manifest: stage,
-      });
+    await tx.insert(revisions).values({
+      id: stage.id,
+      uploadId,
+      parentRevisionId: base.id,
+      manifest: stage,
+    });
     await tx
       .update(uploads)
       .set({ currentRevisionId: stage.id })
@@ -115,6 +125,49 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
         '',
       );
     }
+  if (stage.context) {
+    lines.push(
+      '## Transcript questions and frame searches',
+      '',
+      `Read ${stage.context.readSegments}/${stage.context.totalSegments} speech segments · ${clean(stage.context.model)} · ${clean(stage.context.promptVersion)}`,
+      '',
+    );
+    for (const q of stage.context.questions) {
+      lines.push(
+        `### ${clean(q.question)}`,
+        '',
+        `${q.status} · ${q.purpose}`,
+        q.explanation,
+        ...q.transcriptIds.map(
+          (ref) => `Related speech: [${ref}](#text-${ref})`,
+        ),
+        ...q.searches.flatMap((search) => [
+          `Search: ${clean(search.reason)} · ${search.timesMs.join(', ')} ms`,
+          ...search.frameIds.map((ref) => `Frame: [${ref}](#frame-${ref})`),
+        ]),
+        '',
+      );
+    }
+  }
+  if (stage.speakerSuggestions?.length) {
+    lines.push(
+      '## Tentative speaker names',
+      '',
+      'These are unverified model suggestions. Original speaker codes are preserved.',
+      '',
+    );
+    for (const s of stage.speakerSuggestions)
+      lines.push(
+        `**${clean(s.speaker)}** → possibly **${clean(s.candidateName)}** (${s.confidence}; ${s.basis})`,
+        s.reason,
+        ...s.transcriptIds.map(
+          (ref) => `Related speech: [${ref}](#text-${ref})`,
+        ),
+        ...s.frameIds.map((ref) => `Frame: [${ref}](#frame-${ref})`),
+        `Model: ${clean(s.model)} · Prompt: ${clean(s.promptVersion)}`,
+        '',
+      );
+  }
   lines.push('## Visual context (model observations)', '');
   for (const a of stage.annotations) {
     lines.push(

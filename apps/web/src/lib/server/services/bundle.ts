@@ -34,6 +34,8 @@ export async function exportBundle(stage: Stage, filename: string) {
   files['transcript-with-visual-context.md'] = strToU8(markdown);
   const transcript = {
     ...stage,
+    context: undefined,
+    speakerSuggestions: undefined,
     annotations: [],
     primitives: stage.primitives.filter((p) => p.kind === 'text'),
   };

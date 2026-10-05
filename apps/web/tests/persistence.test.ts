@@ -188,3 +188,100 @@ check('simultaneous reprocess clicks enqueue one new run', async () => {
   expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
   expect(results.filter((r) => r.status === 'rejected').length).toBe(1);
 });
+
+check(
+  'visual review pins the current recording revision without rerunning ASR and preserves later corrections',
+  async () => {
+    const item = await acceptUpload(
+      new File(['private temporary recording bytes'], 'context.mp4'),
+      {},
+    );
+    const detail = await getUpload(item.uploadId);
+    const base = {
+      schemaVersion: 1 as const,
+      id: crypto.randomUUID(),
+      uploadId: item.uploadId,
+      rawAssetId: detail.asset.id,
+      parentRevisionId: null,
+      createdAt: new Date().toISOString(),
+      metadata: detail.upload.metadata,
+      primitives: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'text' as const,
+          role: 'asr' as const,
+          speaker: 'S01',
+          text: 'Existing reviewed speech',
+          locator: {
+            kind: 'media' as const,
+            timeline: 'container' as const,
+            startMs: 1000,
+            endMs: 2000,
+          },
+        },
+      ],
+      annotations: [],
+      coverage: { complete: true, durationMs: 3000, warnings: [] },
+      provenance: {
+        adapter: 'video',
+        model: 'MOSS',
+        modelRevision: 'pinned',
+        promptVersion: null,
+      },
+    };
+    await db
+      .insert(revisions)
+      .values({
+        id: base.id,
+        uploadId: item.uploadId,
+        runId: item.runId,
+        manifest: base,
+      });
+    await db
+      .update(uploads)
+      .set({ currentRevisionId: base.id })
+      .where(eq(uploads.id, item.uploadId));
+    await db
+      .update(runs)
+      .set({ state: 'ready', revisionId: base.id })
+      .where(eq(runs.id, item.runId));
+    const result = await Promise.allSettled([
+      retryUpload(item.uploadId, base.id),
+      retryUpload(item.uploadId, base.id),
+    ]);
+    expect(result.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const runId = (
+      result.find(
+        (r) => r.status === 'fulfilled',
+      ) as PromiseFulfilledResult<string>
+    ).value;
+    const corrected = await correctStage(item.uploadId, {
+      baseRevisionId: base.id,
+      label: 'Reviewed',
+      sourceTime: null,
+      edits: [
+        {
+          primitiveId: base.primitives[0].id,
+          text: 'Later correction',
+          speaker: 'S01',
+        },
+      ],
+    });
+    await interpret(runId); // No model credentials in regression containers: speech survives a visible context failure.
+    const ready = await getUpload(item.uploadId);
+    expect(ready.upload.currentRevisionId).toBe(corrected.id);
+    expect(
+      ready.revisions.find((r) => r.id === ready.run.revisionId)?.manifest
+        .primitives[0],
+    ).toEqual(base.primitives[0]);
+    expect(
+      ready.revisions.find((r) => r.id === ready.run.revisionId)
+        ?.parentRevisionId,
+    ).toBe(base.id);
+    expect(ready.run.inputRevisionId).toBe(base.id);
+    await expect(retryUpload(item.uploadId, base.id)).rejects.toThrow(
+      'Staging changed',
+    );
+    expect(await memoryCount()).toBe(0);
+  },
+);

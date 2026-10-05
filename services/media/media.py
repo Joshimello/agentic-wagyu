@@ -63,9 +63,10 @@ def contact_sheet(path,times):
             img=frame.to_image().convert('RGB');img.thumbnail((1280,720))
             frames.append({'requestedMs':requested,'actualMs':actual,'width':img.width,'height':img.height,'asset':store_image(img),'image':img})
     if len(frames)!=len(times): raise ValueError('Requested frames could not be decoded')
-    sheet=Image.new('RGB',(640*min(2,len(frames)),390*math.ceil(len(frames)/2)), '#101b2a');draw=ImageDraw.Draw(sheet)
+    columns=min(2,len(frames));cell_width=1280 if len(frames)==1 else 960;cell_height=760 if len(frames)==1 else 570
+    sheet=Image.new('RGB',(cell_width*columns,cell_height*math.ceil(len(frames)/columns)), '#101b2a');draw=ImageDraw.Draw(sheet)
     font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',18)
     for n,frame in enumerate(frames):
-        thumb=frame.pop('image');thumb.thumbnail((620,340));x=(n%2)*640;y=(n//2)*390
+        thumb=frame.pop('image');thumb.thumbnail((cell_width-20,cell_height-45));x=(n%columns)*cell_width;y=(n//columns)*cell_height
         sheet.paste(thumb,(x+10,y+35));draw.text((x+10,y+6),f'Frame {n+1} | requested {frame["requestedMs"]} ms | actual {frame["actualMs"]} ms',font=font,fill='white')
     return {'frames':frames,'sheet':store_image(sheet),'durationMs':duration}

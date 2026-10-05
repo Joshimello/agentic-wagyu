@@ -8,7 +8,8 @@ import {
   type RunState,
   type Stage,
 } from '../../contracts';
-import { buildVideo } from './video';
+import { buildVideo, revisitContext } from './video';
+import { applyTranscript } from './transcript';
 
 export async function interpret(runId: string) {
   const [run] = await db.select().from(runs).where(eq(runs.id, runId));
@@ -52,7 +53,47 @@ export async function interpret(runId: string) {
         promptVersion: null,
       },
     };
-    if (/\.(txt|md|csv|json)$/i.test(upload.filename)) {
+    const progress = async (message: string) => {
+      await db
+        .update(runs)
+        .set({ progress: message, updatedAt: new Date() })
+        .where(eq(runs.id, runId));
+    };
+    if (run.inputRevisionId) {
+      const [base] = await db
+        .select()
+        .from(revisions)
+        .where(eq(revisions.id, run.inputRevisionId));
+      if (
+        !base ||
+        base.uploadId !== upload.id ||
+        base.manifest.rawAssetId !== raw.id ||
+        !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)
+      )
+        throw new Error(
+          'Visual context input is not a revision of this recording',
+        );
+      stage = validateStage(structuredClone(base.manifest));
+      stage.id = crypto.randomUUID();
+      stage.parentRevisionId = base.id;
+      stage.createdAt = new Date().toISOString();
+      stage.provenance.transcription ??= {
+        runId: base.runId ?? runId,
+        windowMs: 180000,
+        scope: 'window',
+      };
+      stage.provenance.adapter = 'video-context-revisit-1';
+      // Restore ASR coverage independently of earlier visual failures/notes.
+      const transcription = stage.provenance.transcription;
+      const saved = Bun.file(assetPath(`runs/${transcription.runId}/asr.json`));
+      if (await saved.exists()) {
+        const extracted = structuredClone(stage);
+        extracted.primitives = [];
+        applyTranscript(extracted, await saved.json());
+        stage.coverage = extracted.coverage;
+      }
+      await revisitContext(stage, raw.storageKey, progress);
+    } else if (/\.(txt|md|csv|json)$/i.test(upload.filename)) {
       const text = await Bun.file(assetPath(raw.storageKey)).text();
       stage.primitives.push({
         id: crypto.randomUUID(),

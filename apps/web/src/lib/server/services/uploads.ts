@@ -93,7 +93,7 @@ export async function getUpload(id: string) {
     .orderBy(desc(revisions.createdAt));
   return { upload: row.uploads, asset: row.assets, run, revisions: history };
 }
-export async function retryUpload(id: string) {
+export async function retryUpload(id: string, inputRevisionId?: string) {
   return db.transaction(async (tx) => {
     // Serialize user actions before reading the latest run.
     const [upload] = await tx
@@ -102,6 +102,15 @@ export async function retryUpload(id: string) {
       .where(eq(uploads.id, id))
       .for('update');
     if (!upload) throw new Error('Upload not found');
+    if (inputRevisionId && upload.currentRevisionId !== inputRevisionId)
+      throw new Error(
+        'Staging changed. Reload before revisiting visual context.',
+      );
+    if (
+      inputRevisionId &&
+      !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)
+    )
+      throw new Error('Visual context review requires a recording');
     const [latest] = await tx
       .select()
       .from(runs)
@@ -116,7 +125,7 @@ export async function retryUpload(id: string) {
     )
       throw new Error('Current interpretation must finish before retrying');
     const runId = crypto.randomUUID();
-    await tx.insert(runs).values({ id: runId, uploadId: id });
+    await tx.insert(runs).values({ id: runId, uploadId: id, inputRevisionId });
     await tx.insert(outbox).values({ id: runId });
     return runId;
   });

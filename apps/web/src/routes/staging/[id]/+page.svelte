@@ -39,14 +39,22 @@
     }, 2000);
     return () => clearInterval(t);
   });
-  async function retry() {
+  async function retry(contextOnly = false) {
     error = '';
     const r = await fetch(`/api/uploads/${detail.upload.id}/retry`, {
       method: 'POST',
+      ...(contextOnly && stage
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inputRevisionId: stage.id }),
+          }
+        : {}),
     });
     if (!r.ok) error = (await r.json()).error;
     else
-      notice = 'Reprocessing queued. Your current revision remains available.';
+      notice = contextOnly
+        ? 'Visual context review queued. Existing speech will be preserved.'
+        : 'Reprocessing queued. Your current revision remains available.';
   }
   function seek(ms: number) {
     if (player) {
@@ -111,8 +119,11 @@
     >{detail.run.progress}</span
   >{#if ['failed', 'ready', 'ready_with_warnings'].includes(detail.run.state)}<button
       class="secondary"
-      onclick={retry}>Reprocess original</button
-    >{/if}<a
+      onclick={() => retry()}>Reprocess original</button
+    >{#if isVideo && current}<button
+        class="secondary"
+        onclick={() => retry(true)}>Revisit visual context</button
+      >{/if}{/if}<a
     href={`/api/assets/${detail.asset.id}`}
     target="_blank"
     rel="noreferrer">Open original source ↗</a
@@ -163,6 +174,81 @@
         {#each stage.coverage.warnings as warning}<li>{warning}</li>{/each}
       </ul>
     </details>{/if}
+  {#if stage.context}<section class="card context-review">
+      <h2>Transcript questions and frame searches</h2>
+      <p class="muted small">
+        Read {stage.context.readSegments}/{stage.context.totalSegments} speech segments.
+        Searches follow missing context in the transcript.
+      </p>
+      {#each stage.context.questions as question}<details
+          class="context-question"
+        >
+          <summary
+            >{question.question}
+            <span class="badge">{question.status}</span></summary
+          >
+          <p class="small">
+            {question.purpose.replaceAll(
+              '_',
+              ' ',
+            )}{#each question.transcriptIds as ref}
+              · <a href={`#text-${ref}`}>Related speech</a>{/each}
+          </p>
+          {#if question.explanation}<p>{question.explanation}</p>{/if}
+          {#each question.searches as search}<p class="small">
+              {search.reason}{#each search.timesMs as ms}
+                · <button class="timestamp" onclick={() => seek(ms)}
+                  >{(ms / 1000).toFixed(2)}s</button
+                >{/each}
+            </p>
+            <div class="frames">
+              {#each search.frameIds as ref}{@const frame =
+                  stage.primitives.find(
+                    (p) => p.id === ref,
+                  )}{#if frame?.kind === 'image'}<a
+                    href={`/api/assets/${frame.assetId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    ><img
+                      class="search-frame"
+                      src={`/api/assets/${frame.assetId}`}
+                      alt={`Searched frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
+                    /></a
+                  >{/if}{/each}
+            </div>
+          {/each}
+        </details>{/each}
+    </section>{/if}
+  {#if stage.speakerSuggestions?.length}<section class="card context-review">
+      <h2>Tentative speaker names <span class="badge">Unverified</span></h2>
+      <p class="muted small">
+        Original speaker codes are preserved. These guesses can be wrong;
+        confidence is the model's assessment.
+      </p>
+      {#each stage.speakerSuggestions as suggestion}<article class="turn">
+          <strong
+            >{suggestion.speaker} → possibly {suggestion.candidateName}</strong
+          >
+          <span class="badge">{suggestion.confidence}</span>
+          <p>{suggestion.reason}</p>
+          <p class="small muted">
+            {suggestion.basis.replaceAll(
+              '_',
+              ' ',
+            )}{#each suggestion.transcriptIds as ref}
+              · <a href={`#text-${ref}`}>Name evidence</a
+              >{/each}{#each suggestion.frameIds as ref}{@const frame =
+                stage.primitives.find(
+                  (p) => p.id === ref,
+                )}{#if frame?.kind === 'image'}
+                · <a
+                  href={`/api/assets/${frame.assetId}`}
+                  target="_blank"
+                  rel="noreferrer">Frame evidence</a
+                >{/if}{/each}
+          </p>
+        </article>{/each}
+    </section>{/if}
   <div class="workspace">
     <section class="source card">
       <h2>Original evidence</h2>
@@ -303,6 +389,18 @@
   </div>{/if}
 
 <style>
+  .context-review {
+    margin: 20px 0;
+  }
+  .context-question {
+    border-top: 1px solid #edf0f4;
+    padding: 12px 0;
+  }
+  .search-frame {
+    width: 240px;
+    max-width: 100%;
+    border-radius: 6px;
+  }
   h1 {
     margin-top: 20px;
   }

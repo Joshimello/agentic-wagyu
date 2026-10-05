@@ -77,9 +77,12 @@ for (const recording of corpus.recordings) {
   });
   check(invalid.status === 416, 'Invalid range accepted');
   const sections = [];
-  for (const section of audioSections(recording.durationMs)) {
+  for (const section of audioSections(
+    recording.durationMs,
+    stage.provenance.transcription?.windowMs ?? 180000,
+  )) {
     const checkpoint = await Bun.file(
-      `${config.dataRoot}/runs/${upload.run.id}/part-${section.index}.json`,
+      `${config.dataRoot}/runs/${stage.provenance.transcription?.runId ?? upload.run.id}/part-${stage.provenance.transcription && stage.provenance.transcription.windowMs !== 180000 ? stage.provenance.transcription.windowMs + '-' : ''}${section.index}.json`,
     ).json();
     check(
       checkpoint.storageKey.endsWith(recording.sha256) &&
@@ -108,6 +111,9 @@ for (const recording of corpus.recordings) {
     speechSegments: spoken.length,
     frames: stage.primitives.filter((p) => p.kind === 'image').length,
     annotations: stage.annotations.length,
+    transcriptSegmentsRead: stage.context?.readSegments ?? null,
+    contextQuestions: stage.context?.questions.length ?? null,
+    speakerSuggestions: stage.speakerSuggestions?.length ?? null,
     sectionCount: sections.length,
     inferenceSeconds: sections.reduce((n, s) => n + s.elapsedSeconds, 0),
     peakGiB: Math.max(...sections.map((s) => s.peakGiB)),

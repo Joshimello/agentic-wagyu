@@ -73,3 +73,16 @@ test('local ASR timestamps cannot escape into an adjacent audio section', () => 
     'Invalid local ASR intervals were omitted',
   );
 });
+
+test('continuous recording keeps one speaker namespace; longer recordings explicitly separate 90-minute scopes', () => {
+  const single = joinAudioSections(3904107, [part(3904107)], 5400000);
+  expect(single.segments[0].speaker).toBe('S01');
+  expect(audioSections(9407851, 5400000)).toHaveLength(2);
+  const longer = joinAudioSections(
+    9407851,
+    [part(5400000), part(4007851)],
+    5400000,
+  );
+  expect(longer.segments[1].speaker).toBe('Part 2 · S01');
+  expect(longer.warnings.join(' ')).toContain('90-minute');
+});

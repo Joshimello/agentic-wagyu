@@ -1,19 +1,25 @@
 import { asrSchema } from './transcript';
 export const sectionMs = 180000;
-export function audioSections(durationMs: number) {
+export function audioSections(durationMs: number, windowMs = sectionMs) {
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0)
     throw new Error('Invalid audio duration');
+  if (!Number.isSafeInteger(windowMs) || windowMs <= 0)
+    throw new Error('Invalid audio window');
   return Array.from(
-    { length: Math.ceil(durationMs / sectionMs) },
+    { length: Math.ceil(durationMs / windowMs) },
     (_, index) => ({
       index,
-      startMs: index * sectionMs,
-      durationMs: Math.min(sectionMs, durationMs - index * sectionMs),
+      startMs: index * windowMs,
+      durationMs: Math.min(windowMs, durationMs - index * windowMs),
     }),
   );
 }
-export function joinAudioSections(durationMs: number, values: unknown[]) {
-  const sections = audioSections(durationMs);
+export function joinAudioSections(
+  durationMs: number,
+  values: unknown[],
+  windowMs = sectionMs,
+) {
+  const sections = audioSections(durationMs, windowMs);
   if (values.length !== sections.length)
     throw new Error('Missing audio sections');
   const parts = values.map((value, index) => {
@@ -65,7 +71,7 @@ export function joinAudioSections(durationMs: number, values: unknown[]) {
       ),
       ...(parts.length > 1
         ? [
-            'Speaker labels are local to each three-minute audio section; matching identities across sections is unverified. Section boundaries may split spoken phrases.',
+            `Speaker labels are local to each ${windowMs / 60000}-minute audio section; matching identities across sections is unverified. Section boundaries may split spoken phrases.`,
             ...parts.flatMap((p, i) =>
               new Set(p.segments.map((s) => s.speaker)).size === 1
                 ? [

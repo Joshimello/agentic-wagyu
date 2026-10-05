@@ -69,6 +69,45 @@ export const annotation = z
     origin: z.literal('model'),
     model: z.string(),
     promptVersion: z.string(),
+    questionId: id.optional(),
+  })
+  .strict();
+export const speakerSuggestion = z
+  .object({
+    id,
+    speaker: z.string().min(1),
+    candidateName: z.string().min(1).max(100),
+    confidence: z.enum(['low', 'medium', 'high']),
+    basis: z.enum([
+      'self_introduction',
+      'speaker_indicator',
+      'handoff',
+      'contextual_guess',
+    ]),
+    reason: z.string().min(1),
+    transcriptIds: z.array(id).min(1),
+    frameIds: z.array(id),
+    model: z.string(),
+    promptVersion: z.string(),
+  })
+  .strict();
+const contextQuestion = z
+  .object({
+    id,
+    question: z.string().min(1),
+    purpose: z.enum(['visual_context', 'speaker_identity']),
+    transcriptIds: z.array(id).min(1),
+    status: z.enum(['answered', 'unresolved']),
+    explanation: z.string(),
+    searches: z.array(
+      z
+        .object({
+          reason: z.string().min(1),
+          timesMs: z.array(ms),
+          frameIds: z.array(id),
+        })
+        .strict(),
+    ),
   })
   .strict();
 export const stageSchema = z
@@ -82,6 +121,17 @@ export const stageSchema = z
     metadata,
     primitives: z.array(primitive),
     annotations: z.array(annotation),
+    speakerSuggestions: z.array(speakerSuggestion).optional(),
+    context: z
+      .object({
+        model: z.string(),
+        promptVersion: z.string(),
+        readSegments: ms,
+        totalSegments: ms,
+        questions: z.array(contextQuestion),
+      })
+      .strict()
+      .optional(),
     coverage: z
       .object({
         complete: z.boolean(),
@@ -95,6 +145,14 @@ export const stageSchema = z
         model: z.string().nullable(),
         modelRevision: z.string().nullable(),
         promptVersion: z.string().nullable(),
+        transcription: z
+          .object({
+            runId: id,
+            windowMs: ms,
+            scope: z.enum(['recording', 'window']),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
   })
@@ -148,6 +206,60 @@ export function validateStage(value: unknown): Stage {
       a.transcriptIds.some((ref) => byId.get(ref)?.kind !== 'text')
     )
       throw new Error('Annotation references missing or wrong primitive');
+    if (
+      a.questionId &&
+      !stage.context?.questions.some((q) => q.id === a.questionId)
+    )
+      throw new Error('Annotation refers to an unknown context question');
+  }
+  const speakers = new Set(
+    stage.primitives.flatMap((p) =>
+      p.kind === 'text' && p.speaker ? [p.speaker] : [],
+    ),
+  );
+  for (const suggestion of stage.speakerSuggestions ?? []) {
+    if (
+      !speakers.has(suggestion.speaker) ||
+      suggestion.transcriptIds.some((ref) => byId.get(ref)?.kind !== 'text') ||
+      suggestion.frameIds.some((ref) => byId.get(ref)?.kind !== 'image') ||
+      !suggestion.transcriptIds.some((ref) => {
+        const p = byId.get(ref);
+        return p?.kind === 'text' && p.speaker === suggestion.speaker;
+      })
+    )
+      throw new Error(
+        'Speaker suggestion lacks evidence for its anonymous speaker',
+      );
+  }
+  if (
+    new Set((stage.speakerSuggestions ?? []).map((s) => s.id)).size !==
+    (stage.speakerSuggestions ?? []).length
+  )
+    throw new Error('Duplicate speaker suggestion ID');
+  if (stage.context) {
+    const count = stage.primitives.filter((p) => p.kind === 'text').length;
+    if (
+      stage.context.totalSegments !== count ||
+      stage.context.readSegments > count
+    )
+      throw new Error('Invalid transcript reading coverage');
+    if (
+      new Set(stage.context.questions.map((q) => q.id)).size !==
+      stage.context.questions.length
+    )
+      throw new Error('Duplicate context question ID');
+    for (const q of stage.context.questions)
+      if (
+        q.transcriptIds.some((ref) => byId.get(ref)?.kind !== 'text') ||
+        q.searches.some(
+          (s) =>
+            s.frameIds.some((ref) => byId.get(ref)?.kind !== 'image') ||
+            s.timesMs.some((t) => duration === null || t >= duration),
+        )
+      )
+        throw new Error(
+          'Context search evidence is missing or outside the recording',
+        );
   }
   if (!stage.coverage.complete && stage.coverage.warnings.length === 0)
     throw new Error('Incomplete coverage must be explained');
