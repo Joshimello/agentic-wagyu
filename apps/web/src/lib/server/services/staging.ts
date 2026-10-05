@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/client';
 import { uploads, revisions } from '../db/schema';
 import { validateStage, id, type Stage } from '../contracts';
+import { isUsableCandidateName } from '../../speaker-names';
 export const correctionSchema = z
   .object({
     baseRevisionId: id,
@@ -58,12 +59,26 @@ export async function correctStage(uploadId: string, value: unknown) {
     if (stage.speakerSuggestions) {
       const previous = stage.speakerSuggestions.length;
       stage.speakerSuggestions = stage.speakerSuggestions.filter(
-        (s) => !s.transcriptIds.some((ref) => changed.has(ref)),
+        (s) =>
+          isUsableCandidateName(s.candidateName) &&
+          !s.transcriptIds.some((ref) => changed.has(ref)),
       );
       if (stage.speakerSuggestions.length < previous)
         stage.coverage.warnings.push(
-          'Speaker name suggestions citing corrected speech were removed; revisit visual context to regenerate them.',
+          'Unsupported or outdated speaker name suggestions were removed; revisit visual context to review them.',
         );
+    }
+    if (stage.context && changed.size) {
+      stage.context.readSegments = Math.max(
+        0,
+        stage.context.readSegments - changed.size,
+      );
+      for (const question of stage.context.questions)
+        if (question.transcriptIds.some((ref) => changed.has(ref))) {
+          question.status = 'unresolved';
+          question.explanation =
+            'Cited speech was corrected after this interpretation; revisit visual context to review the question again.';
+        }
     }
     stage.metadata.label = correction.label;
     stage.metadata.sourceTime = correction.sourceTime;
@@ -156,7 +171,9 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
       'These are unverified model suggestions. Original speaker codes are preserved.',
       '',
     );
-    for (const s of stage.speakerSuggestions)
+    for (const s of stage.speakerSuggestions.filter((s) =>
+      isUsableCandidateName(s.candidateName),
+    ))
       lines.push(
         `**${clean(s.speaker)}** → possibly **${clean(s.candidateName)}** (${s.confidence}; ${s.basis})`,
         s.reason,

@@ -34,7 +34,7 @@ Detailed module plans:
 - Explicit push is required before staged evidence affects memory. Researcher uses committed memory and evidence admitted by completed pushes.
 - Preserve unresolved conflicts and history; offer optional correction.
 
-Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. Git is initialized and implementation changes are committed locally. MOSS CUDA inference and NVIDIA CDI access passed inside rootless Podman on GPU 0, with concurrency one. Real meetings of about 65–157 minutes process in checkpointed three-minute audio sections; speaker IDs are scoped to each section. The operational duration ceiling is four hours, with one GPU inference at a time. Cross-section speaker matching and reference-based accuracy remain open.
+Observed on 2026-09-30: Ubuntu 26.04.1, two RTX PRO 6000 Blackwell Max-Q GPUs reporting about 96 GiB VRAM each, and about 181 GiB RAM. Bun 1.4.2 and Podman 5.7.0 were verified on 2026-10-05. Git is initialized and implementation changes are committed locally. MOSS CUDA inference and NVIDIA CDI access passed inside rootless Podman on GPU 0, with concurrency one. Initial accepted transcripts of the 65–157-minute meetings used three-minute sections. New processing attempts continuous windows up to 90 minutes and falls back to 30-minute windows when long-pass coverage is uncertain; speaker IDs are scoped to the successful input windows. Qwen reads the complete transcript before targeted frame research, and stores tentative, evidence-backed names separately from anonymous codes. The operational duration ceiling is four hours, with one GPU inference at a time. Cross-section speaker matching and reference-based accuracy remain open.
 
 The configured gateway passed live, synthetic-data checks on 2026-10-05 from Bun under Podman: requested model discovery, text chat, JSON Schema output, function-call/result round trip, image input, streaming, and Responses API. The supplied root base URL works for both chat and Responses routes. See the [API verification record](docs/development/llm-api-check.md). These checks establish basic request compatibility; full SDK integration, research-quality evaluation, embedding access, and sustained-load behavior remain milestone work.
 
@@ -208,7 +208,7 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 ### M2 — Video staging with visual context
 
-**Deliver:** local MOSS transcript, frame/contact-sheet tool, visual annotations, staging viewer, correction revisions, readable export.
+**Deliver:** local MOSS transcript with continuous/window provenance, transcript-led frame/contact-sheet research, context questions/search audit, visual annotations, tentative evidence-backed speaker names, staging viewer, pinned visual-only reprocessing, correction revisions, readable export.
 
 **Test:** `bun run eval:interpreter:video` inspects the imported real recordings without mutation: full timeline, evidence references, readable frames, pinned exports, portable bundles, range requests, and empty memory. Lasting regressions cover variable FPS/audio offsets, section joining/checkpoints, truncation, bad frame requests, correction/history, and retry. Human-reviewed excerpts are required for transcription and speaker-quality scores.
 

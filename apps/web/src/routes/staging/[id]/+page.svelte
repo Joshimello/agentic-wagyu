@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import type { Stage } from '../../../lib/server/contracts';
+  import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
   let error = $state(''),
@@ -25,6 +26,11 @@
         r.id ===
         (selection === 'current' ? detail.upload.currentRevisionId : selection),
     )?.manifest,
+  );
+  let speakerSuggestions = $derived(
+    stage?.speakerSuggestions?.filter((s) =>
+      isUsableCandidateName(s.candidateName),
+    ) ?? [],
   );
   let isVideo = $derived(
     /\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(detail.upload.filename),
@@ -180,74 +186,84 @@
         Read {stage.context.readSegments}/{stage.context.totalSegments} speech segments.
         Searches follow missing context in the transcript.
       </p>
-      {#each stage.context.questions as question}<details
-          class="context-question"
+      <details>
+        <summary
+          >Review {stage.context.questions.length} questions and searches</summary
         >
-          <summary
-            >{question.question}
-            <span class="badge">{question.status}</span></summary
+        {#each stage.context.questions as question}<details
+            class="context-question"
           >
-          <p class="small">
-            {question.purpose.replaceAll(
-              '_',
-              ' ',
-            )}{#each question.transcriptIds as ref}
-              · <a href={`#text-${ref}`}>Related speech</a>{/each}
-          </p>
-          {#if question.explanation}<p>{question.explanation}</p>{/if}
-          {#each question.searches as search}<p class="small">
-              {search.reason}{#each search.timesMs as ms}
-                · <button class="timestamp" onclick={() => seek(ms)}
-                  >{(ms / 1000).toFixed(2)}s</button
-                >{/each}
+            <summary
+              >{question.question}
+              <span class="badge">{question.status}</span></summary
+            >
+            <p class="small">
+              {question.purpose.replaceAll(
+                '_',
+                ' ',
+              )}{#each question.transcriptIds as ref}
+                · <a href={`#text-${ref}`}>Related speech</a>{/each}
             </p>
-            <div class="frames">
-              {#each search.frameIds as ref}{@const frame =
-                  stage.primitives.find(
-                    (p) => p.id === ref,
-                  )}{#if frame?.kind === 'image'}<a
-                    href={`/api/assets/${frame.assetId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    ><img
-                      class="search-frame"
-                      src={`/api/assets/${frame.assetId}`}
-                      alt={`Searched frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
-                    /></a
-                  >{/if}{/each}
-            </div>
-          {/each}
-        </details>{/each}
+            {#if question.explanation}<p>{question.explanation}</p>{/if}
+            {#each question.searches as search}<p class="small">
+                {search.reason}{#each search.timesMs as ms}
+                  · <button class="timestamp" onclick={() => seek(ms)}
+                    >{(ms / 1000).toFixed(2)}s</button
+                  >{/each}
+              </p>
+              <div class="frames">
+                {#each search.frameIds as ref}{@const frame =
+                    stage.primitives.find(
+                      (p) => p.id === ref,
+                    )}{#if frame?.kind === 'image'}<a
+                      href={`/api/assets/${frame.assetId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      ><img
+                        class="search-frame"
+                        src={`/api/assets/${frame.assetId}`}
+                        alt={`Searched frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
+                      /></a
+                    >{/if}{/each}
+              </div>
+            {/each}
+          </details>{/each}
+      </details>
     </section>{/if}
-  {#if stage.speakerSuggestions?.length}<section class="card context-review">
+  {#if speakerSuggestions.length}<section class="card context-review">
       <h2>Tentative speaker names <span class="badge">Unverified</span></h2>
       <p class="muted small">
         Original speaker codes are preserved. These guesses can be wrong;
         confidence is the model's assessment.
       </p>
-      {#each stage.speakerSuggestions as suggestion}<article class="turn">
-          <strong
-            >{suggestion.speaker} → possibly {suggestion.candidateName}</strong
-          >
-          <span class="badge">{suggestion.confidence}</span>
-          <p>{suggestion.reason}</p>
-          <p class="small muted">
-            {suggestion.basis.replaceAll(
-              '_',
-              ' ',
-            )}{#each suggestion.transcriptIds as ref}
-              · <a href={`#text-${ref}`}>Name evidence</a
-              >{/each}{#each suggestion.frameIds as ref}{@const frame =
-                stage.primitives.find(
-                  (p) => p.id === ref,
-                )}{#if frame?.kind === 'image'}
-                · <a
-                  href={`/api/assets/${frame.assetId}`}
-                  target="_blank"
-                  rel="noreferrer">Frame evidence</a
-                >{/if}{/each}
-          </p>
-        </article>{/each}
+      <details>
+        <summary
+          >Review {speakerSuggestions.length} tentative name suggestions</summary
+        >
+        {#each speakerSuggestions as suggestion}<article class="turn">
+            <strong
+              >{suggestion.speaker} → possibly {suggestion.candidateName}</strong
+            >
+            <span class="badge">{suggestion.confidence}</span>
+            <p>{suggestion.reason}</p>
+            <p class="small muted">
+              {suggestion.basis.replaceAll(
+                '_',
+                ' ',
+              )}{#each suggestion.transcriptIds as ref}
+                · <a href={`#text-${ref}`}>Name evidence</a
+                >{/each}{#each suggestion.frameIds as ref}{@const frame =
+                  stage.primitives.find(
+                    (p) => p.id === ref,
+                  )}{#if frame?.kind === 'image'}
+                  · <a
+                    href={`/api/assets/${frame.assetId}`}
+                    target="_blank"
+                    rel="noreferrer">Frame evidence</a
+                  >{/if}{/each}
+            </p>
+          </article>{/each}
+      </details>
     </section>{/if}
   <div class="workspace">
     <section class="source card">

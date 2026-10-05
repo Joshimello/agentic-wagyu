@@ -229,14 +229,45 @@ check(
         promptVersion: null,
       },
     };
-    await db
-      .insert(revisions)
-      .values({
-        id: base.id,
-        uploadId: item.uploadId,
-        runId: item.runId,
-        manifest: base,
-      });
+    const candidate = {
+      id: crypto.randomUUID(),
+      speaker: 'S01',
+      candidateName: '小林',
+      confidence: 'medium' as const,
+      basis: 'self_introduction' as const,
+      reason: 'Test of cited-name invalidation',
+      transcriptIds: [base.primitives[0].id],
+      frameIds: [],
+      model: 'test-model',
+      promptVersion: 'context-test',
+    };
+    const enriched = {
+      ...base,
+      speakerSuggestions: [candidate],
+      context: {
+        model: 'test-model',
+        promptVersion: 'context-test',
+        readSegments: 1,
+        totalSegments: 1,
+        questions: [
+          {
+            id: crypto.randomUUID(),
+            question: 'Who introduced themselves?',
+            purpose: 'speaker_identity' as const,
+            transcriptIds: [base.primitives[0].id],
+            status: 'answered' as const,
+            explanation: '',
+            searches: [],
+          },
+        ],
+      },
+    };
+    await db.insert(revisions).values({
+      id: base.id,
+      uploadId: item.uploadId,
+      runId: item.runId,
+      manifest: enriched,
+    });
     await db
       .update(uploads)
       .set({ currentRevisionId: base.id })
@@ -267,6 +298,9 @@ check(
         },
       ],
     });
+    expect(corrected.speakerSuggestions).toEqual([]);
+    expect(corrected.context?.readSegments).toBe(0);
+    expect(corrected.context?.questions[0].status).toBe('unresolved');
     await interpret(runId); // No model credentials in regression containers: speech survives a visible context failure.
     const ready = await getUpload(item.uploadId);
     expect(ready.upload.currentRevisionId).toBe(corrected.id);
@@ -282,6 +316,14 @@ check(
     await expect(retryUpload(item.uploadId, base.id)).rejects.toThrow(
       'Staging changed',
     );
+    const correctedRun = await retryUpload(item.uploadId, corrected.id);
+    await interpret(correctedRun);
+    const reviewed = await getUpload(item.uploadId);
+    const latest = reviewed.revisions.find(
+      (r) => r.id === reviewed.upload.currentRevisionId,
+    )!.manifest;
+    expect(latest.primitives[0]).toMatchObject({ text: 'Later correction' });
+    expect(latest.provenance.transcription?.runId).toBe(item.runId);
     expect(await memoryCount()).toBe(0);
   },
 );

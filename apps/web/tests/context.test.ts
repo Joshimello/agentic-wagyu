@@ -151,6 +151,15 @@ test('context agent reads before searching and keeps names separate from unchang
                         transcriptRefs: ['T2'],
                         frameRefs: [],
                       },
+                      {
+                        speakerRef: 'P99',
+                        candidateName: 'unknown',
+                        confidence: 'low',
+                        basis: 'contextual_guess',
+                        reason: 'No usable evidence',
+                        transcriptRefs: ['T2'],
+                        frameRefs: [],
+                      },
                     ],
                     unresolvedReason: '',
                   }),
@@ -203,10 +212,27 @@ test('context agent reads before searching and keeps names separate from unchang
     candidateName: '小林',
     transcriptIds: [original[1].id],
   });
+  expect(value.speakerSuggestions).toHaveLength(1);
   const invalid = structuredClone(value);
   invalid.speakerSuggestions![0].speaker = 'S99';
   expect(() => validateStage(invalid)).toThrow('lacks evidence');
   const missing = structuredClone(value);
   missing.context!.questions[0].searches[0].frameIds = [crypto.randomUUID()];
   expect(() => validateStage(missing)).toThrow('evidence');
+});
+
+test('speaker-name abstentions stay unnamed instead of becoming fake name guesses', async () => {
+  const { isUsableCandidateName } = await import('../src/lib/speaker-names');
+  for (const name of [
+    null,
+    '',
+    'unknown',
+    'unresolved',
+    '（無法確定）',
+    '无明确姓名线索',
+    'N/A',
+  ])
+    expect(isUsableCandidateName(name)).toBe(false);
+  for (const name of ['小林', '元浩', 'James Chu'])
+    expect(isUsableCandidateName(name)).toBe(true);
 });

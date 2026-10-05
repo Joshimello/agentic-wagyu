@@ -14,6 +14,7 @@ COPY apps/web/package.json ./apps/web/
 RUN bun install --production --frozen-lockfile
 COPY --from=development /app/apps/web/build ./apps/web/build
 COPY apps/web/src/lib/server ./apps/web/src/lib/server
+COPY apps/web/src/lib/speaker-names.ts ./apps/web/src/lib/speaker-names.ts
 COPY apps/web/workers ./apps/web/workers
 COPY apps/web/drizzle ./apps/web/drizzle
 ENV NODE_ENV=production DATA_ROOT=/data HOST=0.0.0.0 PORT=5173 BODY_SIZE_LIMIT=536870912

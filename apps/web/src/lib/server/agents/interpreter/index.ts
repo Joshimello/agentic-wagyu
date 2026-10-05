@@ -77,16 +77,39 @@ export async function interpret(runId: string) {
       stage.id = crypto.randomUUID();
       stage.parentRevisionId = base.id;
       stage.createdAt = new Date().toISOString();
-      stage.provenance.transcription ??= {
-        runId: base.runId ?? runId,
-        windowMs: 180000,
-        scope: 'window',
-      };
+      if (!stage.provenance.transcription) {
+        // Legacy corrections have no run ID: follow their immutable ancestry
+        // rather than claiming this visual-only job transcribed the audio.
+        let source = base;
+        const visited = new Set([source.id]);
+        while (!source.runId && source.parentRevisionId) {
+          const [parent] = await db
+            .select()
+            .from(revisions)
+            .where(eq(revisions.id, source.parentRevisionId));
+          if (
+            !parent ||
+            parent.uploadId !== upload.id ||
+            visited.has(parent.id)
+          )
+            break;
+          visited.add(parent.id);
+          source = parent;
+        }
+        if (source.runId)
+          stage.provenance.transcription = {
+            runId: source.runId,
+            windowMs: 180000,
+            scope: 'window',
+          };
+      }
       stage.provenance.adapter = 'video-context-revisit-1';
       // Restore ASR coverage independently of earlier visual failures/notes.
       const transcription = stage.provenance.transcription;
-      const saved = Bun.file(assetPath(`runs/${transcription.runId}/asr.json`));
-      if (await saved.exists()) {
+      const saved = transcription
+        ? Bun.file(assetPath(`runs/${transcription.runId}/asr.json`))
+        : null;
+      if (saved && (await saved.exists())) {
         const extracted = structuredClone(stage);
         extracted.primitives = [];
         applyTranscript(extracted, await saved.json());

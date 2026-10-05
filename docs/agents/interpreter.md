@@ -17,8 +17,8 @@ Use the environment-configured OpenAI-compatible endpoint and `pro6000/qwen38-fl
 1. Resolve the scoped asset, probe streams/format, and checkpoint the run.
 2. Extract native text or source representations: MOSS transcript, page/slide renders, frames, figures, OCR, speaker notes.
 3. Normalize source locators and metadata. Preserve uploader, author, event date, upload date, and anonymous speaker distinctions.
-4. Build a sparse storyboard for video; give bounded transcript windows and overview images to the VLM.
-5. Let the agent inspect frames through `get_contact_sheet`; validate structured visual annotations and links.
+4. Read every transcript segment in contiguous blocks; propose specific questions about missing visual context and evidence for speaker names. No evenly spaced transcript sampling or beginning/middle/end frame instructions.
+5. Search near the cited speech with `get_contact_sheet`; record questions, reasons, searched times, actual frames, answers, and unresolved cases. Validate structured annotations and tentative names before publication.
 6. Write durable derivatives; validate manifest references/hashes; atomically publish a staging revision through the application service.
 7. Notify the UI. A ready revision is reviewable and eligible for push, but has not entered memory.
 
@@ -38,26 +38,24 @@ MOSS remains the preferred local transcription adapter. Its output includes time
 
 Preserve selected audio-track offset and resampling transforms. Record raw model output, normalized segments, truncation/malformed-output warnings, and coverage. If long inputs require chunks, namespace speaker IDs and preserve overlap/offsets; never assume S01 is the same person across chunks.
 
+The adapter attempts continuous windows up to the model card's advertised 90-minute range. A complete single window gives one anonymous-speaker namespace. The 65-minute real meeting stopped at 49:37 in two single-pass attempts despite a 65,536-token output budget; the second ended with EOS at 16,380 generated tokens. A 30-minute pass reached 29:59.98. Do not equate normal EOS with full transcription. A final unrepresented interval longer than 60 seconds is conservatively marked uncertain: it could be silence or an early model stop. A long uncertain/truncated attempt falls back to 30-minute windows, preserving attempts in caches and separating speaker codes across windows. A remaining omission remains visible. There is no automatic cross-window voice match.
+
 ```ts
 get_contact_sheet({
-  timestamps_ms: number[],
-  detail?: "overview" | "readable",
-  crop?: { x: number; y: number; width: number; height: number }
+  timesMs: number[], // 1–4 unique container timestamps, in milliseconds
+  reason: string
 })
 ```
 
-Trusted context fixes the upload/run. The tool returns image data plus cell-to-primitive mappings, requested/actual timestamps, dimensions, and crop transforms. Crop coordinates are normalized and top-left-based. One timestamp in readable mode provides a larger image through the same tool.
+Trusted context fixes the source. Each question cites actual transcript IDs. Searches must stay within 90 seconds of that speech, use at most two sheets of four frames, and persist the reason and requested/actual timestamps. Up to six questions per transcript block are proposed; up to 24 are researched, and deferred or unanswered questions remain visible. The complete transcript is still read when the frame budget is reached. An empty question list is valid when there is no missing visual context.
 
-- Use real presentation timestamps and preserve variable-FPS/audio-offset behavior.
-- Label cells with IDs and actual times; persist selected individual frames/crops, not just thumbnails.
-- Initial tuning: at most 12 cells/call and 4 calls per 5-minute window, plus a total artifact budget.
-- Request readable detail before interpreting small text/values; otherwise mark unreadable.
-- Record inspected coverage and budget stops. Sparse sampling can miss brief events.
-- Cache by source hash, stream, timestamp, transform, and render configuration.
+Contact sheets use real presentation timestamps with keyframe seeking. Single-frame sheets preserve more readable detail; multi-frame sheets have larger cells than the initial pilot. All searched frames are retained as source derivatives so the audit and unresolved searches remain inspectable/exportable. This is targeted visual coverage, not an exhaustive account of every frame. Exact decoder timing and audio-offset behavior are checked with temporary transformations of real footage. [FFmpeg filter documentation](https://ffmpeg.org/ffmpeg-filters.html).
 
-FFmpeg supplies frame-selection/scaling/tiling components; exact timing behavior must pass synthetic fixtures. [Filter documentation](https://ffmpeg.org/ffmpeg-filters.html).
+Qwen's structured planning uses `chat_template_kwargs.enable_thinking=false` on the configured gateway: live verification found that enabled reasoning exhausted the output budget before returning JSON. Other model providers receive ordinary Chat Completions parameters. [Qwen serving documentation](https://qwen.readthedocs.io/en/stable/deployment/vllm.html).
 
-Annotation output: generated text, transcript segment IDs, inspected image IDs, relationship (`illustrates`, `displayed_during`, `possible_reference`), uncertainty, and producing run/model/prompt. Co-occurrence alone does not prove the speaker meant a particular figure.
+Annotations cite speech, searched frames, and the question they answer, with model/prompt provenance. Name suggestions preserve the original speaker code and include a candidate name, model confidence, basis, explanation, and cited voice/text/frame evidence. Self-introductions, handoffs, participant labels, and active-speaker indicators can support tentative names; a static participant tile or a mentioned name does not establish who spoke. Unknown speakers remain unnamed; no face identification or automatic speaker merging occurs. Confidence is uncalibrated and every suggestion stays unverified.
+
+**Revisit visual context** pins the current staging revision and runs no ASR. It preserves text, speaker codes, corrections, and prior immutable revisions. Concurrent corrections stay current; the older-input interpretation is available in history. Text/speaker corrections remove name suggestions relying on changed speech and mark affected context questions unresolved. Markdown/JSON/offline exports include the context-search audit and tentative names; the plain transcript keeps spoken words separate.
 
 ## Document adapters
 
