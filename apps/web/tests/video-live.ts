@@ -125,5 +125,14 @@ await Bun.write(
   '/data/evaluations/meetings.json',
   JSON.stringify({ reports, memoryCommits: 0 }, null, 2),
 );
-console.log(JSON.stringify(reports, null, 2));
+console.log(
+  JSON.stringify(
+    reports.map(({ sections, warnings, ...report }) => ({
+      ...report,
+      warningCount: warnings.length,
+    })),
+    null,
+    2,
+  ),
+);
 await (await import('../src/lib/server/db/client')).sqlClient.end();
