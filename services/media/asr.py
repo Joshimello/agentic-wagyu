@@ -7,7 +7,6 @@ from moss_transcribe_diarize.inference_utils import build_transcription_messages
 
 MODEL = 'OpenMOSS-Team/MOSS-Transcribe-Diarize'
 REVISION = '704aa4a9c304e8520be88901e0d1960158ef5b15'
-MAX_SECONDS = 300
 _model = _processor = None
 
 def load():
@@ -19,7 +18,7 @@ def load():
         _processor = AutoProcessor.from_pretrained(MODEL, revision=REVISION, trust_remote_code=True)
     return _model, _processor
 
-def transcribe(path, max_new_tokens=8192):
+def transcribe(path, max_new_tokens=16384):
     model, processor = load()
     torch.cuda.reset_peak_memory_stats()
     started = time.monotonic()

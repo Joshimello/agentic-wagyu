@@ -18,7 +18,18 @@ def probe(path):
 
 def audio(path,dest):
     # Preserve offsets/gaps, normalize the container start to zero, and pad delayed audio.
-    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-copyts','-start_at_zero','-i',str(path),'-vn','-af','aresample=16000:async=1:first_pts=0','-ac','1','-ar','16000',str(dest)],check=True,timeout=120)
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-copyts','-start_at_zero','-i',str(path),'-vn','-af','aresample=16000:async=1:first_pts=0','-ac','1','-ar','16000',str(dest)],check=True,timeout=900)
+
+def audio_part(path,dest,start_ms,duration_ms):
+    # Cache normalization once. Subsequent sections seek the WAV, not the compressed video.
+    cache=ROOT/'audio';cache.mkdir(parents=True,exist_ok=True)
+    wav=cache/f'{path.name}-normalized-1.wav'
+    if not wav.exists():
+        with tempfile.NamedTemporaryFile(dir=cache,suffix='.wav',delete=False) as tmp: temp=Path(tmp.name)
+        try:
+            audio(path,temp);os.replace(temp,wav)
+        finally: temp.unlink(missing_ok=True)
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-ss',str(start_ms/1000),'-i',str(wav),'-t',str(duration_ms/1000),'-c:a','pcm_s16le',str(dest)],check=True,timeout=60)
 
 def store_image(img):
     buf=io.BytesIO();img.save(buf,format='JPEG',quality=88);data=buf.getvalue();digest=hashlib.sha256(data).hexdigest()
@@ -34,23 +45,21 @@ def contact_sheet(path,times):
     meta=probe(path);duration=meta['durationMs'];origin=meta['originSeconds']
     if not meta['hasVideo']: raise ValueError('No video stream')
     if not 1<=len(times)<=8 or len(set(times))!=len(times) or any(type(t) is not int or t<0 or t>=duration for t in times): raise ValueError('Request 1–8 unique integer timestamps within the container timeline')
-    pending=sorted(times); frames=[]; previous=None
-    # Decode real presentation timestamps instead of deriving frame numbers from FPS.
+    frames=[]
+    # Seek to a preceding keyframe, then decode real presentation timestamps.
     with av.open(str(path)) as container:
-        for frame in container.decode(video=0):
-            if frame.time is None: continue
-            actual=round((frame.time-origin)*1000)
-            if actual<0: continue
-            previous=(frame,actual)
-            while pending and actual>=pending[0]:
-                requested=pending.pop(0)
-                if actual>=duration: continue
-                img=frame.to_image().convert('RGB');img.thumbnail((1280,720))
-                frames.append({'requestedMs':requested,'actualMs':actual,'width':img.width,'height':img.height,'asset':store_image(img),'image':img})
-            if not pending: break
-    if pending and previous:
-        frame,actual=previous
-        for requested in pending:
+        stream=container.streams.video[0]
+        for requested in sorted(times):
+            container.seek(int((origin+requested/1000)/stream.time_base),stream=stream,backward=True)
+            previous=None
+            for frame in container.decode(stream):
+                if frame.time is None: continue
+                actual=round((frame.time-origin)*1000)
+                if actual<0 or actual>=duration: continue
+                previous=(frame,actual)
+                if actual>=requested: break
+            if previous is None: raise ValueError('Requested frame could not be decoded')
+            frame,actual=previous
             img=frame.to_image().convert('RGB');img.thumbnail((1280,720))
             frames.append({'requestedMs':requested,'actualMs':actual,'width':img.width,'height':img.height,'asset':store_image(img),'image':img})
     if len(frames)!=len(times): raise ValueError('Requested frames could not be decoded')

@@ -9,6 +9,7 @@ import { assetPath } from '../../storage';
 import { type Stage, type Primitive } from '../../contracts';
 import { llmClient } from '../../llm/client';
 import { asrSchema, applyTranscript } from './transcript';
+import { audioSections, joinAudioSections } from './audio-sections';
 
 const assetSchema = z.object({
   storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
@@ -117,25 +118,55 @@ export async function buildVideo(
 ) {
   const cacheDir = assetPath(`runs/${runId}`);
   await mkdir(cacheDir, { recursive: true });
-  const cache = Bun.file(`${cacheDir}/asr.json`);
-  await onProgress('Transcribing audio with local MOSS');
-  let cached: unknown;
-  try {
-    cached = await cache.json();
-  } catch {
-    cached = undefined;
+  const meta = z
+    .object({ durationMs: z.number().int().positive(), hasAudio: z.boolean() })
+    .parse(await mediaRequest('probe', { storageKey }));
+  const values: unknown[] = [];
+  if (meta.durationMs > 4 * 60 * 60 * 1000)
+    throw new Error(
+      'Recording exceeds the four-hour processing limit; original is preserved.',
+    );
+  const sections = audioSections(meta.durationMs);
+  for (const section of sections) {
+    await onProgress(
+      `Transcribing audio section ${section.index + 1}/${sections.length} with local MOSS`,
+    );
+    const path = `${cacheDir}/part-${section.index}.json`;
+    let value: unknown;
+    try {
+      const checkpoint = await Bun.file(path).json();
+      if (
+        checkpoint.storageKey !== storageKey ||
+        checkpoint.startMs !== section.startMs ||
+        checkpoint.durationMs !== section.durationMs ||
+        checkpoint.version !== 1
+      )
+        throw new Error('Checkpoint does not match recording');
+      asrSchema.parse(checkpoint.result);
+      value = checkpoint.result;
+    } catch {
+      value = await mediaRequest('transcribe', {
+        storageKey,
+        startMs: section.startMs,
+        durationMs: section.durationMs,
+      });
+      asrSchema.parse(value);
+      const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
+      await Bun.write(
+        temp,
+        JSON.stringify({ version: 1, storageKey, ...section, result: value }),
+      );
+      await rename(temp, path);
+    }
+    values.push(value);
   }
-  const result = asrSchema.parse(
-    cached ?? (await mediaRequest('transcribe', { storageKey })),
-  );
-  if (!cached) {
-    const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
-    await Bun.write(temp, JSON.stringify(result));
-    await rename(temp, `${cacheDir}/asr.json`);
-  }
+  const result = asrSchema.parse(joinAudioSections(meta.durationMs, values));
+  const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
+  await Bun.write(temp, JSON.stringify(result));
+  await rename(temp, `${cacheDir}/asr.json`);
   applyTranscript(stage, result);
   stage.provenance = {
-    adapter: 'video-1',
+    adapter: 'video-2-sectioned',
     model: result.model,
     modelRevision: result.revision,
     promptVersion: visualPromptVersion,
@@ -153,6 +184,19 @@ export async function buildVideo(
 }
 export async function enrich(stage: Stage, storageKey: string) {
   const { client, model } = llmClient();
+  // Retain all speech in staging, but bound the visual agent's input for long meetings.
+  const speech = stage.primitives.filter((p) => p.kind === 'text');
+  const sampled =
+    speech.length > 120
+      ? Array.from(
+          { length: 120 },
+          (_, i) => speech[Math.floor((i * (speech.length - 1)) / 119)],
+        )
+      : speech;
+  if (sampled.length < speech.length)
+    stage.coverage.warnings.push(
+      'The visual agent received a time-distributed transcript sample; all extracted speech remains in staging.',
+    );
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
@@ -163,7 +207,7 @@ export async function enrich(stage: Stage, storageKey: string) {
       role: 'user',
       content: JSON.stringify({
         durationMs: stage.coverage.durationMs,
-        transcript: stage.primitives,
+        transcript: sampled,
         task: 'Inspect the visible presentation and link concise observations to actual frames. Use at least one contact sheet.',
       }),
     },

@@ -13,7 +13,12 @@ export async function startQueue() {
   await boss.createQueue(queueName, {
     retryLimit: 3,
     retryDelay: 5,
-    expireInSeconds: 1800,
+    expireInSeconds: 7200,
+  });
+  await boss.updateQueue(queueName, {
+    retryLimit: 3,
+    retryDelay: 5,
+    expireInSeconds: 7200,
   });
   return boss;
 }
