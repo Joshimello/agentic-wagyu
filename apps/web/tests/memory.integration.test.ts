@@ -516,6 +516,7 @@ check(
     const batch = await createPush(input(stage));
     let calls = 0;
     let repairIssues: { path: string; code: string }[] = [];
+    let candidateStatus: string | undefined;
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
@@ -523,6 +524,9 @@ check(
         const body = (await request.json()) as any;
         const payload = JSON.parse(body.messages[1].content[0].text);
         if (payload.validationIssues) repairIssues = payload.validationIssues;
+        if (payload.repairCandidate)
+          candidateStatus =
+            payload.repairCandidate.assertions[0].arguments.status;
         const content =
           payload.task === 'extract'
             ? {
@@ -594,6 +598,7 @@ check(
         { llm },
       );
       expect(first.versions).toHaveLength(0);
+      expect(candidateStatus).toBe('unsupported-status');
       expect(repairIssues).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

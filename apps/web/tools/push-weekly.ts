@@ -77,7 +77,11 @@ for (const source of corpus.sources) {
     if (current.state === 'failed') {
       // pg-boss retries transient work after five seconds; allow that dispatch to settle.
       // A persistent failure still stops evaluation and needs an explicit pinned retry.
-      for (let settle = 0; settle < 15 && current.state === 'failed'; settle++) {
+      for (
+        let settle = 0;
+        settle < 15 && current.state === 'failed';
+        settle++
+      ) {
         await Bun.sleep(2000);
         current = await request(`/api/pushes/${batch.id}`);
       }
@@ -136,10 +140,14 @@ for (const source of report) {
   bySource.set(source.filename, projects);
 }
 for (const family of [...new Set(report.map((r) => r.family))]) {
-  const ids = report
+  const weeklyProjects = report
     .filter((r) => r.family === family)
-    .flatMap((r) => [...bySource.get(r.filename)!]);
-  if (!ids.some((id) => ids.filter((other) => other === id).length >= 2))
+    .map((r) => bySource.get(r.filename)!);
+  if (
+    ![...weeklyProjects[0]].some((id) =>
+      weeklyProjects.every((ids) => ids.has(id)),
+    )
+  )
     throw new Error(`No cross-week project continuity for ${family}`);
 }
 const vlm = new Set(
