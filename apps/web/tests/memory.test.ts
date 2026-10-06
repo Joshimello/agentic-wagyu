@@ -6,11 +6,41 @@ import {
   pushInput,
   validateEvidence,
   stableId,
+  matchesEntity,
   type Snapshot,
   type StatementVersion,
 } from '../src/lib/server/contracts/memory';
 import type { Stage } from '../src/lib/server/contracts';
 const id = (key: string) => stableId('memory regression', key);
+test('anonymous speaker labels stay scoped to the source revision while named mentions remain project scoped', () => {
+  const projectId = id('project'),
+    revisionId = id('source-a');
+  const entity = {
+    id: id('speaker'),
+    projectId,
+    kind: 'person',
+    name: 'S01',
+    createdVersion: 1,
+    evidence: [{ revisionId, primitiveId: id('turn'), quote: null }],
+  };
+  expect(matchesEntity(entity, projectId, 'person', 'S01', revisionId)).toBe(
+    true,
+  );
+  expect(
+    matchesEntity(entity, projectId, 'person', 'S01', id('source-b')),
+  ).toBe(false);
+  const role = { ...entity, name: 'Professor (S03)' };
+  expect(
+    matchesEntity(role, projectId, 'person', role.name, id('source-b')),
+  ).toBe(false);
+  const named = { ...entity, name: 'Alice' };
+  expect(
+    matchesEntity(named, projectId, 'person', 'Alice', id('source-b')),
+  ).toBe(true);
+  expect(
+    matchesEntity(named, id('other-project'), 'person', 'Alice', revisionId),
+  ).toBe(false);
+});
 function history(): Snapshot {
   const project = id('project'),
     statement = id('task'),
@@ -273,8 +303,9 @@ test('evidence validation rejects unpushed sources, invented quotations and boil
 });
 
 test('Chronicler source blocks read every text character and page with bounded image/context inputs', async () => {
-  const { sourceBlocks } =
-    await import('../src/lib/server/agents/chronicler/source');
+  const { sourceBlocks } = await import(
+    '../src/lib/server/agents/chronicler/source'
+  );
   const primitive = {
     id: id('long'),
     kind: 'text' as const,

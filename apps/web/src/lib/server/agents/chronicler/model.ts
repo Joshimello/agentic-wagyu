@@ -8,6 +8,8 @@ import { traditionalChinese } from '../../text-normalization';
 import {
   extractionSchema,
   normalize,
+  matchesEntity,
+  isSpeakerLabel,
   stableId,
   validateEvidence,
   hasSupportedDate,
@@ -340,15 +342,27 @@ export async function buildMemoryPlan(
           const projectId = projects.get(e.projectRef);
           if (!projectId) throw new Error('Unknown project');
           const evidence = evidenceFor(e.evidenceRefs);
-          const old = [...snapshot.entities, ...plan.entities].find(
-            (c) =>
-              c.projectId === projectId &&
-              c.kind === e.kind &&
-              normalize(c.name) === normalize(traditionalChinese(e.name)),
+          const old = [...snapshot.entities, ...plan.entities].find((c) =>
+            matchesEntity(
+              c,
+              projectId,
+              e.kind,
+              traditionalChinese(e.name),
+              stage.id,
+            ),
           );
           const entityId =
             old?.id ??
-            stableId(pushId, projectId, 'entity', e.kind, normalize(e.name));
+            stableId(
+              pushId,
+              projectId,
+              'entity',
+              e.kind,
+              normalize(e.name),
+              ...(e.kind === 'person' && isSpeakerLabel(e.name)
+                ? [stage.id]
+                : []),
+            );
           if (!old)
             plan.entities.push({
               id: entityId,

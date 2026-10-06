@@ -263,6 +263,28 @@ export type Plan = {
 export function normalize(value: string) {
   return value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
 }
+export function isSpeakerLabel(name: string) {
+  return /\bS\d+\b|\b(speaker|presenter|professor|student|participant)\b|說話者|發言者|老師|同學/i.test(
+    name,
+  );
+}
+/** Anonymous/role speaker labels identify a source run, not the same person in another meeting. */
+export function matchesEntity(
+  existing: Pick<Entity, 'projectId' | 'kind' | 'name' | 'evidence'>,
+  projectId: string,
+  kind: string,
+  name: string,
+  revisionId: string,
+) {
+  return (
+    existing.projectId === projectId &&
+    existing.kind === kind &&
+    normalize(existing.name) === normalize(name) &&
+    (kind !== 'person' ||
+      !isSpeakerLabel(name) ||
+      existing.evidence.some((e) => e.revisionId === revisionId))
+  );
+}
 export function stableId(...parts: string[]) {
   const h = new Bun.CryptoHasher('sha256')
     .update(parts.join('\0'))
