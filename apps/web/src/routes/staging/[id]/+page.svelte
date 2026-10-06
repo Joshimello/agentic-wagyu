@@ -122,7 +122,14 @@
       {detail.upload.filename} · uploaded by {detail.upload.metadata.uploader}
     </p>
   </div>
-  <span class="badge">Not pushed to memory</span>
+  <span class="badge"
+    >{detail.memory.state === 'never_pushed'
+      ? 'Not pushed to memory'
+      : detail.memory.state.replaceAll('_', ' ')}{detail.memory
+      .commitVersion !== null
+      ? ` · Memory ${detail.memory.commitVersion}`
+      : ''}</span
+  >
 </div>
 <div class="run">
   <span class="badge">{detail.run.state.replaceAll('_', ' ')}</span><span

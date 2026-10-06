@@ -112,7 +112,16 @@ export function reduceMemory(
       v.effectiveDate <= options.effectiveDate,
   );
   const active = effective.filter((v) => activeEvidence(v).length);
-  const byVersion = new Map(active.map((v) => [v.id, v]));
+  const scopedStatements = new Set(
+    snapshot.statements
+      .filter((s) => !options.projectId || s.projectId === options.projectId)
+      .map((s) => s.id),
+  );
+  const byVersion = new Map(
+    active
+      .filter((v) => scopedStatements.has(v.statementId))
+      .map((v) => [v.id, v]),
+  );
   const relations = snapshot.relations.filter(
     (r) =>
       r.commitVersion <= known &&
@@ -259,5 +268,16 @@ export async function evidenceView(
     filename: upload.filename,
     rawAssetId: revision.manifest.rawAssetId,
     memoryVersion: snapshot.version,
+  };
+}
+
+export function memoryOptions(url: URL) {
+  return {
+    knownVersion: url.searchParams.get('knownVersion')?.trim()
+      ? Number(url.searchParams.get('knownVersion'))
+      : undefined,
+    knownAt: url.searchParams.get('knownAt') ?? undefined,
+    effectiveDate: url.searchParams.get('effectiveDate') || undefined,
+    projectId: url.searchParams.get('projectId') || undefined,
   };
 }

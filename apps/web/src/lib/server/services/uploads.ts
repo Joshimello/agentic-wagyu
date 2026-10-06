@@ -11,6 +11,7 @@ import {
 import { storeBytes } from '../storage';
 import { metadata } from '../contracts';
 import { config } from '../config';
+import { memoryRelationship } from './memory';
 
 type UploadFields = {
   uploader?: string;
@@ -108,6 +109,10 @@ export async function listUploads() {
         bytes: row.assets.bytes,
         mime: row.assets.mime,
         run,
+        memory: await memoryRelationship(
+          row.uploads.id,
+          row.uploads.currentRevisionId,
+        ),
       };
     }),
   );
@@ -130,7 +135,16 @@ export async function getUpload(id: string) {
     .from(revisions)
     .where(eq(revisions.uploadId, id))
     .orderBy(desc(revisions.createdAt));
-  return { upload: row.uploads, asset: row.assets, run, revisions: history };
+  return {
+    upload: row.uploads,
+    asset: row.assets,
+    run,
+    revisions: history,
+    memory: await memoryRelationship(
+      row.uploads.id,
+      row.uploads.currentRevisionId,
+    ),
+  };
 }
 export async function retryUpload(id: string, inputRevisionId?: string) {
   return db.transaction(async (tx) => {

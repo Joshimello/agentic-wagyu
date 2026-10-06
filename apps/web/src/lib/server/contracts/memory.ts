@@ -289,3 +289,29 @@ export function validateEvidence(
       throw new Error('Boilerplate cannot support a research assertion');
   }
 }
+
+/** Event dates require confirmed metadata or literal dated text; filename/arrival guesses are insufficient. */
+export function hasSupportedDate(
+  value: string,
+  stages: Stage[],
+  evidence: Evidence[],
+  metadataAllowed = true,
+) {
+  return evidence.some((e) => {
+    const stage = stages.find((s) => s.id === e.revisionId);
+    if (!stage) return false;
+    if (
+      metadataAllowed &&
+      stage.metadata.sourceTimeOrigin !== 'unknown' &&
+      stage.metadata.sourceTime?.slice(0, 10) === value
+    )
+      return true;
+    const p = stage.primitives.find((p) => p.id === e.primitiveId);
+    const [year, month, day] = value.split('-');
+    return (
+      p?.kind === 'text' &&
+      (p.text.includes(value) ||
+        p.text.includes(`${year}年${Number(month)}月${Number(day)}日`))
+    );
+  });
+}

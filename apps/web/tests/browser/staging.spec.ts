@@ -22,7 +22,13 @@ for (const recording of corpus.recordings) {
     await expect(
       page.getByRole('heading', { name: 'Spoken transcript' }),
     ).toBeVisible();
-    await expect(page.getByText(/Not pushed to memory/)).toBeVisible();
+    await expect(
+      page.getByText(
+        before.memory.state === 'never_pushed'
+          ? /Not pushed to memory/
+          : new RegExp(before.memory.state.replaceAll('_', ' ')),
+      ),
+    ).toBeVisible();
     const stage = before.revisions.find(
       (r: any) => r.id === before.upload.currentRevisionId,
     ).manifest;

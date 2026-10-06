@@ -271,3 +271,68 @@ test('evidence validation rejects unpushed sources, invented quotations and boil
     ),
   ).toThrow('Boilerplate');
 });
+
+test('Chronicler source blocks read every text character and page with bounded image/context inputs', async () => {
+  const { sourceBlocks } =
+    await import('../src/lib/server/agents/chronicler/source');
+  const primitive = {
+    id: id('long'),
+    kind: 'text' as const,
+    role: 'native' as const,
+    text: 'A'.repeat(20000),
+    speaker: null,
+    locator: { kind: 'text' as const, start: 0, end: 20000 },
+  };
+  const stage = {
+    id: id('long-stage'),
+    primitives: [primitive],
+    annotations: [],
+  } as unknown as Stage;
+  const blocks = sourceBlocks(stage);
+  expect(blocks).toHaveLength(3);
+  expect(
+    blocks
+      .flatMap((b) => b.primitives)
+      .filter((p) => p.kind === 'text')
+      .map((p) => (p.kind === 'text' ? p.text : ''))
+      .join(''),
+  ).toBe(primitive.text);
+  expect(
+    blocks.every(
+      (b) =>
+        b.primitives
+          .filter((p) => p.kind === 'text')
+          .reduce((n, p) => n + (p.kind === 'text' ? p.text.length : 0), 0) <=
+        8000,
+    ),
+  ).toBe(true);
+  const document = {
+    ...stage,
+    primitives: Array.from({ length: 9 }, (_, index) => ({
+      id: id('page' + index),
+      kind: 'image',
+      role: 'page',
+      assetId: id('asset' + index),
+      locator: { kind: 'page', page: index + 1 },
+      actualMs: null,
+      requestedMs: null,
+    })),
+    document: {
+      units: Array.from({ length: 9 }, (_, index) => ({
+        number: index + 1,
+        renderId: id('page' + index),
+        textIds: [],
+      })),
+    },
+  } as unknown as Stage;
+  expect(
+    sourceBlocks(document)
+      .flatMap((b) => b.primitives)
+      .map((p) => p.id),
+  ).toEqual(document.primitives.map((p) => p.id));
+  expect(
+    sourceBlocks(document).every(
+      (b) => b.primitives.filter((p) => p.kind === 'image').length <= 4,
+    ),
+  ).toBe(true);
+});

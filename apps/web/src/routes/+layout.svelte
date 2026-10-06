@@ -2,11 +2,12 @@
   let { children } = $props();
 </script>
 
-<svelte:head><title>Chronicler · Staging</title></svelte:head>
+<svelte:head><title>Chronicler · Research workspace</title></svelte:head>
 <div class="shell">
   <header>
     <a class="brand" href="/">◈ <strong>Chronicler</strong></a><span
-      class="local">LOCAL WORKSPACE</span
+      class="local"
+      ><a href="/">Staging</a> · <a href="/memory">Memory</a> · LOCAL WORKSPACE</span
     >
   </header>
   <main>{@render children()}</main>

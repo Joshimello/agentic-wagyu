@@ -1,8 +1,44 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { goto } from '$app/navigation';
   let { data } = $props();
   let uploads = $state(untrack(() => data.uploads));
   let selected = $state(untrack(() => data.selections));
+  let pushing = $state(false),
+    projectMode = $state('auto'),
+    projectId = $state(''),
+    projectName = $state('');
+  async function pushSelection() {
+    pushing = true;
+    message = '';
+    try {
+      const response = await fetch('/api/pushes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
+          items: selected.map((s) => ({
+            uploadId: s.uploadId,
+            revisionId: s.revisionId,
+            acceptPartial: s.acceptPartial,
+          })),
+          projectScope:
+            projectMode === 'auto'
+              ? { mode: 'auto' }
+              : projectMode === 'existing'
+                ? { mode: 'existing', projectId }
+                : { mode: 'new', name: projectName },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      await goto(`/pushes/${result.id}`);
+    } catch (error) {
+      message = error instanceof Error ? error.message : 'Push failed';
+    } finally {
+      pushing = false;
+    }
+  }
   let groups = $derived(
     Array.from(
       Map.groupBy(uploads, (file) => file.metadata.groupId ?? file.id),
@@ -98,8 +134,7 @@
   </form>
   {#if message}<p class="error">{message}</p>{/if}
   <p class="hint">
-    Files stay in staging until you explicitly push them to memory. Memory
-    ingestion will be available in a later step.
+    Files stay in staging until you explicitly push them to memory.
   </p>
 </section>
 <section class="files">
@@ -137,7 +172,12 @@
               ><span class="status"
                 ><span class="badge"
                   >{file.run?.state.replaceAll('_', ' ') || 'queued'}</span
-                ><small>{file.run?.progress}</small></span
+                ><small>{file.run?.progress}</small><small
+                  >{file.memory.state.replaceAll('_', ' ')}{file.memory
+                    .commitVersion !== null
+                    ? ` · Memory ${file.memory.commitVersion}`
+                    : ''}</small
+                ></span
               ><span>→</span></a
             >
           </div>{/each}{/each}
@@ -196,15 +236,51 @@
           >{/if}
       </article>
     {/each}
-    <button disabled>Push selected files to memory</button>
+    <label
+      >Project matching<select bind:value={projectMode}
+        ><option value="auto">Automatic, based on content</option><option
+          value="existing">Use an existing project</option
+        ><option value="new">Create a separate project</option></select
+      ></label
+    >
+    {#if projectMode === 'existing'}<label
+        >Existing project<select bind:value={projectId}
+          ><option value="">Choose a project</option
+          >{#each data.projects as project}<option value={project.id}
+              >{project.name}</option
+            >{/each}</select
+        ></label
+      >{/if}
+    {#if projectMode === 'new'}<label
+        >New project name<input bind:value={projectName} /></label
+      >{/if}
+    <button
+      disabled={pushing ||
+        selected.some((s) => !s.readyForPush) ||
+        (projectMode === 'existing' && !projectId) ||
+        (projectMode === 'new' && !projectName.trim())}
+      onclick={pushSelection}
+      >{pushing ? 'Creating push…' : 'Push selected files to memory'}</button
+    >
     <p class="hint">
       {selected.some((s) => !s.readyForPush)
         ? 'Review partial extraction before including these files. '
-        : ''}Selection is saved. Memory ingestion is not available yet.
+        : ''}Selection is saved. Automatic matching can create multiple projects
+      from one meeting; grouping alone does not merge projects.
     </p>
   </section>{/if}
 
 <style>
+  select {
+    font: inherit;
+    padding: 10px;
+    border: 1px solid #ccd6e2;
+    border-radius: 6px;
+    background: white;
+  }
+  .batch-review > label {
+    margin: 14px 0;
+  }
   .group-label {
     padding: 14px 20px;
     background: #edf2f9;

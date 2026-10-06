@@ -1,9 +1,11 @@
 import { PgBoss } from 'pg-boss';
 import { eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
-import { outbox } from '../db/schema';
+import { outbox, chroniclerOutbox, pushBatches } from '../db/schema';
+import { stableId } from '../contracts/memory';
 import { config } from '../config';
 export const queueName = 'interpret';
+export const chroniclerQueue = 'chronicle';
 export async function startQueue() {
   const boss = new PgBoss(config.databaseUrl);
   boss.on('error', () =>
@@ -16,6 +18,16 @@ export async function startQueue() {
     expireInSeconds: 7200,
   });
   await boss.updateQueue(queueName, {
+    retryLimit: 3,
+    retryDelay: 5,
+    expireInSeconds: 7200,
+  });
+  await boss.createQueue(chroniclerQueue, {
+    retryLimit: 3,
+    retryDelay: 5,
+    expireInSeconds: 7200,
+  });
+  await boss.updateQueue(chroniclerQueue, {
     retryLimit: 3,
     retryDelay: 5,
     expireInSeconds: 7200,
@@ -34,5 +46,27 @@ export async function dispatchPending(boss: PgBoss) {
       .update(outbox)
       .set({ dispatchedAt: new Date() })
       .where(eq(outbox.id, item.id));
+  }
+}
+
+export async function dispatchPushes(boss: PgBoss) {
+  const pending = await db
+    .select()
+    .from(chroniclerOutbox)
+    .innerJoin(pushBatches, eq(chroniclerOutbox.id, pushBatches.id))
+    .where(isNull(chroniclerOutbox.dispatchedAt))
+    .limit(50);
+  for (const row of pending) {
+    const item = row.chronicler_outbox,
+      batch = row.push_batches;
+    await boss.send(
+      chroniclerQueue,
+      { pushId: item.id },
+      { id: stableId(item.id, 'queue', String(batch.attempts)) },
+    );
+    await db
+      .update(chroniclerOutbox)
+      .set({ dispatchedAt: new Date() })
+      .where(eq(chroniclerOutbox.id, item.id));
   }
 }

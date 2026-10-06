@@ -2,7 +2,10 @@ import {
   startQueue,
   dispatchPending,
   queueName,
+  chroniclerQueue,
+  dispatchPushes,
 } from '../src/lib/server/jobs/queue';
+import { chronicle } from '../src/lib/server/agents/chronicler';
 import { interpret } from '../src/lib/server/agents/interpreter';
 import { sqlClient } from '../src/lib/server/db/client';
 
@@ -14,12 +17,20 @@ await boss.work<{ runId: string }>(
     for (const job of jobs) await interpret(job.data.runId);
   },
 );
+await boss.work<{ pushId: string }>(
+  chroniclerQueue,
+  { batchSize: 1 },
+  async (jobs) => {
+    for (const job of jobs) await chronicle(job.data.pushId);
+  },
+);
 let stopping = false;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pump = (async () => {
   while (!stopping) {
     try {
       await dispatchPending(boss);
+      await dispatchPushes(boss);
     } catch {
       console.error('Dispatch deferred; durable outbox will retry');
     }
@@ -36,4 +47,4 @@ async function stop() {
 }
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);
-console.log('Interpreter worker ready');
+console.log('Interpreter and Chronicler worker ready');
