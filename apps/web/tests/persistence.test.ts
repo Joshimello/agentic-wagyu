@@ -211,7 +211,7 @@ check(
           kind: 'text' as const,
           role: 'asr' as const,
           speaker: 'S01',
-          text: 'Existing reviewed speech',
+          text: '现有已审阅的发言。',
           locator: {
             kind: 'media' as const,
             timeline: 'container' as const,
@@ -293,12 +293,18 @@ check(
       edits: [
         {
           primitiveId: base.primitives[0].id,
-          text: 'Later correction',
+          text: '后来修正的发言。',
           speaker: 'S01',
         },
       ],
     });
     expect(corrected.speakerSuggestions).toEqual([]);
+    expect(corrected.primitives[0]).toMatchObject({
+      text: '後來修正的發言。',
+      id: base.primitives[0].id,
+      locator: base.primitives[0].locator,
+      speaker: 'S01',
+    });
     expect(corrected.context?.readSegments).toBe(0);
     expect(corrected.context?.questions[0].status).toBe('unresolved');
     await interpret(runId); // No model credentials in regression containers: speech survives a visible context failure.
@@ -307,6 +313,9 @@ check(
     expect(
       ready.revisions.find((r) => r.id === ready.run.revisionId)?.manifest
         .primitives[0],
+    ).toEqual({ ...base.primitives[0], text: '現有已審閱的發言。' });
+    expect(
+      ready.revisions.find((r) => r.id === base.id)?.manifest.primitives[0],
     ).toEqual(base.primitives[0]);
     expect(
       ready.revisions.find((r) => r.id === ready.run.revisionId)
@@ -322,7 +331,11 @@ check(
     const latest = reviewed.revisions.find(
       (r) => r.id === reviewed.upload.currentRevisionId,
     )!.manifest;
-    expect(latest.primitives[0]).toMatchObject({ text: 'Later correction' });
+    expect(latest.primitives[0]).toMatchObject({ text: '後來修正的發言。' });
+    expect(latest.provenance.textNormalization).toMatchObject({
+      engine: 'opencc-js',
+      conversion: 's2t',
+    });
     expect(latest.provenance.transcription?.runId).toBe(item.runId);
     expect(await memoryCount()).toBe(0);
   },

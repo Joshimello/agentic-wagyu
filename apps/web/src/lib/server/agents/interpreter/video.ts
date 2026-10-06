@@ -9,6 +9,7 @@ import { type Stage, type Primitive } from '../../contracts';
 import { contextPromptVersion, enrichContext } from './context';
 import { asrSchema, applyTranscript } from './transcript';
 import { audioSections, joinAudioSections } from './audio-sections';
+import { normalizeTranscription } from '../../text-normalization';
 
 const assetSchema = z.object({
   storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
@@ -154,7 +155,6 @@ export async function buildVideo(
   const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
   await Bun.write(temp, JSON.stringify(result));
   await rename(temp, `${cacheDir}/asr.json`);
-  applyTranscript(stage, result);
   stage.provenance = {
     adapter: 'video-4-context',
     model: result.model,
@@ -166,6 +166,7 @@ export async function buildVideo(
       scope: meta.durationMs <= windowMs ? 'recording' : 'window',
     },
   };
+  applyTranscript(stage, result);
   await revisitContext(stage, storageKey, onProgress);
   return stage;
 }
@@ -175,6 +176,7 @@ export async function revisitContext(
   storageKey: string,
   progress: (message: string) => Promise<void> = async () => {},
 ) {
+  normalizeTranscription(stage);
   stage.primitives = stage.primitives.filter((p) => p.kind === 'text');
   stage.annotations = [];
   delete stage.context;

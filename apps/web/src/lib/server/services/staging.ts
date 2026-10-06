@@ -4,6 +4,10 @@ import { db } from '../db/client';
 import { uploads, revisions } from '../db/schema';
 import { validateStage, id, type Stage } from '../contracts';
 import { isUsableCandidateName } from '../../speaker-names';
+import {
+  normalizeTranscription,
+  traditionalChinese,
+} from '../text-normalization';
 export const correctionSchema = z
   .object({
     baseRevisionId: id,
@@ -39,6 +43,7 @@ export async function correctStage(uploadId: string, value: unknown) {
       .from(revisions)
       .where(eq(revisions.id, correction.baseRevisionId));
     const stage: Stage = structuredClone(base.manifest);
+    normalizeTranscription(stage);
     stage.id = crypto.randomUUID();
     stage.parentRevisionId = base.id;
     stage.createdAt = new Date().toISOString();
@@ -52,8 +57,9 @@ export async function correctStage(uploadId: string, value: unknown) {
       const p = stage.primitives.find((p) => p.id === edit.primitiveId);
       if (!p || p.kind !== 'text')
         throw new Error('Correction refers to missing text');
-      if (p.text !== edit.text || p.speaker !== edit.speaker) changed.add(p.id);
-      p.text = edit.text;
+      const text = p.role === 'asr' ? traditionalChinese(edit.text) : edit.text;
+      if (p.text !== text || p.speaker !== edit.speaker) changed.add(p.id);
+      p.text = text;
       p.speaker = edit.speaker;
     }
     if (stage.speakerSuggestions) {

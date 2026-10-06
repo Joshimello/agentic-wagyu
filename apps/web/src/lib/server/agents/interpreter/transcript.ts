@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Stage } from '../../contracts';
+import { normalizeTranscription } from '../../text-normalization';
 export const asrSchema = z.object({
   durationMs: z.number().int().positive(),
   segments: z.array(
@@ -59,5 +60,6 @@ export function applyTranscript(stage: Stage, value: unknown) {
     });
   }
   stage.coverage = { complete, durationMs: result.durationMs, warnings };
+  normalizeTranscription(stage);
   return result;
 }

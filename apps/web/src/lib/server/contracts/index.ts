@@ -145,6 +145,14 @@ export const stageSchema = z
         model: z.string().nullable(),
         modelRevision: z.string().nullable(),
         promptVersion: z.string().nullable(),
+        textNormalization: z
+          .object({
+            engine: z.literal('opencc-js'),
+            version: z.string().min(1),
+            conversion: z.literal('s2t'),
+          })
+          .strict()
+          .optional(),
         transcription: z
           .object({
             runId: id,

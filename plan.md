@@ -31,6 +31,7 @@ Detailed module plans:
 - Video, PPTX, PDFs, images, and text are input adapters. Prove video staging first; the complete requested workflow also includes PPTX and the remaining adapters.
 - Local MOSS transcription; use the configured OpenAI-compatible gateway and `pro6000/qwen38-flash-next` as the core model for development testing. Read `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL` from private server environment configuration. Model adapters remain configurable; this preference supersedes Luna as the development default.
 - Staging supports inspection and optional correction/export without requiring memory ingestion.
+- Agent planning, questions, tool-search reasons, annotations, and explanations use English. Chinese source quotations and names retain Chinese script. Transcribed Chinese is normalized to OpenCC standard Traditional Chinese (`s2t`) before review/export and after speech corrections; preserve raw ASR output and earlier revisions.
 - Explicit push is required before staged evidence affects memory. Researcher uses committed memory and evidence admitted by completed pushes.
 - Preserve unresolved conflicts and history; offer optional correction.
 

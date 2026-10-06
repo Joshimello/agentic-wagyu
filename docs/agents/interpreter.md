@@ -40,6 +40,8 @@ Preserve selected audio-track offset and resampling transforms. Record raw model
 
 The adapter uses 30-minute windows directly; the last window contains the remainder. A complete single window gives one anonymous-speaker namespace. The 65-minute real meeting stopped at 49:37 in two single-pass attempts despite a 65,536-token output budget; the second ended with EOS at 16,380 generated tokens. A 30-minute pass reached 29:59.98. Do not equate normal EOS with full transcription. A final unrepresented interval longer than 60 seconds is conservatively marked uncertain: it could be silence or an early model stop. The earlier long-pass strategy is preserved in revision/cache history. Current processing skips that initial attempt and separates speaker codes across 30-minute windows. A remaining omission remains visible. There is no automatic cross-window voice match.
 
+The Bun transcript layer uses pinned `opencc-js` 1.4.2 with `{ from: "cn", to: "t" }` (`s2t`, OpenCC standard Traditional Chinese). It normalizes extracted/cached ASR and visual-only revisits before planning, and canonicalizes saved speech corrections. It preserves IDs, timestamps, speaker codes, English words, raw checkpoints, native document text, and historical revisions. Staging provenance records the conversion engine, version, and profile. Qwen plans and writes questions, search reasons, annotations, and explanations in English under `context-4-en`; Chinese quotations and names use Traditional Chinese. The verified Qwen `enable_thinking=false` serving setting is retained; English instructions apply to planning/output, without claiming to observe private model reasoning.
+
 ```ts
 get_contact_sheet({
   timesMs: number[], // 1–4 unique container timestamps, in milliseconds

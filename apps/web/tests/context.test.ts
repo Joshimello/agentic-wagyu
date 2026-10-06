@@ -91,7 +91,8 @@ test('context agent reads before searching and keeps names separate from unchang
                     content: JSON.stringify({
                       questions: [
                         {
-                          question: '图中比较的两种方法是什么？',
+                          question:
+                            'Which two methods does the diagram compare?',
                           purpose: 'visual_context',
                           transcriptRefs: ['T2'],
                           priority: 1,
@@ -118,7 +119,8 @@ test('context agent reads before searching and keeps names separate from unchang
                           name: 'get_contact_sheet',
                           arguments: JSON.stringify({
                             timesMs: [2000],
-                            reason: '查看发言所指的比较图',
+                            reason:
+                              'Inspect the comparison diagram cited in the speech.',
                           }),
                         },
                       },
@@ -136,7 +138,7 @@ test('context agent reads before searching and keeps names separate from unchang
                   content: JSON.stringify({
                     annotations: [
                       {
-                        text: '比较图标示 A 与 B。',
+                        text: 'The comparison diagram labels A and B.',
                         transcriptRefs: ['T2'],
                         frameRefs: ['F1'],
                       },
@@ -147,7 +149,8 @@ test('context agent reads before searching and keeps names separate from unchang
                         candidateName: '小林',
                         confidence: 'medium',
                         basis: 'self_introduction',
-                        reason: '在引述发言中自我介绍。',
+                        reason:
+                          'The cited speech contains a self-introduction.',
                         transcriptRefs: ['T2'],
                         frameRefs: [],
                       },
@@ -200,11 +203,23 @@ test('context agent reads before searching and keeps names separate from unchang
   );
   validateStage(value);
   expect(requests[0].messages[1].content).toContain('T3|');
+  for (const request of requests)
+    expect(request.messages[0].content).toContain(
+      'Plan, reason, and organize your work in English.',
+    );
+  expect(requests[1].messages[0].content).not.toContain(
+    'Use Chinese for Chinese speech',
+  );
   expect(searches).toEqual([[2000]]);
   expect(value.context).toMatchObject({ readSegments: 3, totalSegments: 3 });
   expect(value.context?.questions[0]).toMatchObject({
     status: 'answered',
-    searches: [{ reason: '查看发言所指的比较图', timesMs: [2000] }],
+    searches: [
+      {
+        reason: 'Inspect the comparison diagram cited in the speech.',
+        timesMs: [2000],
+      },
+    ],
   });
   expect(value.primitives.filter((p) => p.kind === 'text')).toEqual(original);
   expect(value.speakerSuggestions?.[0]).toMatchObject({
