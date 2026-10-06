@@ -17,7 +17,9 @@
     "import:recordings": "bun apps/web/tools/import-recordings.ts",
     "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests",
     "import:documents": "bun apps/web/tools/import-documents.ts",
-    "eval:interpreter:documents": "bun apps/web/tests/documents-live.ts"
+    "eval:interpreter:documents": "bun apps/web/tests/documents-live.ts",
+    "eval:chronicler:weekly": "bun apps/web/tools/push-weekly.ts",
+    "eval:memory:integrity": "bun apps/web/tools/check-memory.ts"
   },
   "dependencies": {
     "zod": "4.3.6"

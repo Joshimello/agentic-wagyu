@@ -1,0 +1,16 @@
+{
+  "sources": [
+    { "filename": "260629_VLM.pptx", "family": "vlm_uav" },
+    { "filename": "260720_VLM.pptx", "family": "vlm_uav" },
+    { "filename": "260804_VLM.pptx", "family": "vlm_uav" },
+    { "filename": "2026-09-08.mp4", "family": "scene_reconstruction" },
+    { "filename": "2026-09-15.mp4", "family": "scene_reconstruction" },
+    { "filename": "2026-09-22.mp4", "family": "scene_reconstruction" }
+  ],
+  "unpushedControls": [
+    "260629_VLM.pdf",
+    "260720_VLM.pdf",
+    "260804_VLM.pdf",
+    "ITRI_VLM_Midterm_Report.pdf"
+  ]
+}

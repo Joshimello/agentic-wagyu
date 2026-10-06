@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, tick } from 'svelte';
   import { page } from '$app/state';
   import MemoryGraph from '../../lib/components/MemoryGraph.svelte';
   let { data } = $props();
@@ -11,6 +11,13 @@
   let knownVersion = $state(page.url.searchParams.get('knownVersion') ?? '');
   let effectiveDate = $state(page.url.searchParams.get('effectiveDate') ?? '');
   let error = $state('');
+  async function inspect(id: string) {
+    selected = id;
+    await tick();
+    document
+      .getElementById('statement-detail')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   let statement = $derived(memory.statements.find((s) => s.id === selected));
   let visible = $derived(
     memory.statements.filter(
@@ -73,7 +80,7 @@
   </section>{:else}
   <section class="card">
     <h2>Memory graph</h2>
-    <MemoryGraph {memory} onSelect={(id) => (selected = id)} />
+    <MemoryGraph {memory} onSelect={inspect} />
   </section>
   <section class="projects">
     {#each memory.projects as project}<article class="card">
@@ -91,7 +98,7 @@
     <div class="assertions">
       {#each visible as item}<button
           class="assertion secondary"
-          onclick={() => (selected = item.id)}
+          onclick={() => inspect(item.id)}
           ><span class="badge">{item.type} · {item.status}</span><span
             >{item.current.text}</span
           ><small
