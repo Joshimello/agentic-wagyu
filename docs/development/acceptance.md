@@ -102,3 +102,36 @@ Every new speech primitive matches the previous primitive except for the expecte
 Corpus validation exposed two edge cases. OpenCC's `s2t` operation is not universally idempotent on already-Traditional text: both the JavaScript library and a native OpenCC check converted a second-pass `裏面包括` to `裏麪包括`. Staging now records normalization provenance and skips repeated passes; unchanged correction fields are also preserved. Fresh ASR and changed speech corrections receive one conversion. A lasting regression covers this phrase through a revisit and unchanged save. Six September 15 model annotations contained only T references/timestamps. They were omitted in a new immutable revision, with source frames retained and affected questions left unresolved. The same validation automatically omitted four such annotations from September 22. September 15 retains eight questions deferred by the existing 24-question research budget and two other unresolved questions; September 22 retains one unresolved question.
 
 Podman validation passed 29 Bun regressions (168 assertions), TypeScript/Svelte checks with zero errors/warnings, frozen development/release builds, release OpenCC/worker imports, all three Chromium inspection/seek/export checks, and the maintained full-corpus evidence/portable-export checks. No material entered memory. Private before/after hashes and language review observations are in ignored `data/evaluations/language-review/results.json`; the temporary driver was removed.
+
+## Document staging and pinned selections (2026-10-06)
+
+M3 is functionally accepted. All eight originals passed SHA-256 checks and were imported through the durable upload service; none entered memory. Current `documents-2` revisions contain 255 page/slide renders, 1,005 native text blocks and ten separate speaker notes. One hidden slide retains its original number. Notes remain `notes`, never ASR or attributed speech. Staging views and portable exports retain every page/slide render, including diagrams, equations, charts and tables.
+
+| Source | Pages/slides | Native blocks | Notes | Hidden | Coverage | Extract/render time |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| 260629_VLM.pptx | 38 | 80 | 4 | 0 | Partial | 5.16 s |
+| 260720_VLM.pptx | 36 | 72 | 2 | 0 | Complete | 3.34 s |
+| 260804_VLM.pptx | 33 | 67 | 0 | 0 | Complete | 4.36 s |
+| 260629_VLM.pdf | 38 | 98 | 0 | 0 | Complete | 3.03 s |
+| 260720_VLM.pdf | 36 | 108 | 0 | 0 | Complete | 1.80 s |
+| 260804_VLM.pdf | 33 | 89 | 0 | 0 | Complete | 1.92 s |
+| 115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx | 28 | 78 | 4 | 1 | Complete | 4.89 s |
+| ITRI_VLM_Midterm_Report.pdf | 13 | 413 | 0 | 0 | Complete | 0.74 s |
+
+Total extraction/render time: 25.25 seconds, excluding upload, queue waiting, registration and export. `260629_VLM.pptx` is partial because slides 17, 19, 22, 23, 25 and 26 contain animations/media/unsupported objects represented only by still images. Font substitution/render warnings are separate. Matching deck/PDF pairs are grouped by source stem; this does not assert any slide was shown in a meeting. Native text retains its original script; OpenCC remains scoped to ASR.
+
+Validation passed in Podman:
+
+- 33 standard Bun regressions (195 assertions) on a disposable database, including atomic grouped uploads, exact video/deck selection, immutable history, stale-revision notices and partial acceptance. Three fixture-dependent integration cases skip here and run separately below.
+- Three isolated Bun/media integrations (44 assertions), using the real 38-slide deck, 13-page report and a rotated derivative of a real page. Replay publishes once; explicit retry creates an immutable child revision, reuses every image asset ID and preserves notes/EXIF metadata. Exports are complete and memory stays empty.
+- Six Python checks: notes/hidden slides/font substitution/static media, scanned PDF OCR/partial coverage, rotated image transforms, bounded native PDF blocks, two-column source coordinates, and unsupported format rejection. Temporary derivatives of real sources are removed from isolated storage.
+- Twelve Chromium checks: all eight document viewers reach the last unit and export pinned evidence; selection survives reload and restores the previous draft; all three video viewers still seek/export correctly.
+- Cross-language JSON Schemas, Svelte/TypeScript (zero errors/warnings), frozen development/media/release builds, release worker imports, and read-only document/video corpus evaluations.
+
+Saved selections are mutable local drafts with exact upload/revision IDs and partial acceptance. Corrections do not change them; older revisions stay visibly pinned and offer explicit reselection. They are not immutable push batches or memory commits. The memory action remains disabled until M4 implements atomic push and Chronicler processing.
+
+### Adapter comparison
+
+The separate frozen environment pins Docling-slim 2.133.0, Docling-core 2.99.0 and Docling-parse 7.22.2. Native backends matched all 255 units and ten notes. PPTX outputs expose 153 pictures and five native tables in the subcontract deck; these are representation items, not independently corroborating evidence. The comparison took 37.64 seconds and did not benchmark the learned layout/OCR pipeline. Production retains Python-pptx/LibreOffice/Poppler/Pillow/Tesseract for source text and full renders. Structured crops/tables can adopt Docling later behind the staging contract. [Docling model](https://docling-project.github.io/docling/concepts/docling_document/), [PPTX notes API](https://python-pptx.readthedocs.io/en/latest/user/notes.html), [LibreOffice hidden-slide export](https://help.libreoffice.org/latest/en-US/text/shared/guide/pdf_params.html).
+
+These checks establish source mapping and honest coverage, not perfect OCR, reading order or numerical chart interpretation. No human document-fidelity reference has been supplied. Full renders and originals remain inspectable. Private reports, parser outputs and screenshots stay under ignored `data/evaluations/`; raw evidence, credentials and evaluation environments stay out of release images.

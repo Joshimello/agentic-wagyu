@@ -10,6 +10,7 @@ import {
 } from '../../contracts';
 import { buildVideo, revisitContext } from './video';
 import { applyTranscript } from './transcript';
+import { buildDocument, documentFormat } from './documents';
 
 export async function interpret(runId: string) {
   const [run] = await db.select().from(runs).where(eq(runs.id, runId));
@@ -137,6 +138,13 @@ export async function interpret(runId: string) {
             .set({ progress, updatedAt: new Date() })
             .where(eq(runs.id, runId));
         },
+      );
+    } else if (documentFormat(upload.filename)) {
+      await buildDocument(
+        stage,
+        raw.storageKey,
+        documentFormat(upload.filename)!,
+        progress,
       );
     } else
       throw new Error(

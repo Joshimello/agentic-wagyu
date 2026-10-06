@@ -15,7 +15,9 @@
     "test:llm:live": "bun apps/web/tests/llm-live.ts",
     "eval:interpreter:video": "bun apps/web/tests/video-live.ts",
     "import:recordings": "bun apps/web/tools/import-recordings.ts",
-    "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests"
+    "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests",
+    "import:documents": "bun apps/web/tools/import-documents.ts",
+    "eval:interpreter:documents": "bun apps/web/tests/documents-live.ts"
   },
   "dependencies": {
     "zod": "4.3.6"

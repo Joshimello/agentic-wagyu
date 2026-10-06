@@ -377,6 +377,13 @@ check(
     expect(a.upload.metadata.groupId).toBe(b.upload.metadata.groupId);
     expect(a.upload.metadata.groupHint).toBe('Meeting and slides');
     expect(a.asset.id).toBe(b.asset.id);
+    const single = await acceptUpload(
+      new File(['Single grouped source'], 'single.txt'),
+      { groupHint: 'Project context' },
+    );
+    const singleDetail = await getUpload(single.uploadId);
+    expect(singleDetail.upload.metadata.groupId).toBeDefined();
+    expect(singleDetail.upload.metadata.groupHint).toBe('Project context');
     const [{ count: before }] =
       await sqlClient`select count(*)::int as count from uploads`;
     await expect(
@@ -436,14 +443,12 @@ check(
           promptVersion: null,
         },
       };
-      await db
-        .insert(revisions)
-        .values({
-          id: manifest.id,
-          uploadId: item.uploadId,
-          runId: item.runId,
-          manifest,
-        });
+      await db.insert(revisions).values({
+        id: manifest.id,
+        uploadId: item.uploadId,
+        runId: item.runId,
+        manifest,
+      });
       await db
         .update(uploads)
         .set({ currentRevisionId: manifest.id })

@@ -137,6 +137,58 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
       ...stage.coverage.warnings.map((w) => `- ${clean(w)}`),
       '',
     );
+  if (stage.document) {
+    lines.push(
+      '## Document extraction',
+      '',
+      `Format: ${stage.document.format}`,
+      `Tools: ${JSON.stringify(stage.document.tools)}`,
+      'Native text, speaker notes and OCR remain separate evidence roles.',
+      '',
+    );
+    for (const unit of stage.document.units) {
+      const name =
+        stage.document.format === 'pptx'
+          ? 'Slide'
+          : stage.document.format === 'pdf'
+            ? 'Page'
+            : 'Image';
+      lines.push(
+        `## ${name} ${unit.number}${unit.hidden ? ' (hidden)' : ''}`,
+        '',
+        ...unit.warnings.map((w) => `- ${clean(w)}`),
+      );
+      const render = stage.primitives.find((p) => p.id === unit.renderId);
+      if (render?.kind === 'image')
+        lines.push(
+          `<a id="frame-${render.id}"></a>`,
+          `![${name} ${unit.number}](${origin}/api/assets/${render.assetId})`,
+          '',
+        );
+      for (const ref of unit.textIds) {
+        const text = stage.primitives.find((p) => p.id === ref);
+        if (text?.kind === 'text')
+          lines.push(
+            `<a id="text-${ref}"></a>`,
+            `### ${text.role === 'notes' ? 'Speaker notes (not spoken transcript)' : text.role === 'ocr' ? 'OCR (uncertain)' : 'Native text'}`,
+            '',
+            text.text,
+            '',
+            ...(text.bounds
+              ? [`Source bounds: ${JSON.stringify(text.bounds)}`, '']
+              : []),
+          );
+      }
+    }
+    if (stage.document.transform)
+      lines.push(
+        '## Image orientation',
+        '',
+        JSON.stringify(stage.document.transform),
+        '',
+      );
+    return lines.join('\n');
+  }
   lines.push('## Transcript / extracted text', '');
   for (const p of stage.primitives)
     if (p.kind === 'text') {

@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 document staging and revision selection are functionally accepted on eight supplied documents (255 page/slide renders). The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
@@ -219,7 +219,7 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 **Deliver:** native text/notes and rendered slide/page/image primitives; grouped upload display; select ready revisions for a push.
 
-**Test:** `bun run eval:interpreter:documents`: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image; select video + deck, edit the deck, verify old selection remains pinned or visibly requires reselection before submission.
+**Test:** `bun run eval:interpreter:documents`, `./infra/test-documents.sh`, maintained Python checks and browser coverage: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image; select video + deck, edit the deck, verify old selection remains pinned or visibly requires reselection before submission.
 
 **Pass:** source mappings and coverage are correct; notes are not treated as speech; exact selections and incomplete-coverage warnings are visible. No automatic memory promotion occurs.
 

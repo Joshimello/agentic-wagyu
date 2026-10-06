@@ -1,6 +1,6 @@
 # Interpreter worker
 
-Updated: 2026-10-05. Part of the [SvelteKit application plan](../../plan.md). Milestones: M0–M3, recovery in M7, and cleanup in M8.
+Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md). Milestones: M0–M3, recovery in M7, and cleanup in M8.
 
 ## Responsibility and boundary
 
@@ -68,7 +68,11 @@ Annotations cite speech, searched frames, and the question they answer, with mod
 | PPTX | Slide renders, native text, separately labeled notes, hidden-slide flags | Notes are not speech; flag unsupported animations/media and render/font defects. |
 | Image | Original and oriented display representation, optional OCR/crops | Preserve rotation/coordinate transforms and unreadable regions. |
 
-Evaluate Docling as a representation adapter and LibreOffice as a PPTX render path using fixtures. Keep their private formats behind the app's staging contract. [Docling document model](https://docling-project.github.io/docling/concepts/docling_document/), [LibreOffice conversion](https://help.libreoffice.org/latest/en-US/text/shared/guide/convertfilters.html).
+The implemented `documents-2` adapter uses Python-pptx 1.0.2 for native text/notes, LibreOffice for static slide renders (including hidden slides), Poppler for PDF renders/layout blocks, Pillow for oriented images, and Tesseract English/Traditional/Simplified Chinese for uncertain OCR. Content-addressed renders are integrity checked by Bun and cached by source hash/adapter version. Maximum 400 pages/slides; single-frame images only. Source shape order is retained; group-relative bounds are omitted rather than mislabeled as slide coordinates. PDF reading order, table/equation semantics and render fidelity require visual review. Original bytes remain available.
+
+Each unit records one-based source number, text IDs, render ID, dimensions, hidden status, completeness and warnings. Native text and notes keep their source script and cannot acquire ASR/speaker attribution. Image transforms retain EXIF/source/display dimensions. Tool versions stay in immutable revisions. Full renders contain figures/tables; separately structured tables and crops are deferred.
+
+Docling native backends were compared on all eight supplied documents in a separate frozen environment. They preserve the same unit/note counts and provide richer picture/table structure. Retain the smaller adapters for this milestone; revisit Docling when structured tables/crops are needed. Keep private formats behind the app's staging contract. [Docling document model](https://docling-project.github.io/docling/concepts/docling_document/), [LibreOffice conversion](https://help.libreoffice.org/latest/en-US/text/shared/guide/convertfilters.html).
 
 ## Review, failure, and evaluation
 

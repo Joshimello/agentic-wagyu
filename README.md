@@ -34,4 +34,31 @@ podman run --rm -v "$PWD/data:/data" -v "$PWD/services/media:/service/source:ro"
 podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:interpreter:video
 ```
 
-The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. PPTX/PDF/image adapters, explicit push, Chronicler memory, and Researcher answers are later milestones.
+The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. Explicit push, Chronicler memory, and Researcher answers are later milestones.
+
+## Documents and saved selections
+
+PPTX, PDF and single-image staging are available. Select multiple files in one upload to group them with an optional project hint. Grouping is context, not evidence that a deck was discussed in a recording. Select ready sources on the staging list to save exact revisions. Corrections leave the old revision pinned and show a switch-to-current action. Partial extraction needs an explicit include choice; memory ingestion remains unavailable until Chronicler is implemented.
+
+PPTX extraction keeps slide text and speaker notes separate, includes hidden slides without renumbering, and pairs each slide with a LibreOffice render. Static-only animations/media and explicit font substitutions are visible warnings. PDF extraction keeps native layout blocks with page coordinates and full page renders; pages without native text use labeled, uncertain Tesseract OCR. Images preserve original bytes, apply EXIF orientation to their display image, and record the transform and uncertain OCR. Native document text keeps its source script; OpenCC applies to speech transcription. Text inside files is source evidence, never application instructions.
+
+Inspect extracted text beside its render using the page/slide navigator. Document ZIPs contain `staging.json`, `document.md`, `extracted-text.md`, and all renders under `images/`; they exclude originals. Whole page/slide images preserve figures, charts and tables for a VLM; independently structured tables/crops are deferred.
+
+The eight supplied documents are in ignored `data/documents/`. Their hashes, expected units and notes are in `evals/documents.json`. Import and evaluate them inside Podman:
+
+```sh
+podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run import:documents
+podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:interpreter:documents
+podman run --rm -v "$PWD/data:/data" -v "$PWD/services/media:/source:ro" localhost/chronicler-media:dev python /source/test_documents.py
+./infra/test-documents.sh
+```
+
+The isolated document runner uses a disposable database, storage directory and CPU media sidecar. It checks real PDF/PPTX/image ingestion, retry caching, immutable history, portable exports and memory isolation. Python edge checks use temporary derivatives of actual sources for hidden slides, notes, missing fonts, static media, two columns, scans and EXIF orientation. Browser checks inspect all eight sources and restore selection changes.
+
+A separate frozen environment compares Docling native backends, keeping Docling out of the production media/model environment:
+
+```sh
+podman run --rm -e UV_PROJECT_ENVIRONMENT=/tmp/docling -e UV_CACHE_DIR=/data/cache/docling-evaluation -v "$PWD/data:/data" -v "$PWD/evals:/evals:ro" localhost/chronicler-media:dev uv run --project /evals/documents --frozen python /evals/docling-documents.py
+```
+
+Results and the adapter decision are recorded in [acceptance evidence](docs/development/acceptance.md). Private parser outputs and screenshots stay in `data/evaluations/`, outside Git and release images.

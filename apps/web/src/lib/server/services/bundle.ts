@@ -21,8 +21,8 @@ export async function exportBundle(stage: Stage, filename: string) {
         .select()
         .from(assets)
         .where(eq(assets.id, p.assetId));
-      if (!asset) throw new Error('Referenced frame unavailable');
-      const file = `frames/${p.id}.jpg`;
+      if (!asset) throw new Error('Referenced image unavailable');
+      const file = `${stage.document ? 'images' : 'frames'}/${p.id}.jpg`;
       files[file] = new Uint8Array(
         await Bun.file(assetPath(asset.storageKey)).arrayBuffer(),
       );
@@ -31,7 +31,8 @@ export async function exportBundle(stage: Stage, filename: string) {
         file,
       );
     }
-  files['transcript-with-visual-context.md'] = strToU8(markdown);
+  files[stage.document ? 'document.md' : 'transcript-with-visual-context.md'] =
+    strToU8(markdown);
   const transcript = {
     ...stage,
     context: undefined,
@@ -39,7 +40,7 @@ export async function exportBundle(stage: Stage, filename: string) {
     annotations: [],
     primitives: stage.primitives.filter((p) => p.kind === 'text'),
   };
-  files['transcript.md'] = strToU8(
+  files[stage.document ? 'extracted-text.md' : 'transcript.md'] = strToU8(
     exportMarkdown(transcript, filename, 'http://localhost:5173').replace(
       rawLine,
       `Original: ${filename.replace(/[\r\n]/g, ' ')} (not included)`,

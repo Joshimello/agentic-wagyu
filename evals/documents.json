@@ -1,0 +1,56 @@
+{
+  "documents": [
+    {
+      "filename": "260629_VLM.pptx",
+      "sha256": "31904006cd3f98ad69404bbec63a11fdb72f505a8a79cf86f83027babcb0af05",
+      "format": "pptx",
+      "units": 38,
+      "notes": 4
+    },
+    {
+      "filename": "260720_VLM.pptx",
+      "sha256": "a36ee50a44a2db46809524c420432f20dda328b5382447f1fe2ca0e34c9c3b6d",
+      "format": "pptx",
+      "units": 36,
+      "notes": 2
+    },
+    {
+      "filename": "260804_VLM.pptx",
+      "sha256": "e298def602aa57d794674fcfc0347c5db0a558e3ee3a4e27645abd3b0a61e22a",
+      "format": "pptx",
+      "units": 33,
+      "notes": 0
+    },
+    {
+      "filename": "260629_VLM.pdf",
+      "sha256": "aaf6ff41df6e89403735a75f1d29e081bffab2cc46d843b5ea83a15c0af1ba1d",
+      "format": "pdf",
+      "units": 38
+    },
+    {
+      "filename": "260720_VLM.pdf",
+      "sha256": "cf54d4e0e9c342534f9ab4ff421968d69af162c4135927cb742d778ad57b9b00",
+      "format": "pdf",
+      "units": 36
+    },
+    {
+      "filename": "260804_VLM.pdf",
+      "sha256": "ecc7d39ee2d23fe0f8a0fc29dc2002bbd77d5aa1976071585250fedeb6899e85",
+      "format": "pdf",
+      "units": 33
+    },
+    {
+      "filename": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+      "sha256": "f3d38135199d8572f44b5371e1e73aaa755d2add493c8eb8d04b4cdb3ce3c5a2",
+      "format": "pptx",
+      "units": 28,
+      "notes": 4
+    },
+    {
+      "filename": "ITRI_VLM_Midterm_Report.pdf",
+      "sha256": "c6d3e8003c771db201ebb5c92c8443d64912ecb211cfa8cee9af6d2ffc05cc0f",
+      "format": "pdf",
+      "units": 13
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+[project]
+name = "chronicler-document-evaluations"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["docling-slim[format-pptx,format-pdf]==2.133.0"]

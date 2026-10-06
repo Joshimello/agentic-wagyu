@@ -5,10 +5,13 @@ from pydantic import BaseModel, Field, StrictInt
 import torch
 from asr import MODEL, REVISION, MAX_AUDIO_MS, transcribe
 from media import ROOT, source, probe, audio_part, contact_sheet
+from documents import extract
 app=FastAPI(title='Chronicler media',docs_url=None,redoc_url=None)
 gpu_lock=threading.Lock()
 class SourceRequest(BaseModel):
     storageKey: str
+class DocumentRequest(SourceRequest):
+    format: str
 class FrameRequest(SourceRequest):
     timesMs: list[StrictInt] = Field(min_length=1,max_length=8)
 class TranscriptRequest(SourceRequest):
@@ -23,6 +26,12 @@ def health():
 def inspect(body:SourceRequest):
     try: return probe(source(body.storageKey))
     except Exception: raise HTTPException(422,'Invalid or unavailable media')
+
+@app.post('/document')
+def document(body:DocumentRequest):
+    try: return extract(source(body.storageKey),body.format)
+    except ValueError as error: raise HTTPException(422,str(error))
+    except Exception: raise HTTPException(500,'Document extraction failed; original is preserved and the job can be retried')
 
 @app.post('/transcribe')
 def transcript(body:TranscriptRequest):

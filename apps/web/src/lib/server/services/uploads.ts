@@ -30,7 +30,10 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
   )
     throw new Error('Each file must be between 1 byte and 512 MiB');
   const groupId =
-    fields.groupId ?? (files.length > 1 ? crypto.randomUUID() : undefined);
+    fields.groupId ??
+    (files.length > 1 || fields.groupHint?.trim()
+      ? crypto.randomUUID()
+      : undefined);
   const prepared: {
     filename: string;
     meta: ReturnType<typeof metadata.parse>;
@@ -73,14 +76,12 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
         .select()
         .from(assets)
         .where(eq(assets.sha256, file.stored.sha256));
-      await tx
-        .insert(uploads)
-        .values({
-          id: uploadId,
-          assetId: asset.id,
-          filename: file.filename,
-          metadata: file.meta,
-        });
+      await tx.insert(uploads).values({
+        id: uploadId,
+        assetId: asset.id,
+        filename: file.filename,
+        metadata: file.meta,
+      });
       await tx.insert(runs).values({ id: runId, uploadId });
       await tx.insert(outbox).values({ id: runId });
       accepted.push({ uploadId, runId });
