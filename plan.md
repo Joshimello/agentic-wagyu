@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved/labeled PPTX media resources, and eight plain Qwen summaries. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved PPTX media resources with content labels or boilerplate exclusions, and eight plain Qwen summaries. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
@@ -127,7 +127,7 @@ Review is optional; explicit push is mandatory. Do not require approval of every
 
 One push can include the meeting video and its slide deck. Capture their exact staging revision IDs, relevant metadata, user-supplied grouping/project hints, and the action timestamp in an immutable **push batch**. Capture an idempotency key for the user action.
 
-The default selection is a whole file's reviewed revision, including its related primitives; per-fragment cherry-picking is deferred. Grouping means “consider these together,” not proof that every slide was displayed or discussed.
+The default selection is a whole file's reviewed revision, including its related primitives; per-fragment cherry-picking is deferred. Chronicler should use Interpreter's boilerplate exclusions to avoid turning incidental branding, stamps and decoration into research assertions, while preserving their source links for inspection. These classifications are model suggestions, not access controls. Grouping means “consider these together,” not proof that every slide was displayed or discussed.
 
 Application code creates the batch and job atomically. Chronicler reads only those pinned revisions plus committed memory needed for reconciliation. It prepares proposals outside the publication transaction. Initially serialize memory commits and recheck the current memory revision before publication.
 
@@ -217,9 +217,9 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 ### M3 — PPTX/PDF/image staging and batch selection
 
-**Deliver:** native text/notes and rendered slide/page/image primitives; PPTX original embedded images/videos with slide lineage, decoded previews and concise English Qwen media/slide labels; plain whole-document summaries based on every slide/page, with PDFs understood from their page images. Keep generated descriptions separate from source evidence and record reading coverage/citations/model/prompt. Provide summary-first review, portable exports, description-only revisits, grouped upload display and ready-revision selection for a push.
+**Deliver:** native text/notes and rendered slide/page/image primitives; PPTX original embedded images/videos with slide lineage, decoded previews and concise English Qwen media/slide labels; classify standalone logos/stamps/decoration as boilerplate without prose, while retaining original assets and explicit exclusion reasons; plain whole-document summaries based on every slide/page, with PDFs understood from their page images. Keep generated descriptions separate from source evidence and record reading coverage/citations/model/prompt. Provide summary-first review, portable exports, description-only revisits, grouped upload display and ready-revision selection for a push.
 
-**Test:** `bun run eval:interpreter:documents`, `./infra/test-documents.sh`, maintained Python checks and browser coverage: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image, byte-exact embedded media, bounded video previews, every-page VLM coverage, English labels/plain summaries, valid citations and checkpoint replay. Select video + deck, edit the deck, verify old selection remains pinned, outdated descriptions are cleared, and description-only revisit preserves corrections.
+**Test:** `bun run eval:interpreter:documents`, `./infra/test-documents.sh`, maintained Python checks and browser coverage: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image, byte-exact embedded media, bounded video previews, every-page VLM coverage, English labels/plain summaries, valid citations, source-preserving boilerplate exclusions, duplicate-image decision reuse and checkpoint replay. Select video + deck, edit the deck, verify old selection remains pinned, outdated descriptions are cleared, and description-only revisit preserves corrections.
 
 **Pass:** source mappings and coverage are correct; notes are not treated as speech; exact selections and incomplete-coverage warnings are visible. No automatic memory promotion occurs.
 

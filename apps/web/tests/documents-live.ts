@@ -182,6 +182,7 @@ try {
       media: stage.document!.media?.length ?? 0,
       labels: review?.unitLabels.length ?? 0,
       mediaLabels: review?.mediaLabels.length ?? 0,
+      boilerplateMedia: review?.skippedMedia?.length ?? 0,
       summary: review?.summary?.text ?? null,
       reviewAccepted: review?.complete === true,
       model: review?.model ?? null,

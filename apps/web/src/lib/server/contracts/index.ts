@@ -225,6 +225,21 @@ export const stageSchema = z
                 })
                 .strict(),
             ),
+            skippedMedia: z
+              .array(
+                z
+                  .object({
+                    mediaId: id,
+                    reason: z.enum([
+                      'logo',
+                      'classification_stamp',
+                      'decoration',
+                    ]),
+                    evidenceIds: z.array(id).min(1),
+                  })
+                  .strict(),
+              )
+              .optional(),
             summary: z
               .object({
                 text: z.string().min(1).max(8000),
@@ -522,16 +537,21 @@ export function validateStage(value: unknown): Stage {
         )
           throw new Error('Slide label lacks its source evidence');
       }
+      const mediaDecisions = [
+        ...review.mediaLabels,
+        ...(review.skippedMedia ?? []),
+      ];
       if (
-        new Set(review.mediaLabels.map((l) => l.mediaId)).size !==
-          review.mediaLabels.length ||
-        review.mediaLabels.length !== review.mediaRead.length
+        new Set(mediaDecisions.map((l) => l.mediaId)).size !==
+          mediaDecisions.length ||
+        mediaDecisions.length !== review.mediaRead.length
       )
         throw new Error('Media labels do not match reading coverage');
-      for (const label of review.mediaLabels) {
+      for (const label of mediaDecisions) {
         const item = byMedia.get(label.mediaId);
         if (
           !item ||
+          ('reason' in label && item.kind !== 'image') ||
           !review.mediaRead.includes(item.id) ||
           !checkEvidence(label.evidenceIds) ||
           label.evidenceIds.some((ref) => !item.previewIds.includes(ref))

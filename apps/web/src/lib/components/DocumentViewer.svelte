@@ -19,6 +19,10 @@
   let media = $derived(
     (document.media ?? []).filter((m) => unit.mediaIds?.includes(m.id)),
   );
+  let skipped = $derived(
+    media.filter((m) => review?.skippedMedia?.some((s) => s.mediaId === m.id)),
+  );
+  let contentMedia = $derived(media.filter((m) => !skipped.includes(m)));
   let name = $derived(
     document.format === 'pptx'
       ? 'Slide'
@@ -140,11 +144,10 @@
           </article>{/if}{/each}
     </details>
   </div>
-  {#if media.length}<h3>Embedded media</h3>
+  {#if contentMedia.length}<h3>Embedded media</h3>
     <div class="media-grid">
-      {#each media as item}{@const description = review?.mediaLabels.find(
-          (l) => l.mediaId === item.id,
-        )}
+      {#each contentMedia as item}{@const description =
+          review?.mediaLabels.find((l) => l.mediaId === item.id)}
         <article class="media-item" id={`media-${item.id}`}>
           <h4>{description?.label ?? `Embedded ${item.kind}`}</h4>
           {#if description}<p>{description.description}</p>{/if}
@@ -192,6 +195,21 @@
         </article>
       {/each}
     </div>{/if}
+  {#if skipped.length}<details class="boilerplate-media">
+      <summary>Logos, stamps and decoration ({skipped.length})</summary>
+      <p>
+        Excluded from content descriptions. Original assets are preserved;
+        classifications are model suggestions.
+      </p>
+      {#each skipped as item}
+        <p id={`media-${item.id}`}>
+          <a href={`/api/assets/${item.assetId}`} download>{item.sourcePart}</a>
+          · {review?.skippedMedia
+            ?.find((s) => s.mediaId === item.id)
+            ?.reason.replaceAll('_', ' ')}
+        </p>
+      {/each}
+    </details>{/if}
   {#if document.media?.some((m) => !m.unitNumbers.length)}<details>
       <summary>Unplaced package resources</summary>
       {#each document.media.filter((m) => !m.unitNumbers.length) as item}

@@ -218,6 +218,14 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
     if (stage.document.media?.length) lines.push('## Embedded media', '');
     for (const media of stage.document.media ?? []) {
       const label = review?.mediaLabels.find((l) => l.mediaId === media.id);
+      const skipped = review?.skippedMedia?.find((l) => l.mediaId === media.id);
+      if (skipped) {
+        lines.push(
+          `- Boilerplate (${skipped.reason}): [${clean(media.sourcePart)}](${origin}/api/assets/${media.assetId}) · Slides ${media.unitNumbers.join(', ') || 'Unplaced resource'}. Original preserved; no content description.`,
+          '',
+        );
+        continue;
+      }
       lines.push(
         `### ${clean(label?.label ?? media.sourcePart)}`,
         '',

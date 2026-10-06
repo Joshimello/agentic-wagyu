@@ -435,3 +435,169 @@ test('a serving outage still restores later successful checkpoints instead of lo
   expect(stage.document!.review!.unitsRead).toEqual([9, 10]);
   expect(validateStage(stage)).toEqual(stage);
 });
+
+function imageDocument() {
+  const stage = document();
+  const media = stage.document!.media![0];
+  media.kind = 'image';
+  media.sourcePart = 'ppt/media/image1.png';
+  media.previewOrigin = 'decoded_image';
+  media.durationMs = null;
+  media.warnings = [];
+  const preview = stage.primitives.find((p) => p.id === media.previewIds[0])!;
+  if (preview.kind === 'image') {
+    preview.role = 'figure';
+    preview.requestedMs = null;
+    preview.actualMs = null;
+  }
+  return stage;
+}
+test('boilerplate is recorded without prose, omitted from summaries, and retained as source evidence', async () => {
+  const stage = imageDocument(),
+    calls: any[] = [],
+    baseline = provider(calls);
+  const source = structuredClone(stage.document!.media);
+  const create = baseline.client.chat.completions.create.bind(
+    baseline.client.chat.completions,
+  );
+  baseline.client.chat.completions.create = (async (body: any) => {
+    if (
+      body.messages[1].content[0].text.includes('standalone boilerplate ONLY')
+    ) {
+      calls.push(body);
+      return {
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: JSON.stringify({
+                labels: [{ ref: 'M1', skipReason: 'classification_stamp' }],
+              }),
+            },
+          },
+        ],
+      };
+    }
+    return create(body);
+  }) as any;
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    baseline,
+    image,
+  );
+  expect(stage.document!.review!.mediaLabels).toEqual([]);
+  expect(stage.document!.review!.skippedMedia).toEqual([
+    {
+      mediaId: source![0].id,
+      reason: 'classification_stamp',
+      evidenceIds: source![0].previewIds,
+    },
+  ]);
+  expect(stage.document!.review!.complete).toBe(true);
+  expect(stage.document!.media).toEqual(source);
+  const summaryInput = calls.at(-1).messages[1].content[0].text;
+  expect(summaryInput).toContain('"mediaObservations":""');
+  const exported = exportMarkdown(stage, 'document.pptx', 'http://localhost');
+  expect(exported).toContain('Boilerplate (classification_stamp)');
+  expect(exported).not.toContain('No generated description available.');
+  expect(validateStage(stage)).toEqual(stage);
+  const contradictory = structuredClone(stage);
+  contradictory.document!.review!.mediaLabels.push({
+    mediaId: source![0].id,
+    label: 'Contradictory label',
+    description: 'Should be rejected.',
+    evidenceIds: source![0].previewIds,
+  });
+  expect(() => validateStage(contradictory)).toThrow(
+    'Media labels do not match reading coverage',
+  );
+});
+test('identical decoded media shares one model decision with artifact-specific evidence', async () => {
+  const stage = imageDocument(),
+    original = stage.document!.media![0];
+  const duplicate = {
+    ...original,
+    id: crypto.randomUUID(),
+    assetId: crypto.randomUUID(),
+    sourcePart: 'ppt/media/image2.png',
+    previewIds: [crypto.randomUUID()],
+  };
+  const preview = stage.primitives.find(
+    (p) => p.id === original.previewIds[0],
+  )!;
+  if (preview.kind !== 'image') throw new Error('Expected image preview');
+  stage.primitives.push({
+    ...preview,
+    id: duplicate.previewIds[0],
+    assetId: crypto.randomUUID(),
+  });
+  stage.document!.media!.push(duplicate);
+  stage.document!.units[1].mediaIds!.push(duplicate.id);
+  const calls: any[] = [];
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    provider(calls),
+    async (id) => ({
+      sha256: [...original.previewIds, ...duplicate.previewIds].includes(id)
+        ? 'same-decoded-image'
+        : id,
+      url: 'data:image/jpeg;base64,aGVsbG8=',
+    }),
+  );
+  const mediaCalls = calls.filter((c) =>
+    c.messages[1].content[0].text.includes('standalone boilerplate ONLY'),
+  );
+  expect(mediaCalls).toHaveLength(1);
+  expect(
+    mediaCalls[0].messages[1].content.filter(
+      (p: any) => p.type === 'image_url',
+    ),
+  ).toHaveLength(1);
+  expect(stage.document!.review!.mediaLabels.map((l) => l.evidenceIds)).toEqual(
+    [original.previewIds, duplicate.previewIds],
+  );
+  expect(stage.document!.review!.complete).toBe(true);
+  expect(validateStage(stage)).toEqual(stage);
+});
+test('videos cannot be skipped as boilerplate and unresolved decisions leave honest coverage', async () => {
+  const stage = document(),
+    baseline = provider([]),
+    create = baseline.client.chat.completions.create.bind(
+      baseline.client.chat.completions,
+    );
+  stage.document!.media![0].kind = 'video';
+  baseline.client.chat.completions.create = (async (body: any) => {
+    if (
+      body.messages[1].content[0].text.includes('standalone boilerplate ONLY')
+    )
+      return {
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: JSON.stringify({
+                labels: [{ ref: 'M1', skipReason: 'logo' }],
+              }),
+            },
+          },
+        ],
+      };
+    return create(body);
+  }) as any;
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    baseline,
+    image,
+  );
+  expect(stage.document!.review!.mediaRead).toEqual([]);
+  expect(stage.document!.review!.skippedMedia).toEqual([]);
+  expect(stage.document!.review!.complete).toBe(false);
+  expect(stage.document!.review!.warnings.length).toBeGreaterThan(0);
+  expect(validateStage(stage)).toEqual(stage);
+});

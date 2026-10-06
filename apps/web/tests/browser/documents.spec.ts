@@ -52,7 +52,11 @@ for (const document of corpus.documents) {
       ).toContain(stage.document.review.unitLabels[0].label);
     if (stage.document.media?.length) {
       const embedded = stage.document.media.find(
-        (m: any) => m.unitNumbers.length,
+        (m: any) =>
+          m.unitNumbers.length &&
+          !stage.document.review?.skippedMedia?.some(
+            (s: any) => s.mediaId === m.id,
+          ),
       );
       if (embedded) {
         await select.selectOption({
@@ -66,6 +70,28 @@ for (const document of corpus.documents) {
         );
         await select.selectOption({ value: '0' });
       }
+    }
+    const skipped = stage.document.review?.skippedMedia?.find(
+      (s: any) =>
+        stage.document.media.find((m: any) => m.id === s.mediaId)?.unitNumbers
+          .length,
+    );
+    if (skipped) {
+      const item = stage.document.media.find(
+        (m: any) => m.id === skipped.mediaId,
+      );
+      await select.selectOption({ value: String(item.unitNumbers[0] - 1) });
+      const boilerplate = page.locator('.boilerplate-media');
+      await expect(boilerplate).not.toHaveAttribute('open');
+      await boilerplate.locator('summary').click();
+      await expect(page.locator(`#media-${item.id}`)).toContainText(
+        skipped.reason.replaceAll('_', ' '),
+      );
+      await expect(page.locator(`#media-${item.id} a`)).toHaveAttribute(
+        'href',
+        `/api/assets/${item.assetId}`,
+      );
+      await select.selectOption({ value: '0' });
     }
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await expect(select).toHaveValue('1');
