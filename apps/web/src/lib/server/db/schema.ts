@@ -7,6 +7,7 @@ import {
   bigint,
   jsonb,
   uniqueIndex,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import type { Stage } from '../contracts';
 const createdAt = () =>
@@ -69,5 +70,15 @@ export const revisions = pgTable(
 export const memoryCommits = pgTable('memory_commits', {
   id: uuid('id').primaryKey(),
   version: integer('version').notNull().unique(),
+  createdAt: createdAt(),
+});
+export const stagingSelections = pgTable('staging_selections', {
+  uploadId: uuid('upload_id')
+    .primaryKey()
+    .references(() => uploads.id),
+  revisionId: uuid('revision_id')
+    .notNull()
+    .references(() => revisions.id),
+  acceptPartial: boolean('accept_partial').notNull().default(false),
   createdAt: createdAt(),
 });

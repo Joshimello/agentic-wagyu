@@ -2,16 +2,50 @@
   import { onMount, untrack } from 'svelte';
   let { data } = $props();
   let uploads = $state(untrack(() => data.uploads));
+  let selected = $state(untrack(() => data.selections));
+  let groups = $derived(
+    Array.from(
+      Map.groupBy(uploads, (file) => file.metadata.groupId ?? file.id),
+      ([id, files]) => ({ id, files }),
+    ),
+  );
+  async function changeSelection(
+    file: (typeof uploads)[number],
+    remove = false,
+    acceptPartial = false,
+    revisionId = file.currentRevisionId,
+  ) {
+    message = '';
+    try {
+      const r = await fetch('/api/selections', {
+        method: remove ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          remove
+            ? { uploadId: file.id }
+            : { uploadId: file.id, revisionId, acceptPartial },
+        ),
+      });
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.error);
+      selected = result;
+    } catch (e) {
+      message = e instanceof Error ? e.message : 'Selection failed';
+    }
+  }
   let busy = $state(false),
     message = $state('');
   $effect(() => {
     uploads = data.uploads;
+    selected = data.selections;
   });
   onMount(() => {
     const timer = setInterval(async () => {
       try {
         const r = await fetch('/api/uploads');
         if (r.ok) uploads = await r.json();
+        const selections = await fetch('/api/selections');
+        if (selections.ok) selected = await selections.json();
       } catch {}
     }, 2000);
     return () => clearInterval(timer);
@@ -53,11 +87,11 @@
   <h2>Add source files</h2>
   <form onsubmit={upload}>
     <label class="file"
-      >Source file<input required name="file" type="file" /></label
+      >Source files<input required name="file" type="file" multiple /></label
     ><label>Uploaded by<input name="uploader" value="local" /></label><label
-      >Label (optional)<input
-        name="label"
-        placeholder="Project meeting"
+      >Group / project hint (optional)<input
+        name="groupHint"
+        placeholder="Project meeting and slides"
       /></label
     ><button disabled={busy}>{busy ? 'Uploading…' : 'Upload to staging'}</button
     >
@@ -71,27 +105,146 @@
 <section class="files">
   <h2>Staging files <span class="badge">{uploads.length}</span></h2>
   {#if !uploads.length}<div class="card empty">
-      No source files yet. Start with a text file or meeting recording.
+      No source files yet. Add a recording, document or image.
     </div>{:else}<div class="list">
-      {#each uploads as file}<a class="row" href={`/staging/${file.id}`}
-          ><span class="icon"
-            >{file.filename.match(/\.(mp4|mov|mkv|webm)$/i) ? '▶' : '▤'}</span
-          ><span class="details"
-            ><strong>{file.metadata.label || file.filename}</strong><small
-              >{file.filename} · {file.metadata.uploader} · {(
-                file.bytes / 1024
-              ).toFixed(1)} KB</small
-            ></span
-          ><span class="status"
-            ><span class="badge"
-              >{file.run?.state.replaceAll('_', ' ') || 'queued'}</span
-            ><small>{file.run?.progress}</small></span
-          ><span>→</span></a
-        >{/each}
+      {#each groups as group}
+        {#if group.files[0].metadata.groupId}<div class="group-label">
+            {group.files[0].metadata.groupHint} · {group.files.length} files
+            <small
+              >Grouping is context, not proof these sources were discussed
+              together.</small
+            >
+          </div>{/if}
+        {#each group.files as file}<div class="selectable-row">
+            <input
+              type="checkbox"
+              aria-label={`Select ${file.filename}`}
+              checked={selected.some((s) => s.uploadId === file.id)}
+              disabled={!file.currentRevisionId}
+              onchange={(e) => changeSelection(file, !e.currentTarget.checked)}
+            />
+            <a class="row" href={`/staging/${file.id}`}
+              ><span class="icon"
+                >{file.filename.match(/\.(mp4|mov|mkv|webm)$/i)
+                  ? '▶'
+                  : '▤'}</span
+              ><span class="details"
+                ><strong>{file.metadata.label || file.filename}</strong><small
+                  >{file.filename} · {file.metadata.uploader} · {(
+                    file.bytes / 1024
+                  ).toFixed(1)} KB</small
+                ></span
+              ><span class="status"
+                ><span class="badge"
+                  >{file.run?.state.replaceAll('_', ' ') || 'queued'}</span
+                ><small>{file.run?.progress}</small></span
+              ><span>→</span></a
+            >
+          </div>{/each}{/each}
     </div>{/if}
 </section>
 
+{#if selected.length}<section class="card batch-review">
+    <h2>Selected revisions ({selected.length})</h2>
+    <p class="muted">
+      Selection pins whole staging revisions. Later edits keep the selected
+      evidence unchanged.
+    </p>
+    {#each selected as item}{@const file = uploads.find(
+        (f) => f.id === item.uploadId,
+      )}
+      <article class="selection-item">
+        <a href={`/staging/${item.uploadId}?revision=${item.revisionId}`}
+          >{item.metadata.label || item.filename}</a
+        >
+        <span class="badge">Revision {item.revisionId.slice(0, 8)}</span>
+        {#if item.stale}<p class="warning">
+            A newer revision exists. The older revision stays selected.
+          </p>
+          {#if file}<button
+              class="secondary"
+              onclick={() => changeSelection(file!, false, false)}
+              >Select current revision</button
+            >{/if}{/if}
+        {#if item.warnings.length}<details>
+            <summary
+              >{item.warnings.length} coverage warnings{item.complete
+                ? ''
+                : ' · Partial extraction'}</summary
+            >
+            <ul>
+              {#each item.warnings as warning}<li>{warning}</li>{/each}
+            </ul>
+          </details>{/if}
+        {#if !item.complete && file}<label class="partial"
+            ><input
+              type="checkbox"
+              checked={item.acceptPartial}
+              onchange={(e) =>
+                changeSelection(
+                  file!,
+                  false,
+                  e.currentTarget.checked,
+                  item.revisionId,
+                )}
+            />Include this partial extraction when pushing</label
+          >{/if}
+        {#if file}<button
+            class="secondary"
+            onclick={() => changeSelection(file!, true)}
+            >Remove selection</button
+          >{/if}
+      </article>
+    {/each}
+    <button disabled>Push selected files to memory</button>
+    <p class="hint">
+      {selected.some((s) => !s.readyForPush)
+        ? 'Review partial extraction before including these files. '
+        : ''}Selection is saved. Memory ingestion is not available yet.
+    </p>
+  </section>{/if}
+
 <style>
+  .group-label {
+    padding: 14px 20px;
+    background: #edf2f9;
+  }
+  .group-label small {
+    display: block;
+    color: #66768b;
+  }
+  .selectable-row {
+    display: flex;
+    align-items: center;
+    padding-left: 18px;
+    border-bottom: 1px solid #edf0f4;
+  }
+  .selectable-row .row {
+    flex: 1;
+    border: 0;
+  }
+  .selectable-row input,
+  .partial input {
+    width: auto;
+  }
+  .batch-review {
+    margin-top: 24px;
+  }
+  .selection-item {
+    padding: 18px 0;
+    border-bottom: 1px solid #edf0f4;
+    margin-bottom: 16px;
+  }
+  .selection-item .badge {
+    margin-left: 12px;
+  }
+  .partial {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+  }
+
   .intro {
     display: flex;
     justify-content: space-between;

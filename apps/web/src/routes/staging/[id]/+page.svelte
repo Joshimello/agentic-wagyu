@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import DocumentViewer from '../../../lib/components/DocumentViewer.svelte';
+  import { page } from '$app/state';
   import type { Stage } from '../../../lib/server/contracts';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
   let error = $state(''),
     notice = $state(''),
-    selection = $state('current'),
+    selection = $state(page.url.searchParams.get('revision') || 'current'),
     editing = $state(false),
     saving = $state(false);
   let player = $state<HTMLVideoElement>();
@@ -17,7 +19,7 @@
   );
   $effect(() => {
     detail = data;
-    selection = 'current';
+    selection = page.url.searchParams.get('revision') || 'current';
     editing = false;
   });
   let stage = $derived(
@@ -98,7 +100,7 @@
       const result = await r.json();
       if (!r.ok) throw new Error(result.error);
       detail = await (await fetch(`/api/uploads/${detail.upload.id}`)).json();
-      selection = 'current';
+      selection = page.url.searchParams.get('revision') || 'current';
       editing = false;
       notice =
         'Correction saved as a new staging revision. Memory is unchanged.';
@@ -265,138 +267,151 @@
           </article>{/each}
       </details>
     </section>{/if}
-  <div class="workspace">
-    <section class="source card">
-      <h2>Original evidence</h2>
-      {#if isVideo}<video controls preload="metadata" bind:this={player}
-          ><source src={`/api/assets/${detail.asset.id}`} /><track
-            kind="captions"
-            src={`/api/uploads/${detail.upload.id}/captions?revision=${stage.id}`}
-            label="Transcript"
-            srclang="en"
-          /></video
-        >
-        <p class="muted small">
-          Click a transcript timestamp or frame to seek the original video.
-        </p>{:else}<a href={`/api/assets/${detail.asset.id}`}
-          >Open the original file</a
+  {#if stage.document && !editing}<div class="toolbar">
+      <a
+        href={`/api/assets/${detail.asset.id}`}
+        target="_blank"
+        rel="noreferrer">Open original document ↗</a
+      >{#if current}<button class="secondary" onclick={() => startEdit(stage!)}
+          >Correct text / labels</button
         >{/if}
-      <dl>
-        <dt>Source time</dt>
-        <dd>{stage.metadata.sourceTime ?? 'Unknown'}</dd>
-        <dt>Uploaded</dt>
-        <dd>{new Date(stage.metadata.uploadedAt).toLocaleString()}</dd>
-        <dt>Model</dt>
-        <dd>{stage.provenance.model ?? 'Native text'}</dd>
-      </dl>
-    </section>
-    <section class="card transcript">
-      <div class="section-head">
-        <h2>{isVideo ? 'Spoken transcript' : 'Extracted text'}</h2>
-        {#if current && !editing}<button
-            class="secondary"
-            onclick={() => startEdit(stage!)}>Correct text / labels</button
+    </div>
+    <DocumentViewer {stage} />{/if}
+  {#if !stage.document || editing}<div class="workspace">
+      <section class="source card">
+        <h2>Original evidence</h2>
+        {#if isVideo}<video controls preload="metadata" bind:this={player}
+            ><source src={`/api/assets/${detail.asset.id}`} /><track
+              kind="captions"
+              src={`/api/uploads/${detail.upload.id}/captions?revision=${stage.id}`}
+              label="Transcript"
+              srclang="en"
+            /></video
+          >
+          <p class="muted small">
+            Click a transcript timestamp or frame to seek the original video.
+          </p>{:else}<a href={`/api/assets/${detail.asset.id}`}
+            >Open the original file</a
           >{/if}
-      </div>
-      {#if editing}<form
-          onsubmit={(e) => {
-            e.preventDefault();
-            save();
-          }}
-        >
-          <div class="edit-meta">
-            <label>File label<input bind:value={draftLabel} /></label><label
-              >Source time (ISO, optional)<input
-                bind:value={draftTime}
-                placeholder="2026-10-05T09:00:00Z"
-              /></label
-            >
-          </div>
-          {#each edits as edit}<div class="edit-turn">
-              <label
-                >Speaker label<input
-                  bind:value={edit.speaker}
-                  placeholder="Unknown"
-                /></label
-              ><label
-                >Transcript text<textarea rows="3" bind:value={edit.text}
-                ></textarea></label
-              >
-            </div>{/each}
-          <div class="actions">
-            <button disabled={saving}
-              >{saving ? 'Saving…' : 'Save correction'}</button
-            ><button
-              type="button"
+        <dl>
+          <dt>Source time</dt>
+          <dd>{stage.metadata.sourceTime ?? 'Unknown'}</dd>
+          <dt>Uploaded</dt>
+          <dd>{new Date(stage.metadata.uploadedAt).toLocaleString()}</dd>
+          <dt>Model</dt>
+          <dd>{stage.provenance.model ?? 'Native text'}</dd>
+        </dl>
+      </section>
+      <section class="card transcript">
+        <div class="section-head">
+          <h2>{isVideo ? 'Spoken transcript' : 'Extracted text'}</h2>
+          {#if current && !editing}<button
               class="secondary"
-              onclick={() => (editing = false)}>Cancel</button
-            >
-          </div>
-        </form>
-      {:else}{#each stage.primitives as primitive}{#if primitive.kind === 'text'}<article
-              id={`text-${primitive.id}`}
-              class="turn"
-            >
-              <div class="turn-head">
-                <strong>{primitive.speaker ?? primitive.role}</strong
-                >{#if primitive.locator.kind === 'media'}<button
-                    class="timestamp"
-                    onclick={() =>
-                      seek(
-                        primitive.locator.kind === 'media'
-                          ? primitive.locator.startMs
-                          : 0,
-                      )}
-                    >{(primitive.locator.startMs / 1000).toFixed(2)}–{(
-                      primitive.locator.endMs / 1000
-                    ).toFixed(2)}s</button
-                  >{/if}
-              </div>
-              <p>{primitive.text}</p>
-              {#each stage.annotations.filter( (a) => a.transcriptIds.includes(primitive.id) ) as annotation}<a
-                  class="visual-ref"
-                  href={`#annotation-${annotation.id}`}>↳ Visual context</a
-                >{/each}
-            </article>{/if}{/each}{/if}
-    </section>
-  </div>
-  <section class="visuals">
-    <h2>Visual context <span class="badge">Model observations</span></h2>
-    {#if !stage.annotations.length}<p class="muted">
-        No validated visual observations are available for this revision.
-      </p>{/if}{#each stage.annotations as annotation}<article
-        class="card annotation"
-        id={`annotation-${annotation.id}`}
-      >
-        <p>{annotation.text}</p>
-        <div class="frames">
-          {#each annotation.frameIds as ref}{@const frame =
-              stage.primitives.find(
-                (p) => p.id === ref,
-              )}{#if frame?.kind === 'image'}<figure id={`frame-${frame.id}`}>
-                <button class="frame" onclick={() => seek(frame.actualMs ?? 0)}
-                  ><img
-                    src={`/api/assets/${frame.assetId}`}
-                    alt={`Evidence frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
-                  /></button
-                >
-                <figcaption>
-                  Actual {((frame.actualMs ?? 0) / 1000).toFixed(2)}s ·
-                  requested {((frame.requestedMs ?? 0) / 1000).toFixed(2)}s ·
-                  <a
-                    href={`/api/assets/${frame.assetId}`}
-                    target="_blank"
-                    rel="noreferrer">Open frame</a
-                  >
-                </figcaption>
-              </figure>{/if}{/each}
+              onclick={() => startEdit(stage!)}>Correct text / labels</button
+            >{/if}
         </div>
-        <p class="small muted">
-          {annotation.model} · {annotation.promptVersion}{#each annotation.transcriptIds as ref}
-            · <a href={`#text-${ref}`}>Related speech</a>{/each}
-        </p>
-      </article>{/each}
-  </section>
+        {#if editing}<form
+            onsubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <div class="edit-meta">
+              <label>File label<input bind:value={draftLabel} /></label><label
+                >Source time (ISO, optional)<input
+                  bind:value={draftTime}
+                  placeholder="2026-10-05T09:00:00Z"
+                /></label
+              >
+            </div>
+            {#each edits as edit}<div class="edit-turn">
+                {#if isVideo}<label
+                    >Speaker label<input
+                      bind:value={edit.speaker}
+                      placeholder="Unknown"
+                    /></label
+                  >{/if}<label
+                  >Extracted text<textarea rows="3" bind:value={edit.text}
+                  ></textarea></label
+                >
+              </div>{/each}
+            <div class="actions">
+              <button disabled={saving}
+                >{saving ? 'Saving…' : 'Save correction'}</button
+              ><button
+                type="button"
+                class="secondary"
+                onclick={() => (editing = false)}>Cancel</button
+              >
+            </div>
+          </form>
+        {:else}{#each stage.primitives as primitive}{#if primitive.kind === 'text'}<article
+                id={`text-${primitive.id}`}
+                class="turn"
+              >
+                <div class="turn-head">
+                  <strong>{primitive.speaker ?? primitive.role}</strong
+                  >{#if primitive.locator.kind === 'media'}<button
+                      class="timestamp"
+                      onclick={() =>
+                        seek(
+                          primitive.locator.kind === 'media'
+                            ? primitive.locator.startMs
+                            : 0,
+                        )}
+                      >{(primitive.locator.startMs / 1000).toFixed(2)}–{(
+                        primitive.locator.endMs / 1000
+                      ).toFixed(2)}s</button
+                    >{/if}
+                </div>
+                <p>{primitive.text}</p>
+                {#each stage.annotations.filter( (a) => a.transcriptIds.includes(primitive.id) ) as annotation}<a
+                    class="visual-ref"
+                    href={`#annotation-${annotation.id}`}>↳ Visual context</a
+                  >{/each}
+              </article>{/if}{/each}{/if}
+      </section>
+    </div>
+  {/if}
+  {#if !stage.document}<section class="visuals">
+      <h2>Visual context <span class="badge">Model observations</span></h2>
+      {#if !stage.annotations.length}<p class="muted">
+          No validated visual observations are available for this revision.
+        </p>{/if}{#each stage.annotations as annotation}<article
+          class="card annotation"
+          id={`annotation-${annotation.id}`}
+        >
+          <p>{annotation.text}</p>
+          <div class="frames">
+            {#each annotation.frameIds as ref}{@const frame =
+                stage.primitives.find(
+                  (p) => p.id === ref,
+                )}{#if frame?.kind === 'image'}<figure id={`frame-${frame.id}`}>
+                  <button
+                    class="frame"
+                    onclick={() => seek(frame.actualMs ?? 0)}
+                    ><img
+                      src={`/api/assets/${frame.assetId}`}
+                      alt={`Evidence frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
+                    /></button
+                  >
+                  <figcaption>
+                    Actual {((frame.actualMs ?? 0) / 1000).toFixed(2)}s ·
+                    requested {((frame.requestedMs ?? 0) / 1000).toFixed(2)}s ·
+                    <a
+                      href={`/api/assets/${frame.assetId}`}
+                      target="_blank"
+                      rel="noreferrer">Open frame</a
+                    >
+                  </figcaption>
+                </figure>{/if}{/each}
+          </div>
+          <p class="small muted">
+            {annotation.model} · {annotation.promptVersion}{#each annotation.transcriptIds as ref}
+              · <a href={`#text-${ref}`}>Related speech</a>{/each}
+          </p>
+        </article>{/each}
+    </section>{/if}
 {:else}<div class="card waiting">
     <h2>Preparing staging</h2>
     <p class="muted">

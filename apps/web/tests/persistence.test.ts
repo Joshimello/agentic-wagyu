@@ -358,3 +358,145 @@ check(
     expect(await memoryCount()).toBe(0);
   },
 );
+
+check(
+  'grouped uploads publish together, preserve raw deduplication and reject an invalid batch atomically',
+  async () => {
+    const { acceptUploadBatch } =
+      await import('../src/lib/server/services/uploads');
+    const batch = await acceptUploadBatch(
+      [
+        new File(['Grouped source'], 'one.txt'),
+        new File(['Grouped source'], 'two.txt'),
+      ],
+      { groupHint: 'Meeting and slides' },
+    );
+    const [a, b] = await Promise.all(
+      batch.map((item) => getUpload(item.uploadId)),
+    );
+    expect(a.upload.metadata.groupId).toBe(b.upload.metadata.groupId);
+    expect(a.upload.metadata.groupHint).toBe('Meeting and slides');
+    expect(a.asset.id).toBe(b.asset.id);
+    const [{ count: before }] =
+      await sqlClient`select count(*)::int as count from uploads`;
+    await expect(
+      acceptUploadBatch(
+        [new File(['valid'], 'valid.txt'), new File([], 'empty.txt')],
+        {},
+      ),
+    ).rejects.toThrow();
+    const [{ count: after }] =
+      await sqlClient`select count(*)::int as count from uploads`;
+    expect(after).toBe(before);
+  },
+);
+check(
+  'saved selections pin a video and deck revision across corrections; partial coverage requires explicit acceptance',
+  async () => {
+    const { selectRevision, listSelections, removeSelection } =
+      await import('../src/lib/server/services/selections');
+    const video = await acceptUpload(
+      new File(['video raw evidence'], 'selection.mp4'),
+      {},
+    );
+    const deck = await acceptUpload(
+      new File(['deck raw evidence'], 'selection.pptx'),
+      {},
+    );
+    const items = [];
+    for (const item of [video, deck]) {
+      const detail = await getUpload(item.uploadId);
+      const primitive = {
+        id: crypto.randomUUID(),
+        kind: 'text' as const,
+        role: 'native' as const,
+        text: 'Original',
+        speaker: null,
+        locator: { kind: 'text' as const, start: 0, end: 8 },
+      };
+      const manifest = {
+        schemaVersion: 1 as const,
+        id: crypto.randomUUID(),
+        uploadId: item.uploadId,
+        rawAssetId: detail.asset.id,
+        parentRevisionId: null,
+        createdAt: new Date().toISOString(),
+        metadata: detail.upload.metadata,
+        primitives: [primitive],
+        annotations: [],
+        coverage: {
+          complete: item === video,
+          durationMs: null,
+          warnings: item === video ? [] : ['Partial render'],
+        },
+        provenance: {
+          adapter: 'test',
+          model: null,
+          modelRevision: null,
+          promptVersion: null,
+        },
+      };
+      await db
+        .insert(revisions)
+        .values({
+          id: manifest.id,
+          uploadId: item.uploadId,
+          runId: item.runId,
+          manifest,
+        });
+      await db
+        .update(uploads)
+        .set({ currentRevisionId: manifest.id })
+        .where(eq(uploads.id, item.uploadId));
+      await db
+        .update(runs)
+        .set({ state: 'ready_with_warnings', revisionId: manifest.id })
+        .where(eq(runs.id, item.runId));
+      items.push(manifest);
+      await selectRevision({
+        uploadId: item.uploadId,
+        revisionId: manifest.id,
+        acceptPartial: false,
+      });
+    }
+    const corrected = await correctStage(deck.uploadId, {
+      baseRevisionId: items[1].id,
+      label: 'Corrected deck',
+      sourceTime: null,
+      edits: [],
+    });
+    const selections = await listSelections();
+    const pinned = selections.find((s) => s.uploadId === deck.uploadId)!;
+    expect(pinned.revisionId).toBe(items[1].id);
+    expect(pinned.currentRevisionId).toBe(corrected.id);
+    expect(pinned.stale).toBe(true);
+    expect(pinned.readyForPush).toBe(false);
+    expect(pinned.metadata.label).toBe('selection.pptx');
+    await selectRevision({
+      uploadId: deck.uploadId,
+      revisionId: items[1].id,
+      acceptPartial: true,
+    });
+    expect(
+      (await listSelections()).find((s) => s.uploadId === deck.uploadId)
+        ?.readyForPush,
+    ).toBe(true);
+    await expect(
+      selectRevision({ uploadId: video.uploadId, revisionId: corrected.id }),
+    ).rejects.toThrow('belong');
+    await selectRevision({
+      uploadId: deck.uploadId,
+      revisionId: corrected.id,
+      acceptPartial: true,
+    });
+    expect(
+      (await listSelections()).find((s) => s.uploadId === deck.uploadId)?.stale,
+    ).toBe(false);
+    await removeSelection(deck.uploadId);
+    await removeSelection(video.uploadId);
+    await expect(
+      selectRevision({ uploadId: deck.uploadId, revisionId: items[1].id }),
+    ).rejects.toThrow('changed');
+    expect(await memoryCount()).toBe(0);
+  },
+);

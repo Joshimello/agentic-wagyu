@@ -33,6 +33,20 @@ export const metadata = z
     sourceTime: z.string().datetime().nullable(),
     label: z.string(),
     sourceTimeOrigin: z.enum(['user', 'file', 'unknown']),
+    groupId: id.optional(),
+    groupHint: z.string().max(500).optional(),
+  })
+  .strict();
+export const bounds = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().nonnegative(),
+    height: z.number().nonnegative(),
+    canvasWidth: z.number().positive(),
+    canvasHeight: z.number().positive(),
+    units: z.enum(['points', 'emu', 'pixels']),
+    origin: z.literal('top_left'),
   })
   .strict();
 export const textPrimitive = z
@@ -43,6 +57,7 @@ export const textPrimitive = z
     text: z.string(),
     speaker: z.string().nullable(),
     locator,
+    bounds: bounds.nullable().optional(),
   })
   .strict();
 export const imagePrimitive = z
@@ -121,6 +136,42 @@ export const stageSchema = z
     metadata,
     primitives: z.array(primitive),
     annotations: z.array(annotation),
+    document: z
+      .object({
+        format: z.enum(['pdf', 'pptx', 'image']),
+        units: z
+          .array(
+            z
+              .object({
+                number: z.number().int().positive(),
+                hidden: z.boolean(),
+                width: z.number().int().positive(),
+                height: z.number().int().positive(),
+                textIds: z.array(id),
+                renderId: id,
+                complete: z.boolean(),
+                warnings: z.array(z.string()),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(400),
+        transform: z
+          .object({
+            exifOrientation: z.number().int().min(1).max(8),
+            sourceWidth: z.number().int().positive(),
+            sourceHeight: z.number().int().positive(),
+            displayWidth: z.number().int().positive(),
+            displayHeight: z.number().int().positive(),
+          })
+          .strict()
+          .nullable(),
+        tools: z.record(z.string(), z.string()),
+        elapsedMs: ms,
+        cached: z.boolean(),
+      })
+      .strict()
+      .optional(),
     speakerSuggestions: z.array(speakerSuggestion).optional(),
     context: z
       .object({
@@ -271,6 +322,58 @@ export function validateStage(value: unknown): Stage {
   }
   if (!stage.coverage.complete && stage.coverage.warnings.length === 0)
     throw new Error('Incomplete coverage must be explained');
+  if (stage.document) {
+    const used = new Set<string>();
+    const format = stage.document.format;
+    for (const [index, unit] of stage.document.units.entries()) {
+      if (unit.number !== index + 1)
+        throw new Error(
+          'Document units must retain contiguous source numbering',
+        );
+      const render = byId.get(unit.renderId);
+      const matches = (p: Primitive) =>
+        format === 'pdf'
+          ? p.locator.kind === 'page' && p.locator.page === unit.number
+          : format === 'pptx'
+            ? p.locator.kind === 'slide' && p.locator.slide === unit.number
+            : p.locator.kind === 'image' &&
+              p.locator.width === unit.width &&
+              p.locator.height === unit.height;
+      if (
+        !render ||
+        render.kind !== 'image' ||
+        render.role !==
+          (format === 'pdf'
+            ? 'page'
+            : format === 'pptx'
+              ? 'slide'
+              : 'original') ||
+        !matches(render)
+      )
+        throw new Error('Document unit must reference its own source render');
+      for (const ref of [unit.renderId, ...unit.textIds]) {
+        const p = byId.get(ref);
+        if (
+          !p ||
+          used.has(ref) ||
+          !matches(p) ||
+          (ref !== unit.renderId &&
+            (p.kind !== 'text' || p.role === 'asr' || p.speaker !== null))
+        )
+          throw new Error(
+            'Invalid document source mapping or speech attribution',
+          );
+        used.add(ref);
+      }
+      if (!unit.complete && !unit.warnings.length)
+        throw new Error('Incomplete document unit must be explained');
+    }
+    if (
+      used.size !== stage.primitives.length ||
+      stage.coverage.complete !== stage.document.units.every((u) => u.complete)
+    )
+      throw new Error('Document coverage does not match its mapped primitives');
+  }
   return stage;
 }
 

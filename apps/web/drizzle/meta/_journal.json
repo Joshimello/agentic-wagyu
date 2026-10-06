@@ -15,6 +15,13 @@
       "when": 1791171320172,
       "tag": "0001_context_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791252628077,
+      "tag": "0002_staging_selections",
+      "breakpoints": true
     }
   ]
 }
