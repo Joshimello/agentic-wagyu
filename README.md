@@ -1,6 +1,6 @@
 # Chronicler
 
-A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Staging is isolated from memory; explicit push and memory/question workflows are later implementation steps.
+A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Explicit pushes publish cited research knowledge into an append-only memory graph. Researcher questions are the next implementation step.
 
 Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container gets only GPU 0. Services other than the web app stay on the private container network.
 
@@ -18,6 +18,7 @@ Run development checks in Podman:
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
 ./infra/test.sh
+./infra/test-memory.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
@@ -34,11 +35,11 @@ podman run --rm -v "$PWD/data:/data" -v "$PWD/services/media:/service/source:ro"
 podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:interpreter:video
 ```
 
-The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. Explicit push, Chronicler memory, and Researcher answers are later milestones.
+The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. Researcher answers are a later milestone.
 
 ## Documents and saved selections
 
-PPTX, PDF and single-image staging are available. Select multiple files in one upload to group them with an optional project hint. Grouping is context, not evidence that a deck was discussed in a recording. Select ready sources on the staging list to save exact revisions. Corrections leave the old revision pinned and show a switch-to-current action. Partial extraction needs an explicit include choice; memory ingestion remains unavailable until Chronicler is implemented.
+PPTX, PDF and single-image staging are available. Select multiple files in one upload to group them with an optional project hint. Grouping is context, not evidence that a deck was discussed in a recording. Select ready sources on the staging list to save exact revisions. Corrections leave the old revision pinned and show a switch-to-current action. Partial extraction needs an explicit include choice before pushing to memory.
 
 Document review starts with a plain Qwen summary. PPTX sources also expose concise slide labels and labels for meaningful extracted images/videos, linked to their source slides. Standalone logos, classification stamps and decoration receive a short exclusion reason instead of descriptions and appear in a collapsed source list; original assets remain downloadable and exported. Identical decoded images share a model decision. Substantive or uncertain figures and all videos retain descriptions. Every slide or PDF page is reviewed visually in small batches; PDFs use the page images for understanding. Generated English descriptions have evidence references and model/prompt provenance and remain staging observations. Chinese quotations/names use Traditional Chinese. Source text keeps its original script. Unsupported image formats retain original bytes with explicitly labeled slide crops when available. Embedded videos retain original bytes and use four preview frames for labels; their audio and intervening motion are not interpreted. ZIP exports include the summary, source-mapped document, page/slide/preview images and extracted embedded originals. Text corrections clear outdated descriptions; **Revisit document descriptions** preserves corrected evidence and makes a new revision using resumable model checkpoints.
 
@@ -64,3 +65,18 @@ podman run --rm -e UV_PROJECT_ENVIRONMENT=/tmp/docling -e UV_CACHE_DIR=/data/cac
 ```
 
 Results and the adapter decision are recorded in [acceptance evidence](docs/development/acceptance.md). Private parser outputs and screenshots stay in `data/evaluations/`, outside Git and release images.
+
+## Pushes and research memory
+
+Select exact revisions on Staging, choose automatic project matching or an explicit existing/new project, then click **Push selected files to memory**. The push page shows progress, per-file outcomes and warnings. Retry a failed batch with its original inputs; editing staging does not change an in-flight push or accepted memory. Repeating an incorporated revision has no duplicate knowledge effect.
+
+Open `/memory` to inspect projects, typed assertions, conflicts, supporting sources and recorded versions. Click a graph node or assertion to open its history and original evidence. Recorded-version and effective-date filters reconstruct earlier knowledge; the memory API also accepts a `knownAt` timestamp. Dates without confirmed metadata or literal source support remain unknown. Unknown dates do not authorize automatic replacement of earlier claims. Findings from different conditions stay separate. Explicit dated changes to decisions/tasks can supersede earlier versions; ambiguous disagreements retain both claims.
+
+The maintained weekly evaluation **writes real memory** by pushing the three supplied VLM decks and then the three recordings in sequence. It records partial-coverage acceptance, checks project continuity/separation and keeps the PDFs unpushed as controls. Run deliberately after reviewing those staged sources:
+
+```sh
+podman run --rm --network chronicler_default -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:chronicler:weekly
+podman run --rm --network chronicler_default -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run eval:memory:integrity
+```
+
+The integrity evaluation is read-only and checks every historical assertion citation against the pinned admitted source. Real model outputs have not been human scored for extraction precision/recall or project classification. Models propose changes; application validation and atomic publication enforce provenance, scope and history. No derived vector index is needed to inspect memory; hybrid Researcher retrieval comes later.

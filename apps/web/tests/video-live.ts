@@ -11,6 +11,7 @@ const check = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
 const uploads = await (await fetch(`${url}/api/uploads`)).json();
+const memoryBefore = await memoryCount();
 const reports = [];
 for (const recording of corpus.recordings) {
   const upload = uploads.find((u: any) => u.filename === recording.filename);
@@ -170,10 +171,11 @@ for (const recording of corpus.recordings) {
     offlineExport: true,
   });
 }
-check((await memoryCount()) === 0, 'Staging entered memory');
+const memoryAfter = await memoryCount();
+check(memoryAfter === memoryBefore, 'Video evaluation changed memory');
 await Bun.write(
   '/data/evaluations/meetings.json',
-  JSON.stringify({ reports, memoryCommits: 0 }, null, 2),
+  JSON.stringify({ reports, memoryBefore, memoryAfter }, null, 2),
 );
 console.log(
   JSON.stringify(

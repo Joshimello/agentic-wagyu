@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved PPTX media resources (125 content labels and 20 boilerplate exclusions), and eight plain Qwen summaries. The boilerplate filter is live on all four PPTX decks, with full corpus checks passing after serving recovery. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging and M3 document extraction/review are functionally accepted on the three supplied recordings and eight documents. M4 explicit push/extraction and M5 reconciliation/history are functionally accepted on six sequential real-source pushes: six memory snapshots, six resolved projects, 292 statements and 312 immutable assertion versions. All 769 unique historical citations resolve; unchanged replay preserves version 6 and the four PDF controls remain unpushed. The generated-media pilot was retired by the user. Human transcription, speaker, description, extraction and project-classification accuracy review remain pending; precision/recall targets have not been scored. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
@@ -225,17 +225,21 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 ### M4 — Explicit push and Chronicler memory extraction
 
+**Status:** functionally accepted; model accuracy remains human-unscored. Migration `0003_memory.sql`, durable Chronicler outbox, immutable selections, typed registry, guarded atomic publication and per-file outcomes are implemented.
+
 **Deliver:** push action/batches, typed extraction, conservative entity resolution, validated evidence, atomic memory commit, per-file outcome summary.
 
-**Test:** `bun run test:milestone M4` and `bun run eval:chronicler:extract`: double-click, crash before/after commit, mixed batch, edit during processing, no-assertion source, failed model call, unpushed control file.
+**Test:** `./infra/test-memory.sh` and the Podman-contained `bun run eval:chronicler:weekly` / `bun run eval:memory:integrity`: double-click, crash before/after commit, mixed batch, edit during processing, no-assertion source, failed model call, unpushed control file.
 
 **Pass:** exactly one committed effect per logical push; all published evidence comes from selected revisions or prior committed memory; failed work exposes no partial commit. Proposed extraction targets: precision ≥90%, recall ≥80%, valid references 100% on reviewed fixtures.
 
 ### M5 — Reconciliation and repush history
 
+**Status:** functionally accepted. Append-only assertion/relation/admission events, corrected-source support replacement, day-precision effective history, recorded-version/known-time views and cited graph inspection are implemented. Unknown source dates remain explicit. Derived retrieval indexes and an identity merge editor are deferred.
+
 **Deliver:** conflict/support/supersession rules, append-only events, temporal reducer, corrected-source repush, current state and history views.
 
-**Test:** `bun run test:milestone M5`: meetings A/B in both arrival orders, C disputes B, corrected ASR repush, unchanged repush, stale concurrent job, rebuild projections.
+**Test:** `./infra/test-memory.sh`, pure memory regressions and Chromium memory checks: meetings A/B in both arrival orders, C disputes B, corrected ASR repush, unchanged repush, stale concurrent job, rebuild projections.
 
 **Pass:** all critical current/effective/known-time cases pass; conflicts remain visible; old citations survive; changed staging cannot alter memory before push; retries/rebuilds never duplicate or erase history.
 
