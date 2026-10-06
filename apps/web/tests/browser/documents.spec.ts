@@ -44,9 +44,12 @@ for (const document of corpus.documents) {
       stage.document.units.length,
     );
     if (stage.document.review?.unitLabels.length)
-      expect(await select.locator('option').first().textContent()).toContain(
-        stage.document.review.unitLabels[0].label,
-      );
+      expect(
+        await select
+          .locator('option')
+          .nth(stage.document.review.unitLabels[0].unitNumber - 1)
+          .textContent(),
+      ).toContain(stage.document.review.unitLabels[0].label);
     if (stage.document.media?.length) {
       const embedded = stage.document.media.find(
         (m: any) => m.unitNumbers.length,

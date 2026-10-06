@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Stage } from '../server/contracts';
   let { stage }: { stage: Stage } = $props();
   let index = $state(0);
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   let document = $derived(stage.document!);
   let unit = $derived(
     document.units[Math.min(index, document.units.length - 1)],
@@ -36,7 +41,10 @@
       <summary>Summary sources</summary>
       <div class="source-links">
         {#each document.units.filter( (u) => review?.summary?.evidenceIds.includes(u.renderId) ) as source}
-          <button class="secondary" onclick={() => (index = source.number - 1)}
+          <button
+            class="secondary"
+            disabled={!ready}
+            onclick={() => (index = source.number - 1)}
             >{name} {source.number}</button
           >
         {/each}
@@ -51,11 +59,13 @@
 <section class="card document-viewer">
   <div class="navigation">
     <h2>Document evidence</h2>
-    <button class="secondary" disabled={index === 0} onclick={() => index--}
-      >Previous</button
+    <button
+      class="secondary"
+      disabled={!ready || index === 0}
+      onclick={() => index--}>Previous</button
     >
     <label
-      >{name}<select bind:value={index}
+      >{name}<select bind:value={index} disabled={!ready}
         >{#each document.units as u, i}<option value={i}
             >{u.number}{review?.unitLabels.find(
               (l) => l.unitNumber === u.number,
@@ -70,7 +80,7 @@
     <span>of {document.units.length}</span>
     <button
       class="secondary"
-      disabled={index >= document.units.length - 1}
+      disabled={!ready || index >= document.units.length - 1}
       onclick={() => index++}>Next</button
     >
   </div>

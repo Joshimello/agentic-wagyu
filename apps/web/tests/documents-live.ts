@@ -56,6 +56,8 @@ try {
     const raw = await (
       await fetch(`${url}/api/assets/${stage.rawAssetId}`)
     ).arrayBuffer();
+    const packageFiles =
+      item.format === 'pptx' ? unzipSync(new Uint8Array(raw)) : null;
     assert(
       new Bun.CryptoHasher('sha256').update(raw).digest('hex') === item.sha256,
       'Raw source was changed',
@@ -151,6 +153,11 @@ try {
       assert(
         Bun.deepEquals(original, bundle[files[0]]),
         'Embedded original was altered in export',
+      );
+      assert(
+        packageFiles &&
+          Bun.deepEquals(original, packageFiles[media.sourcePart]),
+        'Extracted media differs from original PPTX package bytes',
       );
     }
     const after = await (await fetch(`${url}/api/uploads/${upload.id}`)).json();

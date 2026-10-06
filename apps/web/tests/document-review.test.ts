@@ -1,10 +1,13 @@
 import { test, expect } from 'bun:test';
-import { enrichDocument } from '../src/lib/server/agents/interpreter/document-review';
+import {
+  enrichDocument,
+  plainSummary,
+} from '../src/lib/server/agents/interpreter/document-review';
 import { validateStage, type Stage } from '../src/lib/server/contracts';
 import type { llmClient } from '../src/lib/server/llm/client';
 import { exportMarkdown } from '../src/lib/server/services/staging';
 
-function document(format: 'pptx' | 'pdf' = 'pptx'): Stage {
+function document(format: 'pptx' | 'pdf' = 'pptx', count = 5): Stage {
   const stage: Stage = {
     schemaVersion: 1,
     id: crypto.randomUUID(),
@@ -38,7 +41,7 @@ function document(format: 'pptx' | 'pdf' = 'pptx'): Stage {
       cached: false,
     },
   };
-  for (let n = 1; n <= 5; n++) {
+  for (let n = 1; n <= count; n++) {
     const renderId = crypto.randomUUID(),
       textId = crypto.randomUUID();
     const locator =
@@ -104,11 +107,21 @@ function document(format: 'pptx' | 'pdf' = 'pptx'): Stage {
   }
   return stage;
 }
+test('plain summaries display paragraph breaks and keep machine citation codes outside the prose', () => {
+  expect(
+    plainSummary(
+      'Research comparison [U1, U2].\\n\\nMethods remain provisional [U9].',
+    ),
+  ).toBe('Research comparison.\n\nMethods remain provisional.');
+});
 const image = async (id: string) => ({
   sha256: id,
   url: 'data:image/jpeg;base64,aGVsbG8=',
 });
-function provider(calls: any[], invent = false) {
+function provider(
+  calls: any[],
+  invent: boolean | ((ref: string) => boolean) = false,
+) {
   return {
     model: 'test-qwen',
     client: {
@@ -130,7 +143,13 @@ function provider(calls: any[], invent = false) {
                       refs.length
                         ? {
                             labels: refs.map((ref: string) => ({
-                              ref: invent ? 'U999' : ref,
+                              ref: (
+                                typeof invent === 'function'
+                                  ? invent(ref)
+                                  : invent
+                              )
+                                ? 'U999'
+                                : ref,
                               label: 'Visual research comparison',
                               description:
                                 'Source content describes a comparison of 简体 methods.',
@@ -244,6 +263,114 @@ test('PDF review sends images without native text and cites page renders', async
   ]);
   expect(validateStage(stage)).toEqual(stage);
 });
+test('video batches bound image input and labels do not cite text omitted from the model context', async () => {
+  const stage = document(),
+    media = stage.document!.media![0];
+  const firstText = stage.primitives.find(
+    (p) => p.id === stage.document!.units[0].textIds[0],
+  );
+  if (firstText?.kind === 'text')
+    firstText.text = 'OMITTED_NATIVE_BLOCK' + 'x'.repeat(11000);
+  const frame = stage.primitives.find((p) => p.id === media.previewIds[0])!;
+  for (let n = 0; n < 3; n++) {
+    const p = {
+      ...frame,
+      id: crypto.randomUUID(),
+      assetId: crypto.randomUUID(),
+    };
+    stage.primitives.push(p);
+    media.previewIds.push(p.id);
+  }
+  const second = {
+    ...media,
+    id: crypto.randomUUID(),
+    sourcePart: 'ppt/media/video2.mp4',
+    assetId: crypto.randomUUID(),
+    previewIds: [] as string[],
+  };
+  for (const ref of media.previewIds) {
+    const p = {
+      ...stage.primitives.find((p) => p.id === ref)!,
+      id: crypto.randomUUID(),
+      assetId: crypto.randomUUID(),
+    };
+    stage.primitives.push(p);
+    second.previewIds.push(p.id);
+  }
+  stage.document!.media!.push(second);
+  stage.document!.units[1].mediaIds!.push(second.id);
+  const calls: any[] = [];
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    provider(calls),
+    image,
+  );
+  const visualCalls = calls.filter((c) =>
+    c.messages[1].content.some((p: any) => p.type === 'image_url'),
+  );
+  expect(
+    visualCalls.map(
+      (c) =>
+        c.messages[1].content.filter((p: any) => p.type === 'image_url').length,
+    ),
+  ).toEqual([4, 1, 4, 4]);
+  expect(JSON.stringify(calls)).not.toContain('OMITTED_NATIVE_BLOCK');
+  expect(stage.document!.review!.unitLabels[0].evidenceIds).toEqual([
+    stage.document!.units[0].renderId,
+  ]);
+  expect(validateStage(stage)).toEqual(stage);
+});
+test('summary retry restates the citation limit instead of silently discarding excess references', async () => {
+  const stage = document('pdf'),
+    calls: any[] = [],
+    baseline = provider(calls);
+  let summaries = 0;
+  const create = baseline.client.chat.completions.create.bind(
+    baseline.client.chat.completions,
+  );
+  baseline.client.chat.completions.create = (async (body: any) => {
+    if (body.messages[1].content.some((p: any) => p.type === 'image_url'))
+      return create(body);
+    summaries++;
+    if (summaries === 2)
+      expect(body.messages[1].content.at(-1).text).toContain(
+        'between 1 and 12 distinct',
+      );
+    return {
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            content: JSON.stringify({
+              summary:
+                'The document presents research comparisons and source-reported limitations.',
+              evidenceRefs:
+                summaries === 1
+                  ? Array.from({ length: 13 }, () => 'U1')
+                  : ['U1', 'U5'],
+            }),
+          },
+        },
+      ],
+    };
+  }) as any;
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    baseline,
+    image,
+  );
+  expect(summaries).toBe(2);
+  expect(stage.document!.review!.complete).toBe(true);
+  expect(stage.document!.review!.summary!.evidenceIds).toEqual([
+    stage.document!.units[0].renderId,
+    stage.document!.units[4].renderId,
+  ]);
+  expect(validateStage(stage)).toEqual(stage);
+});
 test('invented item references are retried and left unavailable without changing source coverage', async () => {
   const stage = document('pdf'),
     calls: any[] = [];
@@ -290,5 +417,21 @@ test('a serving outage stops remaining model work and publishes source evidence 
   expect(stage.document!.review!.warnings.join(' ')).toContain(
     'serving backend recovers',
   );
+  expect(validateStage(stage)).toEqual(stage);
+});
+test('a serving outage still restores later successful checkpoints instead of losing partial reading coverage', async () => {
+  const stage = document('pdf', 10),
+    key = `assets/ab/${crypto.randomUUID()}`;
+  const client = provider([], (ref) => Number(ref.slice(1)) < 9);
+  await enrichDocument(stage, key, undefined, client, image);
+  expect(stage.document!.review!.unitsRead).toEqual([9, 10]);
+  let calls = 0;
+  client.client.chat.completions.create = (async () => {
+    calls++;
+    throw Object.assign(new Error('Unavailable'), { status: 500 });
+  }) as any;
+  await enrichDocument(stage, key, undefined, client, image);
+  expect(calls).toBe(4);
+  expect(stage.document!.review!.unitsRead).toEqual([9, 10]);
   expect(validateStage(stage)).toEqual(stage);
 });

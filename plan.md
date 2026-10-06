@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 document staging and revision selection are functionally accepted on eight supplied documents (255 page/slide renders). The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved/labeled PPTX media resources, and eight plain Qwen summaries. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 

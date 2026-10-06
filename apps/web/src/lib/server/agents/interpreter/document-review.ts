@@ -10,6 +10,14 @@ import { llmClient } from '../../llm/client';
 import { traditionalChinese } from '../../text-normalization';
 import type { Stage } from '../../contracts';
 export const documentPromptVersion = 'document-review-1-en';
+/** Source aliases stay in structured citations; generated prose displays as plain paragraphs. */
+export function plainSummary(text: string) {
+  return text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/[ \t]*\[U\d+(?:\s*,\s*U\d+)*\]/g, '')
+    .trim();
+}
 const prose = z
   .string()
   .min(1)
@@ -50,6 +58,7 @@ type VisualItem = {
   images: { sha256: string; url: string }[];
 };
 type Review = NonNullable<NonNullable<Stage['document']>['review']>;
+class ReviewDeferred extends Error {}
 function failureReason(error: unknown) {
   if (
     typeof error === 'object' &&
@@ -110,23 +119,24 @@ export async function enrichDocument(
   const units: VisualItem[] = [];
   for (const unit of document.units) {
     // PDF understanding is visual; extracted text remains an optional source view, not model input.
-    const text =
-      document.format === 'pptx'
-        ? unit.textIds
-            .map((ref) => stage.primitives.find((p) => p.id === ref))
-            .flatMap((p) =>
-              p?.kind === 'text' ? [`${p.role}: ${p.text}`] : [],
-            )
-            .join('\n')
-            .slice(0, 10000)
-        : '';
+    const snippets: string[] = [],
+      textRefs: string[] = [];
+    let textLength = 0;
+    if (document.format === 'pptx')
+      for (const ref of unit.textIds) {
+        const p = stage.primitives.find((p) => p.id === ref);
+        if (p?.kind !== 'text') continue;
+        const snippet = `${p.role}: ${p.text}`;
+        if (textLength + snippet.length > 10000) continue;
+        snippets.push(snippet);
+        textRefs.push(ref);
+        textLength += snippet.length + 1;
+      }
+    const text = snippets.join('\n');
     units.push({
       ref: `U${unit.number}`,
       unitNumber: unit.number,
-      evidenceIds: [
-        unit.renderId,
-        ...(document.format === 'pptx' ? unit.textIds : []),
-      ],
+      evidenceIds: [unit.renderId, ...textRefs],
       context: `${document.format === 'pptx' ? 'Slide' : 'Page'} ${unit.number}${unit.hidden ? ' (hidden)' : ''}\n${text}`,
       images: [await imageFor(unit.renderId)],
     });
@@ -192,6 +202,7 @@ export async function enrichDocument(
         return parsed;
       } catch {}
     }
+    if (providerUnavailable) throw new ReviewDeferred('Model API unavailable');
     const content: any[] = [{ type: 'text', text: instruction }];
     for (const item of items) {
       content.push({ type: 'text', text: `${item.ref}\n${item.context}` });
@@ -200,6 +211,26 @@ export async function enrichDocument(
     }
     let last: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
+      const repair =
+        attempt > 0 &&
+        (last instanceof z.ZodError ||
+          last instanceof SyntaxError ||
+          (last instanceof Error &&
+            [
+              'Model skipped or invented a document item',
+              'Summary cites unread pages',
+              'Document description was truncated',
+            ].includes(last.message)))
+          ? [
+              {
+                type: 'text',
+                text:
+                  task === 'summary'
+                    ? 'Validation correction: return exactly {"summary":"plain English prose","evidenceRefs":["provided U ref"]}. evidenceRefs MUST contain between 1 and 12 distinct supplied U references. Select the most important sources; do not list every page. Do not include other keys, Markdown fences or commentary.'
+                    : 'Validation correction: return exactly {"labels":[{"ref":"provided ref","label":"short English label","description":"one short English sentence"}]}. Include every supplied ref exactly once and no other refs or keys. Do not include Markdown fences or commentary.',
+              },
+            ]
+          : [];
       try {
         const response = await client.chat.completions.create({
           model,
@@ -209,7 +240,7 @@ export async function enrichDocument(
           ...providerOptions,
           messages: [
             { role: 'system', content: safety },
-            { role: 'user', content: content as any },
+            { role: 'user', content: [...content, ...repair] as any },
           ],
         });
         const choice = response.choices[0];
@@ -251,8 +282,21 @@ export async function enrichDocument(
     ['units', units],
     ['media', media],
   ] as const) {
-    for (let start = 0; start < items.length; start += 4)
-      tasks.push({ kind, items: items.slice(start, start + 4) });
+    let batch: VisualItem[] = [],
+      imageCount = 0;
+    for (const item of items) {
+      if (
+        batch.length &&
+        (batch.length === 4 || imageCount + item.images.length > 4)
+      ) {
+        tasks.push({ kind, items: batch });
+        batch = [];
+        imageCount = 0;
+      }
+      batch.push(item);
+      imageCount += item.images.length;
+    }
+    if (batch.length) tasks.push({ kind, items: batch });
   }
   // Two small model requests may run concurrently; every rendered unit is included.
   for (let start = 0; start < tasks.length; start += 2) {
@@ -311,12 +355,13 @@ export async function enrichDocument(
           )
             providerUnavailable = true;
           review.warnings.push(
-            `${failureReason(error)}. Descriptions unavailable for ${task.items.map((i) => i.ref).join(', ')} after two attempts; source evidence is preserved.`,
+            error instanceof ReviewDeferred
+              ? `Model API unavailable. Descriptions deferred for ${task.items.map((i) => i.ref).join(', ')}; source evidence is preserved.`
+              : `${failureReason(error)}. Descriptions unavailable for ${task.items.map((i) => i.ref).join(', ')} after two attempts; source evidence is preserved.`,
           );
         }
       }),
     );
-    if (providerUnavailable) break;
   }
   review.unitLabels.sort((a, b) => a.unitNumber - b.unitNumber);
   review.unitsRead.sort((a, b) => a - b);
@@ -358,7 +403,7 @@ export async function enrichDocument(
         },
       );
       review.summary = {
-        text: traditionalChinese(result.summary),
+        text: plainSummary(traditionalChinese(result.summary)),
         evidenceIds: [
           ...new Set(
             result.evidenceRefs.flatMap(
