@@ -86,3 +86,19 @@ No window reached the generation limit or triggered an incomplete-endpoint warni
 All visual reviews use `context-3` and the configured `pro6000/qwen38-flash-next`. September 15 retains five deferred questions under the 24-question research limit and two other unresolved questions; September 22 retains one unresolved question. Names remain unverified, and abstention is allowed. No material entered memory.
 
 The maintained live corpus evaluation passed reference validation, complete transcript input, checkpoint/source offsets, pinned JSON and portable ZIP exports, image access, and source byte ranges. Each of the three new reviews passed the Chromium inspection/seek/export regression in Podman. The implementation passed 27 Bun tests (150 assertions), TypeScript/Svelte checks with zero errors/warnings, frozen development/release builds, and release-worker import checks. Per-window inference measurements, progress timestamps, before/after counts, and prior cache entries remain privately under ignored `data/evaluations/thirty-minute-rerun/`; the maintained corpus report is `data/evaluations/meetings.json`.
+
+## English reviews and Traditional Chinese transcription
+
+On 2026-10-06, the active three-meeting corpus was refreshed with English planning/review prompts (`context-4-en`) and OpenCC standard Traditional Chinese transcription (`s2t`, pinned `opencc-js` 1.4.2). This was visual-only processing of the existing 30-minute transcripts; MOSS was not rerun. The original ASR checkpoints and earlier revisions are retained.
+
+| Recording | Retained speech segments | Segments with script conversion | English questions | Visual annotations |
+| --- | ---: | ---: | ---: | ---: |
+| 2026-09-08.mp4 | 776 | 644 | 10 | 30 |
+| 2026-09-15.mp4 | 1,931 | 1,642 | 32 | 65 |
+| 2026-09-22.mp4 | 1,274 | 1,076 | 21 | 56 |
+
+Every new speech primitive matches the previous primitive except for the expected OpenCC text conversion; IDs, anonymous speaker codes, roles, and media locators are unchanged. Raw aggregate ASR files passed before/after SHA-256 checks, and ASR run/window provenance is identical. Questions, search reasons, annotations, explanations, and name rationales passed the maintained English-prose checks. Chinese quotations/names use the Traditional Chinese output policy. These tests inspect prompts and observable output, not private model reasoning; the previously verified Qwen `enable_thinking=false` serving option remains in place.
+
+Corpus validation exposed two edge cases. OpenCC's `s2t` operation is not universally idempotent on already-Traditional text: both the JavaScript library and a native OpenCC check converted a second-pass `裏面包括` to `裏麪包括`. Staging now records normalization provenance and skips repeated passes; unchanged correction fields are also preserved. Fresh ASR and changed speech corrections receive one conversion. A lasting regression covers this phrase through a revisit and unchanged save. Six September 15 model annotations contained only T references/timestamps. They were omitted in a new immutable revision, with source frames retained and affected questions left unresolved. The same validation automatically omitted four such annotations from September 22. September 15 retains eight questions deferred by the existing 24-question research budget and two other unresolved questions; September 22 retains one unresolved question.
+
+Podman validation passed 29 Bun regressions (168 assertions), TypeScript/Svelte checks with zero errors/warnings, frozen development/release builds, release OpenCC/worker imports, all three Chromium inspection/seek/export checks, and the maintained full-corpus evidence/portable-export checks. No material entered memory. Private before/after hashes and language review observations are in ignored `data/evaluations/language-review/results.json`; the temporary driver was removed.

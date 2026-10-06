@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-05. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. The generated-media pilot was retired by the user; human transcription and speaker-accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
