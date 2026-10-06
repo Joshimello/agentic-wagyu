@@ -155,6 +155,55 @@ function plan(
   return result;
 }
 check(
+  'a mixed push publishes both source scopes atomically and rejects an invalid second source',
+  async () => {
+    const camera = await source('Alice plans to calibrate the camera.'),
+      thermal = await source('Alice plans to calibrate the thermal sensor.');
+    const batch = await createPush({
+      ...input(camera),
+      items: [...input(camera).items, ...input(thermal).items],
+    });
+    const snapshot = await memorySnapshot();
+    const a = plan(batch.id, camera, snapshot),
+      b = plan(stableId(batch.id, 'thermal'), thermal, snapshot);
+    a.projects[0].name = 'Camera calibration';
+    b.projects[0].name = 'Thermal sensor calibration';
+    const prepared: Plan = {
+      ...a,
+      projects: [...a.projects, ...b.projects],
+      statements: [...a.statements, ...b.statements],
+      versions: [...a.versions, ...b.versions],
+      outcomes: [...a.outcomes, ...b.outcomes],
+    };
+    const invalid = structuredClone(prepared);
+    invalid.versions[1].evidence[0].quote = 'Invented thermal evidence';
+    await expect(publishMemory(batch.id, invalid)).rejects.toThrow(
+      'quotation differs',
+    );
+    expect(await memoryCount()).toBe(snapshot.version);
+    expect(
+      (await memorySnapshot()).admissions.some((r) =>
+        [camera.id, thermal.id].includes(r.revisionId),
+      ),
+    ).toBe(false);
+    const committed = await publishMemory(batch.id, prepared);
+    expect(committed.commitVersion).toBe(snapshot.version + 1);
+    expect(committed.outcomes).toHaveLength(2);
+    const after = await memorySnapshot();
+    expect(
+      after.admissions.filter((r) =>
+        [camera.id, thermal.id].includes(r.revisionId),
+      ),
+    ).toHaveLength(2);
+    expect(
+      after.statements
+        .filter((s) => prepared.statements.some((p) => p.id === s.id))
+        .map((s) => s.projectId)
+        .sort(),
+    ).toEqual(prepared.projects.map((p) => p.id).sort());
+  },
+);
+check(
   'push pins a reviewed revision, double-clicks converge, edits and unpushed controls cannot alter memory',
   async () => {
     const stage = await source('Alice plans to calibrate the sensor.');
@@ -209,6 +258,25 @@ check(
     const now = await memorySnapshot();
     expect(now.admissions.some((a) => a.revisionId === control.id)).toBe(false);
     await chronicle(batch.id);
+    expect(await memoryCount()).toBe(before + 1);
+    const { POST: repeat } = await import('../src/routes/api/pushes/+server');
+    const repeated = await repeat({
+      request: new Request('http://localhost/api/pushes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+      }),
+    });
+    const publicBatch = await repeated.json();
+    expect(publicBatch.id).toBe(batch.id);
+    expect(publicBatch).not.toHaveProperty('checkpoints');
+    expect(publicBatch).not.toHaveProperty('plan');
+    const { POST: retry } = await import(
+      '../src/routes/api/pushes/[id]/retry/+server'
+    );
+    const replayed = await (await retry({ params: { id: batch.id } })).json();
+    expect(replayed).not.toHaveProperty('checkpoints');
+    expect(replayed).not.toHaveProperty('plan');
     expect(await memoryCount()).toBe(before + 1);
   },
 );
@@ -672,8 +740,9 @@ check(
 check(
   'durable push dispatch can be replayed without losing jobs or duplicating accepted memory',
   async () => {
-    const { startQueue, dispatchPushes } =
-      await import('../src/lib/server/jobs/queue');
+    const { startQueue, dispatchPushes } = await import(
+      '../src/lib/server/jobs/queue'
+    );
     const { chroniclerOutbox } = await import('../src/lib/server/db/schema');
     const stage = await source('Dispatch calibration plan.');
     const batch = await createPush(input(stage));

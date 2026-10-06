@@ -20,6 +20,28 @@ test('memory snapshots show a stable graph, recorded history and admitted citati
       name: 'Project memory graph with assertions and source relationships',
     }),
   ).toBeVisible();
+  for (const project of initial.projects) {
+    const newest = initial.statements
+      .filter(
+        (s: any) =>
+          s.projectId === project.id &&
+          ['active', 'conflicted'].includes(s.status),
+      )
+      .sort(
+        (a: any, b: any) =>
+          b.current.commitVersion - a.current.commitVersion ||
+          a.id.localeCompare(b.id),
+      )[0];
+    if (newest && initial.projects.length <= 80)
+      await expect(
+        page
+          .getByRole('button', {
+            name: `Inspect ${newest.current.text}`,
+            exact: true,
+          })
+          .first(),
+      ).toBeAttached();
+  }
   const item = initial.statements.find((s: any) =>
     ['active', 'conflicted'].includes(s.status),
   );

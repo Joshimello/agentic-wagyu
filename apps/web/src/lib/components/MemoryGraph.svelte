@@ -8,17 +8,57 @@
     onSelect: (id: string) => void;
   } = $props();
   let projects = $derived(memory.projects);
-  let claims = $derived(
-    memory.statements
-      .filter((s) => ['active', 'conflicted'].includes(s.status))
-      .slice(0, 80),
-  );
-  let height = $derived(
-    Math.max(220, claims.length * 54 + 70, projects.length * 100 + 70),
-  );
-  const projectY = (id: string) =>
-    50 + projects.findIndex((p) => p.id === id) * 100;
-  const claimY = (id: string) => 50 + claims.findIndex((s) => s.id === id) * 54;
+  let layout = $derived.by(() => {
+    const groups = projects.map((project) => ({
+      project,
+      candidates: memory.statements
+        .filter(
+          (s) =>
+            s.projectId === project.id &&
+            ['active', 'conflicted'].includes(s.status),
+        )
+        .sort(
+          (a, b) =>
+            b.current.commitVersion - a.current.commitVersion ||
+            a.id.localeCompare(b.id),
+        ),
+      shown: [] as typeof memory.statements,
+    }));
+    // Share the display budget across projects and prefer their recent evidence.
+    let count = 0;
+    for (let rank = 0; count < 80; rank++) {
+      let found = false;
+      for (const group of groups) {
+        if (count < 80 && group.candidates[rank]) {
+          group.shown.push(group.candidates[rank]);
+          count++;
+          found = true;
+        }
+      }
+      if (!found) break;
+    }
+    const projectPositions = new Map<string, number>();
+    const claimPositions = new Map<string, number>();
+    let cursor = 32;
+    for (const group of groups) {
+      const groupHeight = Math.max(100, group.shown.length * 54 + 20);
+      projectPositions.set(group.project.id, cursor + groupHeight / 2);
+      group.shown.forEach((claim, index) =>
+        claimPositions.set(claim.id, cursor + 32 + index * 54),
+      );
+      cursor += groupHeight + 32;
+    }
+    return {
+      claims: groups.flatMap((group) => group.shown),
+      projectPositions,
+      claimPositions,
+      height: Math.max(220, cursor),
+    };
+  });
+  let claims = $derived(layout.claims);
+  let height = $derived(layout.height);
+  const projectY = (id: string) => layout.projectPositions.get(id) ?? 0;
+  const claimY = (id: string) => layout.claimPositions.get(id) ?? 0;
 </script>
 
 <div class="graph">
@@ -92,7 +132,7 @@
       </g>{/each}
   </svg>
 </div>
-{#if memory.statements.filter( (s) => ['active', 'conflicted'].includes(s.status) ).length > 80}<p
+{#if memory.statements.filter( (s) => ['active', 'conflicted'].includes(s.status), ).length > 80}<p
     class="muted"
   >
     The graph shows 80 assertions. Use the complete list below or filter by

@@ -4,7 +4,10 @@ export async function GET() {
 }
 export async function POST({ request }: { request: Request }) {
   try {
-    return Response.json(await createPush(await request.json()), {
+    const { checkpoints, plan, ...batch } = await createPush(
+      await request.json(),
+    );
+    return Response.json(batch, {
       status: 202,
     });
   } catch (error) {
