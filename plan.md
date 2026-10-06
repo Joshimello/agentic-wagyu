@@ -1,6 +1,6 @@
 # Chronicler — SvelteKit application and agent workers
 
-Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved PPTX media resources with content labels or boilerplate exclusions, and eight plain Qwen summaries. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
+Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging is functionally accepted on all three supplied real Mandarin meetings. M3 source extraction, revision selection and document understanding are functionally accepted on all eight supplied documents: 255 page/slide renders and labels, 145 preserved PPTX media resources (125 content labels and 20 boilerplate exclusions), and eight plain Qwen summaries. The boilerplate filter is live on all four PPTX decks, with full corpus checks passing after serving recovery. The generated-media pilot was retired by the user; human transcription, speaker and description accuracy review remain pending. See [acceptance evidence](docs/development/acceptance.md).
 
 ## 1. Product and architecture
 
