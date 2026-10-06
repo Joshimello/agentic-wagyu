@@ -10,6 +10,7 @@ import {
   type Primitive,
 } from '../src/lib/server/contracts';
 import type { llmClient } from '../src/lib/server/llm/client';
+import { cleanEnglishReview } from '../src/lib/server/review-language';
 function speech(index: number): Extract<Primitive, { kind: 'text' }> {
   return {
     id: crypto.randomUUID(),
@@ -250,4 +251,65 @@ test('speaker-name abstentions stay unnamed instead of becoming fake name guesse
     expect(isUsableCandidateName(name)).toBe(false);
   for (const name of ['小林', '元浩', 'James Chu'])
     expect(isUsableCandidateName(name)).toBe(true);
+});
+
+test('citation-only visual output does not count as an English answer and retains its evidence', () => {
+  const value = stage();
+  const frame: Primitive = {
+    id: crypto.randomUUID(),
+    kind: 'image',
+    role: 'frame',
+    assetId: crypto.randomUUID(),
+    requestedMs: 2000,
+    actualMs: 2000,
+    locator: {
+      kind: 'media',
+      timeline: 'container',
+      startMs: 2000,
+      endMs: 2000,
+    },
+  };
+  value.primitives.push(frame);
+  const questionId = crypto.randomUUID();
+  value.context = {
+    model: 'test-model',
+    promptVersion: 'context-4-en',
+    readSegments: 3,
+    totalSegments: 3,
+    questions: [
+      {
+        id: questionId,
+        question: 'Which method is shown?',
+        purpose: 'visual_context',
+        transcriptIds: [value.primitives[0].id],
+        status: 'answered',
+        explanation: '',
+        searches: [
+          {
+            reason: 'Inspect the diagram.',
+            timesMs: [2000],
+            frameIds: [frame.id],
+          },
+        ],
+      },
+    ],
+  };
+  value.annotations = [
+    {
+      id: crypto.randomUUID(),
+      text: 'T1-T2 (1000-2500)',
+      transcriptIds: [value.primitives[0].id],
+      frameIds: [frame.id],
+      origin: 'model',
+      model: 'test-model',
+      promptVersion: 'context-4-en',
+      questionId,
+    },
+  ];
+  cleanEnglishReview(value);
+  validateStage(value);
+  expect(value.annotations).toEqual([]);
+  expect(value.context.questions[0].status).toBe('unresolved');
+  expect(value.context.questions[0].searches[0].frameIds).toEqual([frame.id]);
+  expect(value.primitives).toContainEqual(frame);
 });

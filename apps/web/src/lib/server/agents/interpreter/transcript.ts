@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { Stage } from '../../contracts';
-import { normalizeTranscription } from '../../text-normalization';
+import {
+  traditionalChinese,
+  transcriptNormalization,
+} from '../../text-normalization';
 export const asrSchema = z.object({
   durationMs: z.number().int().positive(),
   segments: z.array(
@@ -54,12 +57,13 @@ export function applyTranscript(stage: Stage, value: unknown) {
       id: crypto.randomUUID(),
       kind: 'text',
       role: 'asr',
-      text: s.text,
+      text: traditionalChinese(s.text),
       speaker: s.speaker,
       locator: { kind: 'media', timeline: 'container', startMs, endMs },
     });
   }
   stage.coverage = { complete, durationMs: result.durationMs, warnings };
-  normalizeTranscription(stage);
+  if (stage.primitives.some((p) => p.kind === 'text' && p.role === 'asr'))
+    stage.provenance.textNormalization = { ...transcriptNormalization };
   return result;
 }

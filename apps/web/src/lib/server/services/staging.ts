@@ -4,6 +4,7 @@ import { db } from '../db/client';
 import { uploads, revisions } from '../db/schema';
 import { validateStage, id, type Stage } from '../contracts';
 import { isUsableCandidateName } from '../../speaker-names';
+import { cleanEnglishReview } from '../review-language';
 import {
   normalizeTranscription,
   traditionalChinese,
@@ -44,6 +45,7 @@ export async function correctStage(uploadId: string, value: unknown) {
       .where(eq(revisions.id, correction.baseRevisionId));
     const stage: Stage = structuredClone(base.manifest);
     normalizeTranscription(stage);
+    cleanEnglishReview(stage);
     stage.id = crypto.randomUUID();
     stage.parentRevisionId = base.id;
     stage.createdAt = new Date().toISOString();
@@ -57,7 +59,10 @@ export async function correctStage(uploadId: string, value: unknown) {
       const p = stage.primitives.find((p) => p.id === edit.primitiveId);
       if (!p || p.kind !== 'text')
         throw new Error('Correction refers to missing text');
-      const text = p.role === 'asr' ? traditionalChinese(edit.text) : edit.text;
+      const text =
+        p.role === 'asr' && edit.text !== p.text
+          ? traditionalChinese(edit.text)
+          : edit.text;
       if (p.text !== text || p.speaker !== edit.speaker) changed.add(p.id);
       p.text = text;
       p.speaker = edit.speaker;

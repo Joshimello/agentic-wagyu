@@ -211,7 +211,7 @@ check(
           kind: 'text' as const,
           role: 'asr' as const,
           speaker: 'S01',
-          text: '现有已审阅的发言。',
+          text: '现有已审阅的发言，里面包括资讯。',
           locator: {
             kind: 'media' as const,
             timeline: 'container' as const,
@@ -293,14 +293,14 @@ check(
       edits: [
         {
           primitiveId: base.primitives[0].id,
-          text: '后来修正的发言。',
+          text: '后来修正的发言，里面包括资讯。',
           speaker: 'S01',
         },
       ],
     });
     expect(corrected.speakerSuggestions).toEqual([]);
     expect(corrected.primitives[0]).toMatchObject({
-      text: '後來修正的發言。',
+      text: '後來修正的發言，裏面包括資訊。',
       id: base.primitives[0].id,
       locator: base.primitives[0].locator,
       speaker: 'S01',
@@ -313,7 +313,10 @@ check(
     expect(
       ready.revisions.find((r) => r.id === ready.run.revisionId)?.manifest
         .primitives[0],
-    ).toEqual({ ...base.primitives[0], text: '現有已審閱的發言。' });
+    ).toEqual({
+      ...base.primitives[0],
+      text: '現有已審閱的發言，裏面包括資訊。',
+    });
     expect(
       ready.revisions.find((r) => r.id === base.id)?.manifest.primitives[0],
     ).toEqual(base.primitives[0]);
@@ -331,12 +334,27 @@ check(
     const latest = reviewed.revisions.find(
       (r) => r.id === reviewed.upload.currentRevisionId,
     )!.manifest;
-    expect(latest.primitives[0]).toMatchObject({ text: '後來修正的發言。' });
+    expect(latest.primitives[0]).toMatchObject({
+      text: '後來修正的發言，裏面包括資訊。',
+    });
     expect(latest.provenance.textNormalization).toMatchObject({
       engine: 'opencc-js',
       conversion: 's2t',
     });
     expect(latest.provenance.transcription?.runId).toBe(item.runId);
+    const unchanged = await correctStage(item.uploadId, {
+      baseRevisionId: latest.id,
+      label: latest.metadata.label,
+      sourceTime: latest.metadata.sourceTime,
+      edits: [
+        {
+          primitiveId: latest.primitives[0].id,
+          text: '後來修正的發言，裏面包括資訊。',
+          speaker: 'S01',
+        },
+      ],
+    });
+    expect(unchanged.primitives[0]).toEqual(latest.primitives[0]);
     expect(await memoryCount()).toBe(0);
   },
 );

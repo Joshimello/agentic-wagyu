@@ -90,7 +90,7 @@ test('OpenCC normalizes speech and preserves raw output, evidence IDs, time, Eng
     segments: [
       {
         ...speech.segments[0],
-        text: '我们介绍头发与发展。Qwen API v2: 30 min.',
+        text: '我们介绍头发与发展，里面包括资讯。Qwen API v2: 30 min.',
       },
     ],
   };
@@ -98,7 +98,7 @@ test('OpenCC normalizes speech and preserves raw output, evidence IDs, time, Eng
   applyTranscript(stage, raw);
   expect(raw).toEqual(original);
   expect(stage.primitives[0]).toMatchObject({
-    text: '我們介紹頭髮與發展。Qwen API v2: 30 min.',
+    text: '我們介紹頭髮與發展，裏面包括資訊。Qwen API v2: 30 min.',
     speaker: 'S01',
     locator: { startMs: 1000, endMs: 3000 },
   });

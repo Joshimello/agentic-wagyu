@@ -4,6 +4,7 @@ import type { Stage, Primitive } from '../../contracts';
 import { llmClient } from '../../llm/client';
 import { isUsableCandidateName } from '../../../speaker-names';
 import { traditionalChinese } from '../../text-normalization';
+import { cleanEnglishReview } from '../../review-language';
 export const contextPromptVersion = 'context-4-en';
 const refs = z.array(z.string().min(1)).min(1);
 const candidate = z
@@ -432,4 +433,5 @@ export async function enrichContext(
     stage.coverage.warnings.push(
       `${unresolved} transcript context questions remain unresolved; inspect the linked speech and searches.`,
     );
+  cleanEnglishReview(stage);
 }

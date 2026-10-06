@@ -5,6 +5,7 @@ import { memoryCount } from '../src/lib/server/services/uploads';
 import corpus from '../../../evals/meetings.json';
 import { config } from '../src/lib/server/config';
 import { audioSections } from '../src/lib/server/agents/interpreter/audio-sections';
+import { normalizeTranscription } from '../src/lib/server/text-normalization';
 const url = process.env.WEB_URL ?? 'http://web:5173';
 const check = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -35,6 +36,29 @@ for (const recording of corpus.recordings) {
         stage.context.totalSegments === spoken.length,
       'Visual planner did not read the full transcript',
     );
+  if (stage.provenance.textNormalization) {
+    const copy = structuredClone(stage);
+    normalizeTranscription(copy);
+    check(
+      Bun.deepEquals(copy, stage),
+      'Already-normalized speech changes when revisited',
+    );
+  }
+  if (stage.context?.promptVersion === 'context-4-en') {
+    const prose = [
+      ...stage.context.questions.flatMap((q) => [
+        q.question,
+        q.explanation,
+        ...q.searches.map((s) => s.reason),
+      ]),
+      ...stage.annotations.map((a) => a.text),
+      ...(stage.speakerSuggestions ?? []).map((s) => s.reason),
+    ].filter(Boolean);
+    check(
+      prose.every((text) => /[A-Za-z]{3,}/.test(text)),
+      'A review field contains no English prose',
+    );
+  }
   check(stage.annotations.length > 0, 'No validated visual context');
   for (const p of stage.primitives)
     if (p.kind === 'image') {
@@ -123,6 +147,8 @@ for (const recording of corpus.recordings) {
     transcriptSegmentsRead: stage.context?.readSegments ?? null,
     contextQuestions: stage.context?.questions.length ?? null,
     speakerSuggestions: stage.speakerSuggestions?.length ?? null,
+    contextPromptVersion: stage.context?.promptVersion ?? null,
+    textNormalization: stage.provenance.textNormalization ?? null,
     sectionCount: sections.length,
     latestRunKind: upload.run.inputRevisionId
       ? 'visual-context-only'
