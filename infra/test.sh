@@ -14,5 +14,6 @@ trap cleanup EXIT
 podman exec chronicler_database_1 createdb -U chronicler "$database_name"
 podman run --rm --name "$test_container" --network chronicler_default \
   -e "DATABASE_URL=postgres://chronicler:local-only@database:5432/$database_name" \
+  -e OPENAI_API_KEY= -e OPENAI_MODEL= -e OPENAI_BASE_URL= \
   -v "$PWD:/app" -v "$test_data:/data" -w /app docker.io/oven/bun:1.4.2 \
   sh -c 'bun run --cwd apps/web db:migrate && bun run test'

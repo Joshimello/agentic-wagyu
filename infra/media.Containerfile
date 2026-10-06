@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-de
 WORKDIR /service
 COPY services/media/pyproject.toml services/media/uv.lock ./
 RUN uv sync --frozen --no-dev
-COPY services/media/asr.py services/media/app.py services/media/media.py services/media/documents.py ./
+COPY services/media/asr.py services/media/app.py services/media/media.py services/media/documents.py services/media/document_media.py ./
 ENV PATH="/service/.venv/bin:$PATH" HF_HOME=/cache/huggingface DATA_ROOT=/data PYTHONUNBUFFERED=1
 EXPOSE 8000
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

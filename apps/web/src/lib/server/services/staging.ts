@@ -92,6 +92,18 @@ export async function correctStage(uploadId: string, value: unknown) {
         }
     }
     stage.metadata.label = correction.label;
+    if (stage.document?.review && changed.size) {
+      const previous = stage.document.review;
+      stage.coverage.warnings = stage.coverage.warnings.filter(
+        (w) => !previous.warnings.includes(w),
+      );
+      delete stage.document.review;
+      stage.provenance.model = null;
+      stage.provenance.promptVersion = null;
+      stage.coverage.warnings.push(
+        'Source text was corrected; revisit document descriptions to generate updated labels and summary.',
+      );
+    }
     stage.metadata.sourceTime = correction.sourceTime;
     stage.metadata.sourceTimeOrigin = correction.sourceTime
       ? 'user'
@@ -138,6 +150,22 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
       '',
     );
   if (stage.document) {
+    const review = stage.document.review;
+    if (review?.summary)
+      lines.push(
+        '## Document summary',
+        '',
+        review.summary.text,
+        '',
+        `Model description: ${clean(review.model)} · ${clean(review.promptVersion)}`,
+        '',
+        `Reviewed ${review.unitsRead.length}/${stage.document.units.length} pages/slides and ${review.mediaRead.length}/${(stage.document.media ?? []).length} media${review.complete ? '' : ' (partial)'}.`,
+        '',
+        ...stage.document.units
+          .filter((u) => review.summary!.evidenceIds.includes(u.renderId))
+          .map((u) => `Summary source: [${u.number}](#unit-${u.number})`),
+        '',
+      );
     lines.push(
       '## Document extraction',
       '',
@@ -147,6 +175,9 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
       '',
     );
     for (const unit of stage.document.units) {
+      const label = review?.unitLabels.find(
+        (l) => l.unitNumber === unit.number,
+      );
       const name =
         stage.document.format === 'pptx'
           ? 'Slide'
@@ -154,8 +185,12 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
             ? 'Page'
             : 'Image';
       lines.push(
+        `<a id="unit-${unit.number}"></a>`,
         `## ${name} ${unit.number}${unit.hidden ? ' (hidden)' : ''}`,
         '',
+        ...(label
+          ? [`**${clean(label.label)}**`, '', label.description, '']
+          : []),
         ...unit.warnings.map((w) => `- ${clean(w)}`),
       );
       const render = stage.primitives.find((p) => p.id === unit.renderId);
@@ -177,6 +212,31 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
             ...(text.bounds
               ? [`Source bounds: ${JSON.stringify(text.bounds)}`, '']
               : []),
+          );
+      }
+    }
+    if (stage.document.media?.length) lines.push('## Embedded media', '');
+    for (const media of stage.document.media ?? []) {
+      const label = review?.mediaLabels.find((l) => l.mediaId === media.id);
+      lines.push(
+        `### ${clean(label?.label ?? media.sourcePart)}`,
+        '',
+        label?.description ?? 'No generated description available.',
+        '',
+        `Original ${media.kind}: [${clean(media.sourcePart)}](${origin}/api/assets/${media.assetId})`,
+        `Slides: ${media.unitNumbers.join(', ') || 'Unplaced resource'} · Preview: ${media.previewOrigin}`,
+        '',
+        ...media.warnings.map((w) => `- ${clean(w)}`),
+        '',
+      );
+      for (const ref of media.previewIds) {
+        const p = stage.primitives.find((p) => p.id === ref);
+        if (p?.kind === 'image')
+          lines.push(
+            `<a id="frame-${ref}"></a>`,
+            ...(p.actualMs !== null ? [`Clip frame at ${p.actualMs} ms`] : []),
+            `![${clean(label?.label ?? media.sourcePart)}](${origin}/api/assets/${p.assetId})`,
+            '',
           );
       }
     }

@@ -17,7 +17,20 @@ for (const document of corpus.documents) {
     await expect(
       page.getByRole('heading', { name: 'Document evidence' }),
     ).toBeVisible();
-    const image = page.locator('.document-viewer img');
+    await expect(
+      page.getByRole('heading', { name: 'Document summary', exact: true }),
+    ).toBeVisible();
+    if (stage.document.review?.summary)
+      await expect(page.locator('.summary-text')).toHaveText(
+        stage.document.review.summary.text,
+      );
+    else
+      await expect(
+        page.getByText('No generated summary is available for this revision.', {
+          exact: false,
+        }),
+      ).toBeVisible();
+    const image = page.locator('img[alt$="source render"]');
     await expect(image).toBeVisible();
     await expect
       .poll(() =>
@@ -30,6 +43,27 @@ for (const document of corpus.documents) {
     expect(await select.locator('option').count()).toBe(
       stage.document.units.length,
     );
+    if (stage.document.review?.unitLabels.length)
+      expect(await select.locator('option').first().textContent()).toContain(
+        stage.document.review.unitLabels[0].label,
+      );
+    if (stage.document.media?.length) {
+      const embedded = stage.document.media.find(
+        (m: any) => m.unitNumbers.length,
+      );
+      if (embedded) {
+        await select.selectOption({
+          value: String(embedded.unitNumbers[0] - 1),
+        });
+        const label = stage.document.review?.mediaLabels.find(
+          (l: any) => l.mediaId === embedded.id,
+        )?.label;
+        await expect(page.locator(`#media-${embedded.id}`)).toContainText(
+          label ?? `Embedded ${embedded.kind}`,
+        );
+        await select.selectOption({ value: '0' });
+      }
+    }
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await expect(select).toHaveValue('1');
     await expect(image).toHaveAttribute('alt', /2 source render$/);

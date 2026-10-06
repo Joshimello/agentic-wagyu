@@ -143,13 +143,15 @@ export async function retryUpload(id: string, inputRevisionId?: string) {
     if (!upload) throw new Error('Upload not found');
     if (inputRevisionId && upload.currentRevisionId !== inputRevisionId)
       throw new Error(
-        'Staging changed. Reload before revisiting visual context.',
+        'Staging changed. Reload before revisiting descriptions.',
       );
     if (
       inputRevisionId &&
-      !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)
+      !/\.(mp4|mov|mkv|webm|m4v|avi|pptx|pdf|png|jpg|jpeg|webp|bmp|tif|tiff)$/i.test(
+        upload.filename,
+      )
     )
-      throw new Error('Visual context review requires a recording');
+      throw new Error('Description review requires a recording or document');
     const [latest] = await tx
       .select()
       .from(runs)

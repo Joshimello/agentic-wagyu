@@ -151,6 +151,93 @@ class Documents(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract(self.pdf, "exe")
 
+    def test_embedded_media_preserves_bytes_and_slide_lineage(self):
+        import hashlib
+        from zipfile import ZipFile
+
+        path = PRIVATE / "documents/260629_VLM.pptx"
+        result = extract(path, "pptx")
+        with ZipFile(path) as archive:
+            names = [
+                n
+                for n in archive.namelist()
+                if n.startswith("ppt/media/") and not n.endswith("/")
+            ]
+            self.assertEqual(len(result["media"]), len(names))
+            for item in result["media"]:
+                original = archive.read(item["sourcePart"])
+                self.assertEqual(
+                    item["original"]["sha256"], hashlib.sha256(original).hexdigest()
+                )
+                self.assertEqual(
+                    (root / item["original"]["storageKey"]).read_bytes(), original
+                )
+                self.assertTrue(item["unitNumbers"])
+                self.assertIn(item["previewSourceUnit"], item["unitNumbers"])
+                self.assertTrue(item["previews"])
+            crops = [m for m in result["media"] if m["sourcePart"].endswith(".wdp")]
+            self.assertEqual(len(crops), 6)
+            self.assertTrue(
+                all(m["previewOrigin"] == "slide_crop" and m["warnings"] for m in crops)
+            )
+
+    def test_embedded_video_extracts_real_clip_and_bounded_frames(self):
+        import hashlib
+
+        clip = self.directory / "clip.mp4"
+        command(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-ss",
+                "60",
+                "-i",
+                str(PRIVATE / "recordings/2026-09-08.mp4"),
+                "-t",
+                "4",
+                "-an",
+                "-vf",
+                "scale=640:-2",
+                "-c:v",
+                "libx264",
+                "-y",
+                str(clip),
+            ]
+        )
+        poster = self.directory / "poster.jpg"
+        self.image.save(poster)
+        deck = Presentation(PRIVATE / "documents/260629_VLM.pptx")
+        for slide_id in list(deck.slides._sldIdLst)[1:]:
+            deck.part.drop_rel(slide_id.rId)
+            deck.slides._sldIdLst.remove(slide_id)
+        deck.slides[0].shapes.add_movie(
+            str(clip),
+            0,
+            0,
+            deck.slide_width,
+            deck.slide_height,
+            str(poster),
+            "video/mp4",
+        )
+        path = self.directory / "video.pptx"
+        deck.save(path)
+        result = extract(path, "pptx")
+        videos = [m for m in result["media"] if m["kind"] == "video"]
+        self.assertEqual(len(videos), 1)
+        video = videos[0]
+        self.assertEqual(
+            video["original"]["sha256"], hashlib.sha256(clip.read_bytes()).hexdigest()
+        )
+        self.assertEqual(video["unitNumbers"], [1])
+        self.assertEqual(video["previewOrigin"], "video_frames")
+        self.assertEqual(len(video["previews"]), 4)
+        self.assertTrue(video["warnings"])
+        for frame in video["previews"]:
+            self.assertGreaterEqual(frame["actualMs"], 0)
+            self.assertLess(frame["actualMs"], video["durationMs"])
+            self.assertTrue((root / frame["asset"]["storageKey"]).is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

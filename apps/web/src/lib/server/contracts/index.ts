@@ -64,7 +64,14 @@ export const imagePrimitive = z
   .object({
     id,
     kind: z.literal('image'),
-    role: z.enum(['frame', 'slide', 'page', 'original']),
+    role: z.enum([
+      'frame',
+      'slide',
+      'page',
+      'original',
+      'figure',
+      'embedded_frame',
+    ]),
     assetId: id,
     requestedMs: ms.nullable(),
     actualMs: ms.nullable(),
@@ -151,6 +158,7 @@ export const stageSchema = z
                 renderId: id,
                 complete: z.boolean(),
                 warnings: z.array(z.string()),
+                mediaIds: z.array(id).optional(),
               })
               .strict(),
           )
@@ -169,6 +177,68 @@ export const stageSchema = z
         tools: z.record(z.string(), z.string()),
         elapsedMs: ms,
         cached: z.boolean(),
+        media: z
+          .array(
+            z
+              .object({
+                id,
+                kind: z.enum(['image', 'video']),
+                assetId: id,
+                sourcePart: z.string().regex(/^ppt\/media\/[^/]+$/),
+                unitNumbers: z.array(z.number().int().positive()),
+                previewSourceUnit: z.number().int().positive().nullable(),
+                previewOrigin: z.enum([
+                  'decoded_image',
+                  'video_frames',
+                  'slide_crop',
+                  'unavailable',
+                ]),
+                previewIds: z.array(id),
+                durationMs: ms.nullable(),
+                warnings: z.array(z.string()),
+              })
+              .strict(),
+          )
+          .optional(),
+        review: z
+          .object({
+            model: z.string(),
+            promptVersion: z.string(),
+            createdAt: z.string().datetime(),
+            unitLabels: z.array(
+              z
+                .object({
+                  unitNumber: z.number().int().positive(),
+                  label: z.string().min(1).max(160),
+                  description: z.string().min(1).max(1000),
+                  evidenceIds: z.array(id).min(1),
+                })
+                .strict(),
+            ),
+            mediaLabels: z.array(
+              z
+                .object({
+                  mediaId: id,
+                  label: z.string().min(1).max(160),
+                  description: z.string().min(1).max(1000),
+                  evidenceIds: z.array(id).min(1),
+                })
+                .strict(),
+            ),
+            summary: z
+              .object({
+                text: z.string().min(1).max(8000),
+                evidenceIds: z.array(id).min(1),
+              })
+              .strict()
+              .nullable(),
+            unitsRead: z.array(z.number().int().positive()),
+            mediaRead: z.array(id),
+            complete: z.boolean(),
+            warnings: z.array(z.string()),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -367,6 +437,125 @@ export function validateStage(value: unknown): Stage {
       }
       if (!unit.complete && !unit.warnings.length)
         throw new Error('Incomplete document unit must be explained');
+    }
+    const media = stage.document.media ?? [];
+    const byMedia = new Map(media.map((m) => [m.id, m]));
+    if (byMedia.size !== media.length)
+      throw new Error('Duplicate document media ID');
+    for (const item of media) {
+      if (
+        format !== 'pptx' ||
+        new Set(item.unitNumbers).size !== item.unitNumbers.length ||
+        item.unitNumbers.some(
+          (n) => !stage.document!.units.some((u) => u.number === n),
+        ) ||
+        (item.previewSourceUnit !== null &&
+          !item.unitNumbers.includes(item.previewSourceUnit))
+      )
+        throw new Error('Invalid embedded media source lineage');
+      if (new Set(item.previewIds).size !== item.previewIds.length)
+        throw new Error('Duplicate media preview');
+      for (const ref of item.previewIds) {
+        const p = byId.get(ref);
+        if (
+          !p ||
+          p.kind !== 'image' ||
+          used.has(ref) ||
+          p.role !== (item.kind === 'video' ? 'embedded_frame' : 'figure') ||
+          (item.previewSourceUnit !== null
+            ? p.locator.kind !== 'slide' ||
+              p.locator.slide !== item.previewSourceUnit
+            : p.locator.kind !== 'image')
+        )
+          throw new Error('Invalid embedded media preview');
+        if (
+          item.kind === 'video' &&
+          (item.durationMs === null ||
+            p.actualMs === null ||
+            p.requestedMs === null ||
+            p.actualMs >= item.durationMs ||
+            p.requestedMs >= item.durationMs)
+        )
+          throw new Error('Embedded frame escapes its clip timeline');
+        used.add(ref);
+      }
+    }
+    for (const unit of stage.document.units) {
+      const expected = media
+        .filter((m) => m.unitNumbers.includes(unit.number))
+        .map((m) => m.id);
+      if (
+        new Set(unit.mediaIds ?? []).size !== (unit.mediaIds ?? []).length ||
+        expected.length !== (unit.mediaIds ?? []).length ||
+        (unit.mediaIds ?? []).some((ref) => !expected.includes(ref))
+      )
+        throw new Error('Slide media links do not match source occurrences');
+    }
+    const review = stage.document.review;
+    if (review) {
+      const units = stage.document.units;
+      const checkEvidence = (refs: string[]) =>
+        refs.every((ref) => byId.has(ref));
+      if (
+        new Set(review.unitsRead).size !== review.unitsRead.length ||
+        review.unitsRead.some((n) => !units.some((u) => u.number === n)) ||
+        new Set(review.mediaRead).size !== review.mediaRead.length ||
+        review.mediaRead.some((ref) => !byMedia.has(ref))
+      )
+        throw new Error('Invalid document review coverage');
+      if (
+        new Set(review.unitLabels.map((l) => l.unitNumber)).size !==
+          review.unitLabels.length ||
+        review.unitLabels.length !== review.unitsRead.length
+      )
+        throw new Error('Document labels do not match reading coverage');
+      for (const label of review.unitLabels) {
+        const unit = units.find((u) => u.number === label.unitNumber);
+        if (
+          !unit ||
+          !review.unitsRead.includes(unit.number) ||
+          !checkEvidence(label.evidenceIds) ||
+          !label.evidenceIds.includes(unit.renderId) ||
+          label.evidenceIds.some(
+            (ref) => ![unit.renderId, ...unit.textIds].includes(ref),
+          )
+        )
+          throw new Error('Slide label lacks its source evidence');
+      }
+      if (
+        new Set(review.mediaLabels.map((l) => l.mediaId)).size !==
+          review.mediaLabels.length ||
+        review.mediaLabels.length !== review.mediaRead.length
+      )
+        throw new Error('Media labels do not match reading coverage');
+      for (const label of review.mediaLabels) {
+        const item = byMedia.get(label.mediaId);
+        if (
+          !item ||
+          !review.mediaRead.includes(item.id) ||
+          !checkEvidence(label.evidenceIds) ||
+          label.evidenceIds.some((ref) => !item.previewIds.includes(ref))
+        )
+          throw new Error('Media label cites another artifact');
+      }
+      if (
+        review.summary &&
+        (!checkEvidence(review.summary.evidenceIds) ||
+          review.summary.evidenceIds.some(
+            (ref) =>
+              !review.unitLabels.some((l) => l.evidenceIds.includes(ref)),
+          ))
+      )
+        throw new Error('Document summary cites unread evidence');
+      if (
+        review.complete !==
+        (review.unitsRead.length === units.length &&
+          review.mediaRead.length === media.length &&
+          review.summary !== null)
+      )
+        throw new Error('Document review completeness mismatch');
+      if (!review.complete && !review.warnings.length)
+        throw new Error('Incomplete document descriptions must be explained');
     }
     if (
       used.size !== stage.primitives.length ||

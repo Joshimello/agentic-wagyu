@@ -217,9 +217,9 @@ Implemented commands and Podman invocations are documented in [README.md](README
 
 ### M3 — PPTX/PDF/image staging and batch selection
 
-**Deliver:** native text/notes and rendered slide/page/image primitives; grouped upload display; select ready revisions for a push.
+**Deliver:** native text/notes and rendered slide/page/image primitives; PPTX original embedded images/videos with slide lineage, decoded previews and concise English Qwen media/slide labels; plain whole-document summaries based on every slide/page, with PDFs understood from their page images. Keep generated descriptions separate from source evidence and record reading coverage/citations/model/prompt. Provide summary-first review, portable exports, description-only revisits, grouped upload display and ready-revision selection for a push.
 
-**Test:** `bun run eval:interpreter:documents`, `./infra/test-documents.sh`, maintained Python checks and browser coverage: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image; select video + deck, edit the deck, verify old selection remains pinned or visibly requires reselection before submission.
+**Test:** `bun run eval:interpreter:documents`, `./infra/test-documents.sh`, maintained Python checks and browser coverage: slide notes, hidden slides, fonts, multi-column/scanned PDF, rotated image, byte-exact embedded media, bounded video previews, every-page VLM coverage, English labels/plain summaries, valid citations and checkpoint replay. Select video + deck, edit the deck, verify old selection remains pinned, outdated descriptions are cleared, and description-only revisit preserves corrections.
 
 **Pass:** source mappings and coverage are correct; notes are not treated as speech; exact selections and incomplete-coverage warnings are visible. No automatic memory promotion occurs.
 

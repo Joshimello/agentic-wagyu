@@ -11,6 +11,7 @@ import {
 import { buildVideo, revisitContext } from './video';
 import { applyTranscript } from './transcript';
 import { buildDocument, documentFormat } from './documents';
+import { enrichDocument } from './document-review';
 
 export async function interpret(runId: string) {
   const [run] = await db.select().from(runs).where(eq(runs.id, runId));
@@ -69,54 +70,65 @@ export async function interpret(runId: string) {
         !base ||
         base.uploadId !== upload.id ||
         base.manifest.rawAssetId !== raw.id ||
-        !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)
+        (!documentFormat(upload.filename) &&
+          !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename))
       )
-        throw new Error(
-          'Visual context input is not a revision of this recording',
-        );
+        throw new Error('Description input is not a revision of this source');
       stage = validateStage(structuredClone(base.manifest));
       stage.id = crypto.randomUUID();
       stage.parentRevisionId = base.id;
       stage.createdAt = new Date().toISOString();
-      if (!stage.provenance.transcription) {
-        // Legacy corrections have no run ID: follow their immutable ancestry
-        // rather than claiming this visual-only job transcribed the audio.
-        let source = base;
-        const visited = new Set([source.id]);
-        while (!source.runId && source.parentRevisionId) {
-          const [parent] = await db
-            .select()
-            .from(revisions)
-            .where(eq(revisions.id, source.parentRevisionId));
-          if (
-            !parent ||
-            parent.uploadId !== upload.id ||
-            visited.has(parent.id)
-          )
-            break;
-          visited.add(parent.id);
-          source = parent;
+      if (stage.document) {
+        const previous = stage.document.review;
+        stage.coverage.warnings = stage.coverage.warnings.filter(
+          (warning) =>
+            !previous?.warnings.includes(warning) &&
+            !warning.startsWith('Source text was corrected;') &&
+            !warning.startsWith('Document labels and summary are unavailable;'),
+        );
+        stage.provenance.adapter = 'document-review-revisit-1';
+        await enrichDocument(stage, raw.storageKey, progress);
+      } else {
+        if (!stage.provenance.transcription) {
+          // Legacy corrections have no run ID: follow their immutable ancestry
+          // rather than claiming this visual-only job transcribed the audio.
+          let source = base;
+          const visited = new Set([source.id]);
+          while (!source.runId && source.parentRevisionId) {
+            const [parent] = await db
+              .select()
+              .from(revisions)
+              .where(eq(revisions.id, source.parentRevisionId));
+            if (
+              !parent ||
+              parent.uploadId !== upload.id ||
+              visited.has(parent.id)
+            )
+              break;
+            visited.add(parent.id);
+            source = parent;
+          }
+          if (source.runId)
+            stage.provenance.transcription = {
+              runId: source.runId,
+              windowMs: 180000,
+              scope: 'window',
+            };
         }
-        if (source.runId)
-          stage.provenance.transcription = {
-            runId: source.runId,
-            windowMs: 180000,
-            scope: 'window',
-          };
+        stage.provenance.adapter = 'video-context-revisit-1';
+        // Restore ASR coverage independently of earlier visual failures/notes.
+        const transcription = stage.provenance.transcription;
+        const saved = transcription
+          ? Bun.file(assetPath(`runs/${transcription.runId}/asr.json`))
+          : null;
+        if (saved && (await saved.exists())) {
+          const extracted = structuredClone(stage);
+          extracted.primitives = [];
+          applyTranscript(extracted, await saved.json());
+          stage.coverage = extracted.coverage;
+        }
+        await revisitContext(stage, raw.storageKey, progress);
       }
-      stage.provenance.adapter = 'video-context-revisit-1';
-      // Restore ASR coverage independently of earlier visual failures/notes.
-      const transcription = stage.provenance.transcription;
-      const saved = transcription
-        ? Bun.file(assetPath(`runs/${transcription.runId}/asr.json`))
-        : null;
-      if (saved && (await saved.exists())) {
-        const extracted = structuredClone(stage);
-        extracted.primitives = [];
-        applyTranscript(extracted, await saved.json());
-        stage.coverage = extracted.coverage;
-      }
-      await revisitContext(stage, raw.storageKey, progress);
     } else if (/\.(txt|md|csv|json)$/i.test(upload.filename)) {
       const text = await Bun.file(assetPath(raw.storageKey)).text();
       stage.primitives.push({

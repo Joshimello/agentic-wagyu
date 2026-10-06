@@ -61,7 +61,9 @@
     if (!r.ok) error = (await r.json()).error;
     else
       notice = contextOnly
-        ? 'Visual context review queued. Existing speech will be preserved.'
+        ? stage?.document
+          ? 'Document descriptions queued. Extracted source evidence will be preserved.'
+          : 'Visual context review queued. Existing speech will be preserved.'
         : 'Reprocessing queued. Your current revision remains available.';
   }
   function seek(ms: number) {
@@ -128,9 +130,12 @@
   >{#if ['failed', 'ready', 'ready_with_warnings'].includes(detail.run.state)}<button
       class="secondary"
       onclick={() => retry()}>Reprocess original</button
-    >{#if isVideo && current}<button
+    >{#if (isVideo || stage?.document) && current}<button
         class="secondary"
-        onclick={() => retry(true)}>Revisit visual context</button
+        onclick={() => retry(true)}
+        >{stage?.document
+          ? 'Revisit document descriptions'
+          : 'Revisit visual context'}</button
       >{/if}{/if}<a
     href={`/api/assets/${detail.asset.id}`}
     target="_blank"

@@ -10,6 +10,7 @@ import { validateStage } from '../src/lib/server/contracts';
 import { sqlClient } from '../src/lib/server/db/client';
 import { exportBundle } from '../src/lib/server/services/bundle';
 import { unzipSync } from 'fflate';
+import { correctStage } from '../src/lib/server/services/staging';
 const enabled = !!process.env.DOCUMENT_FIXTURES;
 const check = test.skipIf(!enabled);
 afterAll(async () => {
@@ -77,8 +78,123 @@ for (const [filename, path] of [
       expect(files['extracted-text.md']).toBeDefined();
       expect(
         Object.keys(files).filter((f) => f.startsWith('images/')),
-      ).toHaveLength(latest.document!.units.length);
+      ).toHaveLength(
+        latest.primitives.filter((p) => p.kind === 'image').length,
+      );
+      expect(
+        Object.keys(files).filter((f) => f.startsWith('media/')),
+      ).toHaveLength(latest.document!.media?.length ?? 0);
       expect(await memoryCount()).toBe(0);
+      if (filename.endsWith('.pptx')) {
+        // Exercise the actual SDK/worker lifecycle against a deterministic local model server.
+        const server = Bun.serve({
+          port: 0,
+          async fetch(request) {
+            const body = (await request.json()) as any;
+            const refs = body.messages[1].content
+              .filter((p: any) => p.type === 'text')
+              .slice(1)
+              .map((p: any) => p.text.split('\n')[0]);
+            const content = JSON.stringify(
+              refs.length
+                ? {
+                    labels: refs.map((ref: string) => ({
+                      ref,
+                      label: 'Research source comparison',
+                      description:
+                        'The source shows research methods and reported comparisons.',
+                    })),
+                  }
+                : {
+                    summary:
+                      'The source presents research methods and comparisons.',
+                    evidenceRefs: ['U1'],
+                  },
+            );
+            return Response.json({
+              id: 'local-review',
+              object: 'chat.completion',
+              model: 'local-review',
+              choices: [
+                {
+                  index: 0,
+                  finish_reason: 'stop',
+                  message: { role: 'assistant', content },
+                },
+              ],
+            });
+          },
+        });
+        const previous = {
+          key: process.env.OPENAI_API_KEY,
+          model: process.env.OPENAI_MODEL,
+          url: process.env.OPENAI_BASE_URL,
+        };
+        process.env.OPENAI_API_KEY = 'local-regression';
+        process.env.OPENAI_MODEL = 'local-review';
+        process.env.OPENAI_BASE_URL = `${server.url}v1`;
+        try {
+          const revisit = await retryUpload(item.uploadId, latest.id);
+          await interpret(revisit);
+          detail = await getUpload(item.uploadId);
+          const described = validateStage(
+            detail.revisions.find(
+              (r) => r.id === detail.upload.currentRevisionId,
+            )!.manifest,
+          );
+          expect(described.document!.review!.complete).toBe(true);
+          expect(described.primitives).toEqual(latest.primitives);
+          expect(described.document!.media).toEqual(latest.document!.media);
+          expect(described.provenance.adapter).toBe(
+            'document-review-revisit-1',
+          );
+          const primitive = described.primitives.find(
+            (p) => p.kind === 'text',
+          )!;
+          const corrected = await correctStage(item.uploadId, {
+            baseRevisionId: described.id,
+            label: 'Corrected deck',
+            sourceTime: null,
+            edits: [
+              {
+                primitiveId: primitive.id,
+                text: 'Corrected source wording',
+                speaker: null,
+              },
+            ],
+          });
+          expect(corrected.document!.review).toBeUndefined();
+          expect(
+            corrected.primitives.find(
+              (p) => p.id === primitive.id && p.kind === 'text',
+            )!.kind,
+          ).toBe('text');
+          expect(
+            (await getUpload(item.uploadId)).revisions.find(
+              (r) => r.id === described.id,
+            )!.manifest.document!.review!.summary,
+          ).toBeDefined();
+          await expect(
+            retryUpload(item.uploadId, described.id),
+          ).rejects.toThrow('Staging changed');
+          const refreshed = await retryUpload(item.uploadId, corrected.id);
+          await interpret(refreshed);
+          detail = await getUpload(item.uploadId);
+          const reviewed = validateStage(
+            detail.revisions.find(
+              (r) => r.id === detail.upload.currentRevisionId,
+            )!.manifest,
+          );
+          expect(reviewed.primitives).toEqual(corrected.primitives);
+          expect(reviewed.document!.review!.complete).toBe(true);
+          expect(await memoryCount()).toBe(0);
+        } finally {
+          server.stop(true);
+          process.env.OPENAI_API_KEY = previous.key ?? '';
+          process.env.OPENAI_MODEL = previous.model ?? '';
+          process.env.OPENAI_BASE_URL = previous.url ?? '';
+        }
+      }
     },
     60000,
   );

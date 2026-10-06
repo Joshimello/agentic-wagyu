@@ -1,0 +1,294 @@
+import { test, expect } from 'bun:test';
+import { enrichDocument } from '../src/lib/server/agents/interpreter/document-review';
+import { validateStage, type Stage } from '../src/lib/server/contracts';
+import type { llmClient } from '../src/lib/server/llm/client';
+import { exportMarkdown } from '../src/lib/server/services/staging';
+
+function document(format: 'pptx' | 'pdf' = 'pptx'): Stage {
+  const stage: Stage = {
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    uploadId: crypto.randomUUID(),
+    rawAssetId: crypto.randomUUID(),
+    parentRevisionId: null,
+    createdAt: new Date().toISOString(),
+    metadata: {
+      label: 'Source',
+      uploader: 'local',
+      uploadedAt: new Date().toISOString(),
+      sourceTime: null,
+      sourceTimeOrigin: 'unknown',
+    },
+    primitives: [],
+    annotations: [],
+    coverage: { complete: true, durationMs: null, warnings: [] },
+    provenance: {
+      adapter: 'documents-3',
+      model: null,
+      modelRevision: null,
+      promptVersion: null,
+    },
+    document: {
+      format,
+      units: [],
+      media: [],
+      tools: {},
+      transform: null,
+      elapsedMs: 1,
+      cached: false,
+    },
+  };
+  for (let n = 1; n <= 5; n++) {
+    const renderId = crypto.randomUUID(),
+      textId = crypto.randomUUID();
+    const locator =
+      format === 'pptx'
+        ? { kind: 'slide' as const, slide: n }
+        : { kind: 'page' as const, page: n };
+    stage.primitives.push(
+      {
+        id: renderId,
+        kind: 'image',
+        role: format === 'pptx' ? 'slide' : 'page',
+        assetId: crypto.randomUUID(),
+        locator,
+        actualMs: null,
+        requestedMs: null,
+      },
+      {
+        id: textId,
+        kind: 'text',
+        role: 'native',
+        text: 'Native 简体 text stays untouched',
+        speaker: null,
+        locator,
+      },
+    );
+    stage.document!.units.push({
+      number: n,
+      width: 100,
+      height: 100,
+      hidden: false,
+      complete: true,
+      warnings: [],
+      renderId,
+      textIds: [textId],
+      mediaIds: [],
+    });
+  }
+  if (format === 'pptx') {
+    const id = crypto.randomUUID(),
+      previewId = crypto.randomUUID();
+    stage.document!.media!.push({
+      id,
+      kind: 'video',
+      assetId: crypto.randomUUID(),
+      sourcePart: 'ppt/media/video1.mp4',
+      unitNumbers: [2],
+      previewSourceUnit: 2,
+      previewOrigin: 'video_frames',
+      previewIds: [previewId],
+      durationMs: 2000,
+      warnings: ['Sampled frames; audio is not interpreted.'],
+    });
+    stage.document!.units[1].mediaIds = [id];
+    stage.primitives.push({
+      id: previewId,
+      kind: 'image',
+      role: 'embedded_frame',
+      assetId: crypto.randomUUID(),
+      locator: { kind: 'slide', slide: 2 },
+      actualMs: 1000,
+      requestedMs: 1000,
+    });
+  }
+  return stage;
+}
+const image = async (id: string) => ({
+  sha256: id,
+  url: 'data:image/jpeg;base64,aGVsbG8=',
+});
+function provider(calls: any[], invent = false) {
+  return {
+    model: 'test-qwen',
+    client: {
+      chat: {
+        completions: {
+          create: async (body: any) => {
+            calls.push(body);
+            const content = body.messages[1].content;
+            const refs = content
+              .filter((c: any) => c.type === 'text')
+              .slice(1)
+              .map((c: any) => c.text.split('\n')[0]);
+            return {
+              choices: [
+                {
+                  finish_reason: 'stop',
+                  message: {
+                    content: JSON.stringify(
+                      refs.length
+                        ? {
+                            labels: refs.map((ref: string) => ({
+                              ref: invent ? 'U999' : ref,
+                              label: 'Visual research comparison',
+                              description:
+                                'Source content describes a comparison of 简体 methods.',
+                            })),
+                          }
+                        : {
+                            summary:
+                              'The document presents a visual research comparison and its reported limitations.',
+                            evidenceRefs: [invent ? 'U999' : 'U5', 'U2'],
+                          },
+                    ),
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    },
+  } as unknown as ReturnType<typeof llmClient>;
+}
+test('whole-document review reads every visual unit and media, remaps cached citations, and preserves native evidence', async () => {
+  const stage = document(),
+    calls: any[] = [],
+    source = `assets/ab/${crypto.randomUUID()}`;
+  await enrichDocument(stage, source, undefined, provider(calls), image);
+  expect(calls).toHaveLength(4); // Two page batches, one video batch and one synthesis.
+  expect(stage.document!.review!.unitsRead).toEqual([1, 2, 3, 4, 5]);
+  expect(stage.document!.review!.mediaRead).toEqual([
+    stage.document!.media![0].id,
+  ]);
+  expect(stage.document!.review!.complete).toBe(true);
+  expect(validateStage(stage)).toEqual(stage);
+  expect(stage.document!.review!.unitLabels[0].description).toContain('簡體');
+  expect(
+    stage.primitives.some((p) => p.kind === 'text' && p.text.includes('简体')),
+  ).toBe(true);
+  expect(exportMarkdown(stage, 'source.pptx', 'http://local')).toContain(
+    'Document summary',
+  );
+  expect(exportMarkdown(stage, 'source.pptx', 'http://local')).toContain(
+    'ppt/media/video1.mp4',
+  );
+  const replay = structuredClone(stage);
+  for (const primitive of replay.primitives) {
+    const oldId = primitive.id,
+      nextId = crypto.randomUUID();
+    primitive.id = nextId;
+    for (const unit of replay.document!.units) {
+      if (unit.renderId === oldId) unit.renderId = nextId;
+      unit.textIds = unit.textIds.map((id) => (id === oldId ? nextId : id));
+    }
+    for (const media of replay.document!.media!)
+      media.previewIds = media.previewIds.map((id) =>
+        id === oldId ? nextId : id,
+      );
+  }
+  // A stable image hash represents unchanged content across new primitive IDs.
+  const hashes = new Map(
+    stage.primitives
+      .filter((p) => p.kind === 'image')
+      .map((p) => [p.assetId, p.id]),
+  );
+  const resolve = async (id: string) =>
+    image(
+      hashes.get((replay.primitives.find((p) => p.id === id) as any).assetId)!,
+    );
+  await enrichDocument(replay, source, undefined, provider(calls), resolve);
+  expect(calls).toHaveLength(4);
+  expect(validateStage(replay)).toEqual(replay);
+  expect(replay.document!.review!.summary!.evidenceIds).not.toContain(
+    stage.document!.units[4].renderId,
+  );
+  for (const mutate of [
+    (s: Stage) => {
+      s.document!.review!.summary!.evidenceIds = [crypto.randomUUID()];
+    },
+    (s: Stage) => {
+      s.document!.media![0].unitNumbers = [1];
+    },
+    (s: Stage) => {
+      s.document!.review!.unitsRead.pop();
+    },
+  ]) {
+    const invalid = structuredClone(stage);
+    mutate(invalid);
+    expect(() => validateStage(invalid)).toThrow();
+  }
+});
+test('PDF review sends images without native text and cites page renders', async () => {
+  const stage = document('pdf'),
+    calls: any[] = [];
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    provider(calls),
+    image,
+  );
+  expect(JSON.stringify(calls)).not.toContain('Native 简体');
+  expect(
+    calls
+      .slice(0, 2)
+      .flatMap((c) =>
+        c.messages[1].content.filter((p: any) => p.type === 'image_url'),
+      ),
+  ).toHaveLength(5);
+  expect(stage.document!.review!.summary!.evidenceIds).toEqual([
+    stage.document!.units[4].renderId,
+    stage.document!.units[1].renderId,
+  ]);
+  expect(validateStage(stage)).toEqual(stage);
+});
+test('invented item references are retried and left unavailable without changing source coverage', async () => {
+  const stage = document('pdf'),
+    calls: any[] = [];
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    provider(calls, true),
+    image,
+  );
+  expect(calls).toHaveLength(4);
+  expect(stage.document!.review!.summary).toBeNull();
+  expect(stage.document!.review!.complete).toBe(false);
+  expect(stage.document!.review!.warnings).toHaveLength(3);
+  expect(stage.coverage.complete).toBe(true);
+  expect(validateStage(stage)).toEqual(stage);
+});
+test('a serving outage stops remaining model work and publishes source evidence with an explicit deferred review', async () => {
+  const stage = document('pdf');
+  let calls = 0;
+  const unavailable = {
+    model: 'outage',
+    client: {
+      chat: {
+        completions: {
+          create: async () => {
+            calls++;
+            throw Object.assign(new Error('Unavailable'), { status: 500 });
+          },
+        },
+      },
+    },
+  } as unknown as ReturnType<typeof llmClient>;
+  await enrichDocument(
+    stage,
+    `assets/ab/${crypto.randomUUID()}`,
+    undefined,
+    unavailable,
+    image,
+  );
+  expect(calls).toBe(4);
+  expect(stage.document!.review!.summary).toBeNull();
+  expect(stage.document!.review!.warnings.join(' ')).toContain('HTTP 500');
+  expect(stage.document!.review!.warnings.join(' ')).toContain(
+    'serving backend recovers',
+  );
+  expect(validateStage(stage)).toEqual(stage);
+});

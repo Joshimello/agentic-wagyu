@@ -23,5 +23,6 @@ podman exec "$document_media" python -c 'from pathlib import Path; from document
 podman run --rm --name "$document_runner" --network chronicler_default \
   -e "DATABASE_URL=postgres://chronicler:local-only@database:5432/$document_database" \
   -e "MEDIA_URL=http://$document_media:8000" -e DOCUMENT_FIXTURES=/fixtures \
+  -e OPENAI_API_KEY= -e OPENAI_MODEL= -e OPENAI_BASE_URL= \
   -v "$PWD:/app" -v "$document_data:/data" -v "$PWD/data/documents:/fixtures:ro" -w /app docker.io/oven/bun:1.4.2 \
   sh -c 'bun run --cwd apps/web db:migrate && bun test apps/web/tests/documents.integration.test.ts'

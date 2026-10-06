@@ -7,8 +7,9 @@ from zipfile import ZipFile
 from PIL import Image, ImageOps
 from pptx import Presentation
 from media import ROOT, store_image
+from document_media import extract_media
 
-ADAPTER = "documents-2"
+ADAPTER = "documents-3"
 MAX_UNITS = 400
 _lock = threading.Lock()  # Poppler/LibreOffice memory use is bounded to one document.
 
@@ -279,7 +280,8 @@ def pptx_units(path, tmp):
             + ", ".join(missing)
             + ". Review the renders against the original."
         )
-    return units, warnings
+    media = extract_media(local, presentation, units)
+    return units, warnings, media
 
 
 def image_units(path, tmp):
@@ -324,7 +326,16 @@ def extract(path, format):
         if cache.is_file():
             result = json.loads(cache.read_text())
             if all(
-                (ROOT / u["render"]["storageKey"]).is_file() for u in result["units"]
+                (ROOT / a["storageKey"]).is_file()
+                for a in [
+                    *[u["render"] for u in result["units"]],
+                    *[m["original"] for m in result.get("media", [])],
+                    *[
+                        p["asset"]
+                        for m in result.get("media", [])
+                        for p in m["previews"]
+                    ],
+                ]
             ):
                 return {**result, "cached": True}
         started = time.monotonic()
@@ -332,13 +343,14 @@ def extract(path, format):
             tmp = Path(directory)
             warnings = []
             transform = None
+            media = []
             if format == "pdf":
                 units = pdf_units(path, tmp)
                 warnings = [
                     "Native PDF blocks preserve layout coordinates; reading order and equations/tables may require the page render. Embedded media is not interpreted."
                 ]
             elif format == "pptx":
-                units, warnings = pptx_units(path, tmp)
+                units, warnings, media = pptx_units(path, tmp)
             else:
                 units, transform = image_units(path, tmp)
         result = {
@@ -347,6 +359,7 @@ def extract(path, format):
             "units": units,
             "warnings": warnings,
             "transform": transform,
+            "media": media,
             "tools": versions(),
             "elapsedMs": round((time.monotonic() - started) * 1000),
             "cached": False,

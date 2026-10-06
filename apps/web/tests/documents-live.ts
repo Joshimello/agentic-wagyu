@@ -6,6 +6,7 @@ import { config } from '../src/lib/server/config';
 import { memoryCount } from '../src/lib/server/services/uploads';
 import { sqlClient } from '../src/lib/server/db/client';
 const url = process.env.WEB_URL ?? 'http://web:5173';
+const requireReview = process.env.DOCUMENT_REQUIRE_REVIEW !== 'false';
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
@@ -29,6 +30,28 @@ try {
       ).manifest,
     );
     assert(stage.document?.format === item.format, 'Document format mismatch');
+    const review = stage.document!.review;
+    if (requireReview) {
+      assert(
+        review?.complete && review.summary,
+        'Full document descriptions are unavailable',
+      );
+      assert(
+        review!.unitsRead.length === stage.document!.units.length,
+        'Qwen skipped document pages',
+      );
+      assert(
+        review!.mediaRead.length === (stage.document!.media ?? []).length,
+        'Qwen skipped embedded media',
+      );
+    }
+    assert(
+      [...(review?.unitLabels ?? []), ...(review?.mediaLabels ?? [])].every(
+        (l) =>
+          /[A-Za-z]{3,}/.test(l.label) && /[A-Za-z]{3,}/.test(l.description),
+      ),
+      'Generated descriptions are not English',
+    );
     assert(before.asset.sha256 === item.sha256, 'Raw source hash mismatch');
     const raw = await (
       await fetch(`${url}/api/assets/${stage.rawAssetId}`)
@@ -104,13 +127,32 @@ try {
     );
     assert(
       Object.keys(bundle).filter((f) => f.startsWith('images/')).length ===
-        stage.document!.units.length,
+        stage.primitives.filter((p) => p.kind === 'image').length,
       'Missing bundled renders',
     );
     assert(
       !Object.keys(bundle).some((f) => /\.(pptx|pdf)$/i.test(f)),
       'Original should not be duplicated in export',
     );
+    if (review?.summary)
+      assert(
+        bundle['summary.md'] &&
+          strFromU8(bundle['summary.md']).trim() === review.summary.text,
+        'Plain summary export mismatch',
+      );
+    for (const media of stage.document!.media ?? []) {
+      const files = Object.keys(bundle).filter((name) =>
+        name.startsWith(`media/${media.id}.`),
+      );
+      assert(files.length === 1, 'Embedded original missing from export');
+      const original = new Uint8Array(
+        await (await fetch(`${url}/api/assets/${media.assetId}`)).arrayBuffer(),
+      );
+      assert(
+        Bun.deepEquals(original, bundle[files[0]]),
+        'Embedded original was altered in export',
+      );
+    }
     const after = await (await fetch(`${url}/api/uploads/${upload.id}`)).json();
     assert(
       before.upload.currentRevisionId === after.upload.currentRevisionId &&
@@ -130,6 +172,13 @@ try {
       warningCount: stage.coverage.warnings.length,
       elapsedMs: stage.document!.elapsedMs,
       cached: stage.document!.cached,
+      media: stage.document!.media?.length ?? 0,
+      labels: review?.unitLabels.length ?? 0,
+      mediaLabels: review?.mediaLabels.length ?? 0,
+      summary: review?.summary?.text ?? null,
+      reviewAccepted: review?.complete === true,
+      model: review?.model ?? null,
+      promptVersion: review?.promptVersion ?? null,
     };
     reports.push(report);
     console.log(JSON.stringify(report));
@@ -146,6 +195,7 @@ try {
     JSON.stringify(
       {
         checkedAt: new Date().toISOString(),
+        requireReview,
         documents: reports,
         memoryBefore,
         memoryAfter,
@@ -155,7 +205,7 @@ try {
     ),
   );
   console.log(
-    'Document corpus mapping, raw hashes, staging and portable exports passed.',
+    `Document corpus mapping, raw hashes, staging and portable exports passed. ${requireReview ? 'Full model review passed.' : 'Model review completeness was not required; see per-document reviewAccepted.'}`,
   );
 } finally {
   await sqlClient.end();

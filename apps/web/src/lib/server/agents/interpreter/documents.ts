@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { enrichDocument } from './document-review';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { assets } from '../../db/schema';
@@ -15,12 +16,12 @@ const derivedAsset = z
     storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
     bytes: z.number().int().positive(),
-    mime: z.literal('image/jpeg'),
+    mime: z.string().min(1),
   })
   .strict();
 const responseSchema = z
   .object({
-    adapter: z.literal('documents-2'),
+    adapter: z.literal('documents-3'),
     format: z.enum(['pdf', 'pptx', 'image']),
     units: z
       .array(
@@ -48,12 +49,63 @@ const responseSchema = z
       .min(1)
       .max(400),
     warnings: z.array(z.string()),
+    media: z.array(
+      z
+        .object({
+          sourcePart: z.string(),
+          kind: z.enum(['image', 'video']),
+          original: derivedAsset,
+          unitNumbers: z.array(z.number().int().positive()),
+          previewSourceUnit: z.number().int().positive().nullable(),
+          previewOrigin: z.enum([
+            'decoded_image',
+            'video_frames',
+            'slide_crop',
+            'unavailable',
+          ]),
+          previews: z.array(
+            z
+              .object({
+                asset: derivedAsset,
+                width: z.number().int().positive(),
+                height: z.number().int().positive(),
+                requestedMs: z.number().int().nonnegative().nullable(),
+                actualMs: z.number().int().nonnegative().nullable(),
+              })
+              .strict(),
+          ),
+          durationMs: z.number().int().nonnegative().nullable(),
+          warnings: z.array(z.string()),
+        })
+        .strict(),
+    ),
     transform: stageSchema.shape.document.unwrap().shape.transform,
     tools: z.record(z.string(), z.string()),
     elapsedMs: z.number().int().nonnegative(),
     cached: z.boolean(),
   })
   .strict();
+async function registerDocumentAsset(value: z.infer<typeof derivedAsset>) {
+  const file = Bun.file(assetPath(value.storageKey));
+  const hash = new Bun.CryptoHasher('sha256')
+    .update(await file.arrayBuffer())
+    .digest('hex');
+  if (
+    file.size !== value.bytes ||
+    hash !== value.sha256 ||
+    value.storageKey !== `assets/${hash.slice(0, 2)}/${hash}`
+  )
+    throw new Error('Document asset integrity mismatch');
+  await db
+    .insert(assets)
+    .values({ id: crypto.randomUUID(), ...value })
+    .onConflictDoNothing({ target: assets.sha256 });
+  const [asset] = await db
+    .select()
+    .from(assets)
+    .where(eq(assets.sha256, value.sha256));
+  return asset;
+}
 export function documentFormat(
   filename: string,
 ): 'pdf' | 'pptx' | 'image' | null {
@@ -88,24 +140,7 @@ export async function buildDocument(
   if (result.format !== format) throw new Error('Document format mismatch');
   const units: NonNullable<Stage['document']>['units'] = [];
   for (const unit of result.units) {
-    const file = Bun.file(assetPath(unit.render.storageKey));
-    const hash = new Bun.CryptoHasher('sha256')
-      .update(await file.arrayBuffer())
-      .digest('hex');
-    if (
-      file.size !== unit.render.bytes ||
-      hash !== unit.render.sha256 ||
-      unit.render.storageKey !== `assets/${hash.slice(0, 2)}/${hash}`
-    )
-      throw new Error('Document render integrity mismatch');
-    await db
-      .insert(assets)
-      .values({ id: crypto.randomUUID(), ...unit.render })
-      .onConflictDoNothing({ target: assets.sha256 });
-    const [asset] = await db
-      .select()
-      .from(assets)
-      .where(eq(assets.sha256, unit.render.sha256));
+    const asset = await registerDocumentAsset(unit.render);
     const locator: Primitive['locator'] =
       format === 'pdf'
         ? { kind: 'page', page: unit.number }
@@ -146,9 +181,49 @@ export async function buildDocument(
       warnings: unit.warnings,
     });
   }
+  const media: NonNullable<Stage['document']>['media'] = [];
+  for (const item of result.media) {
+    const asset = await registerDocumentAsset(item.original),
+      id = crypto.randomUUID(),
+      previewIds: string[] = [];
+    for (const preview of item.previews) {
+      const image = await registerDocumentAsset(preview.asset),
+        previewId = crypto.randomUUID();
+      previewIds.push(previewId);
+      const locator: Primitive['locator'] =
+        item.previewSourceUnit !== null
+          ? { kind: 'slide', slide: item.previewSourceUnit }
+          : { kind: 'image', width: preview.width, height: preview.height };
+      stage.primitives.push({
+        id: previewId,
+        kind: 'image',
+        role: item.kind === 'video' ? 'embedded_frame' : 'figure',
+        assetId: image.id,
+        requestedMs: preview.requestedMs,
+        actualMs: preview.actualMs,
+        locator,
+      });
+    }
+    media.push({
+      id,
+      kind: item.kind,
+      assetId: asset.id,
+      sourcePart: item.sourcePart,
+      unitNumbers: item.unitNumbers,
+      previewSourceUnit: item.previewSourceUnit,
+      previewOrigin: item.previewOrigin,
+      previewIds,
+      durationMs: item.durationMs,
+      warnings: item.warnings,
+    });
+    for (const unit of units)
+      if (item.unitNumbers.includes(unit.number))
+        (unit.mediaIds ??= []).push(id);
+  }
   stage.document = {
     format,
     units,
+    media,
     transform: result.transform,
     tools: result.tools,
     elapsedMs: result.elapsedMs,
@@ -169,6 +244,14 @@ export async function buildDocument(
     modelRevision: null,
     promptVersion: null,
   };
+  try {
+    await enrichDocument(stage, storageKey, progress);
+  } catch {
+    delete stage.document.review;
+    stage.coverage.warnings.push(
+      'Document labels and summary are unavailable; source extraction is preserved. Configure the model and revisit document descriptions.',
+    );
+  }
   await progress(
     `Prepared ${units.length} ${format === 'pptx' ? 'slides' : format === 'pdf' ? 'pages' : 'image'} for review`,
   );
