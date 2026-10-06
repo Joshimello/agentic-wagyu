@@ -74,6 +74,14 @@ for (const source of corpus.sources) {
     attempt < 600 && current.state !== 'committed';
     attempt++
   ) {
+    if (current.state === 'failed') {
+      // pg-boss retries transient work after five seconds; allow that dispatch to settle.
+      // A persistent failure still stops evaluation and needs an explicit pinned retry.
+      for (let settle = 0; settle < 15 && current.state === 'failed'; settle++) {
+        await Bun.sleep(2000);
+        current = await request(`/api/pushes/${batch.id}`);
+      }
+    }
     if (current.state === 'failed' || current.state === 'canceled')
       throw new Error(
         `${source.filename}: ${current.error ?? current.state} (push ${current.id})`,

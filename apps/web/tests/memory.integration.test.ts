@@ -515,12 +515,14 @@ check(
     const stage = await source('Alice plans sensor calibration.');
     const batch = await createPush(input(stage));
     let calls = 0;
+    let repairIssues: { path: string; code: string }[] = [];
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
         calls++;
         const body = (await request.json()) as any;
         const payload = JSON.parse(body.messages[1].content[0].text);
+        if (payload.validationIssues) repairIssues = payload.validationIssues;
         const content =
           payload.task === 'extract'
             ? {
@@ -551,7 +553,7 @@ check(
                     arguments: {
                       task: 'Calibrate sensor',
                       owner: 'Alice',
-                      status: 'planned',
+                      status: calls === 1 ? 'unsupported-status' : 'planned',
                       dueDate: null,
                     },
                   },
@@ -592,6 +594,14 @@ check(
         { llm },
       );
       expect(first.versions).toHaveLength(0);
+      expect(repairIssues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'assertions.0.arguments.status',
+            code: 'invalid_value',
+          }),
+        ]),
+      );
       expect(first.outcomes[0].warnings.join(' ')).toContain('withheld');
       const before = calls;
       await buildMemoryPlan(batch.id, batch.input, [stage], snapshot, { llm });
