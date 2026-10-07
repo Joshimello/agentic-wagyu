@@ -163,6 +163,7 @@ export const projectScope = z.discriminatedUnion('mode', [
 export const pushInput = z
   .object({
     workflow: z.enum(['summary', 'assertions']).default('summary'),
+    organizationMode: z.enum(['full', 'scope']).optional(),
     idempotencyKey: z.string().min(1).max(200),
     items: z
       .array(

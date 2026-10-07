@@ -132,6 +132,11 @@ export async function openMemoryNode(
       versionId: version.id,
       title: version.title,
       summary: version.summary,
+      sourceTitle:
+        node.kind === 'segment'
+          ? (reduced.all.find((source) => source.id === node.scopeId)?.current
+              .title ?? null)
+          : null,
       segment: version.segment,
     };
   });
@@ -166,7 +171,17 @@ export async function openMemoryNode(
   const parents = reduced.nodes
     .filter((n) => n.children.some((c) => c.nodeId === nodeId))
     .map((n) => ({ id: n.id, title: n.current.title, kind: n.kind }));
+  const assigned = new Set(
+    reduced.topics.flatMap((t) => t.children.map((c) => c.nodeId)),
+  );
+  const unassignedCount =
+    identity.kind === 'source'
+      ? children.filter(
+          (c) => c.segment && !c.segment.contextOnly && !assigned.has(c.id),
+        ).length
+      : 0;
   return {
+    unassignedCount,
     version: snapshot.version,
     node: { ...identity, current },
     children,

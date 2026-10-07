@@ -1,5 +1,40 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   let { data } = $props();
+  let organizing = $state(false),
+    actionError = $state('');
+  async function organize() {
+    if (!data.source) return;
+    organizing = true;
+    actionError = '';
+    try {
+      const response = await fetch('/api/pushes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workflow: 'summary',
+          organizationMode: 'scope',
+          idempotencyKey: `scope:${data.source.revisionId}:${crypto.randomUUID()}`,
+          projectScope: { mode: 'auto' },
+          items: [
+            {
+              uploadId: data.source.uploadId,
+              revisionId: data.source.revisionId,
+              acceptPartial: !data.source.coverage.complete,
+            },
+          ],
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not start organization');
+      await goto(`/pushes/${result.id}`);
+    } catch (error) {
+      actionError =
+        error instanceof Error ? error.message : 'Could not start organization';
+      organizing = false;
+    }
+  }
   const link = (id: string, versionId?: string) =>
     `/memory/nodes/${id}?knownVersion=${data.version}${versionId ? `&versionId=${versionId}` : ''}`;
   const evidence = (id: string) =>
@@ -52,6 +87,16 @@
     >
     · <a href={`/api/assets/${data.source.rawAssetId}`}>Original file</a>
   </p>{/if}
+{#if data.unassignedCount && !data.archived}<section class="card">
+    <p>
+      {data.unassignedCount} substantive discussions have no project/topic assignment.
+    </p>
+    <button disabled={organizing} onclick={organize}
+      >{organizing
+        ? 'Starting organization…'
+        : 'Organize unassigned discussions'}</button
+    >{#if actionError}<p class="error">{actionError}</p>{/if}
+  </section>{/if}
 {#if data.children.length}<section>
     <h2>{data.node.kind === 'project' ? 'Topics' : 'Discussion segments'}</h2>
     <div class="children">
@@ -60,6 +105,9 @@
             >{child.kind}{child.segment?.contextOnly ? ' · Context' : ''}</span
           >
           <h3><a href={link(child.id, child.versionId)}>{child.title}</a></h3>
+          {#if data.node.kind === 'topic' && child.sourceTitle}<p class="muted">
+              {child.sourceTitle}
+            </p>{/if}
           <p>{child.summary}</p>
         </article>{/each}
     </div>

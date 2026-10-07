@@ -1,3 +1,4 @@
+import { chronicle } from '../src/lib/server/agents/chronicler';
 import { test, expect, afterAll } from 'bun:test';
 import OpenAI from 'openai';
 import { eq, sql } from 'drizzle-orm';
@@ -42,7 +43,7 @@ const input = (stage: Stage) => ({
     { uploadId: stage.uploadId, revisionId: stage.id, acceptPartial: false },
   ],
 });
-function model() {
+function model(options: { unassigned?: boolean } = {}) {
   let calls = 0,
     rejected = false;
   const server = Bun.serve({
@@ -87,10 +88,47 @@ function model() {
           ],
           warnings: [],
         };
+        if (options.unassigned) {
+          output.segments[0].project = null;
+          output.segments[0].topic = null;
+          output.warnings = [
+            'Project attribution unresolved in this first pass.',
+          ];
+        }
         if (!rejected) {
           rejected = true;
           output.segments[0].firstUnit++;
         }
+      } else if (payload.task === 'scope-unassigned') {
+        const project = payload.input.catalog.find(
+            (n: any) => n.kind === 'project',
+          ),
+          topic = payload.input.catalog.find(
+            (n: any) => n.kind === 'topic' && n.projectId === project?.id,
+          );
+        output = {
+          assignments: [
+            {
+              segmentId: payload.input.segments[0].segmentId,
+              project: {
+                name: 'Depth sensing',
+                description: 'Ongoing depth sensor research',
+                matchId: project?.id ?? null,
+                confidence: 1,
+                reason:
+                  'The calibration discussion shares the same research objective.',
+              },
+              topic: {
+                name: 'Calibration',
+                description: 'Calibration accuracy',
+                matchId: topic?.id ?? null,
+                confidence: 1,
+                reason: 'The same calibration purpose continues.',
+              },
+            },
+          ],
+          warnings: [],
+        };
       } else
         output = {
           summary:
@@ -356,6 +394,108 @@ check(
           (s) => s.revisionId === stage.id,
         ),
       ).toBe(true);
+    } finally {
+      fake.stop();
+    }
+  },
+);
+
+check(
+  'an explicit scope pass organizes unassigned leaves without rewriting source summaries or evidence',
+  async () => {
+    const stage = await source(
+      'Depth calibration details requiring later project organization.',
+    );
+    await expect(
+      createPush({ ...input(stage), organizationMode: 'scope' }),
+    ).rejects.toThrow('Organize the source');
+    const batch = await createPush(input(stage)),
+      base = await memorySnapshot(),
+      fake = model({ unassigned: true });
+    try {
+      const plan = await buildOrganizationPlan(
+        batch.id,
+        batch.input,
+        [stage],
+        base,
+        { llm: fake.llm },
+      );
+      await publishMemory(batch.id, plan);
+      const before = await organizationView(),
+        leaf = before.segments.find((s) => s.revisionId === stage.id)!;
+      expect(
+        (await openMemoryNode(leaf.id)).parents.map((p) => p.kind),
+      ).toEqual(['source']);
+      const admissionCount = (await memorySnapshot()).admissions.length;
+      const scoped = await createPush({
+        ...input(stage),
+        organizationMode: 'scope',
+      });
+      const scopePlan = await buildOrganizationPlan(
+        scoped.id,
+        scoped.input,
+        [stage],
+        await memorySnapshot(),
+        { llm: fake.llm },
+      );
+      expect(
+        scopePlan.organization!.nodes.every(
+          (n) => n.kind === 'project' || n.kind === 'topic',
+        ),
+      ).toBe(true);
+      expect(
+        scopePlan.organization!.versions.every((v) => v.segment === null),
+      ).toBe(true);
+      await publishMemory(scoped.id, scopePlan);
+      const opened = await openMemoryNode(leaf.id);
+      expect(opened.parents.map((p) => p.kind).sort()).toEqual([
+        'source',
+        'topic',
+      ]);
+      expect(opened.node.history).toHaveLength(1);
+      expect(opened.node.current.id).toBe(leaf.current.id);
+      expect((await memorySnapshot()).admissions.length).toBe(admissionCount);
+      expect(
+        (
+          await openMemoryNode(leaf.id, { knownVersion: before.version })
+        ).parents.map((p) => p.kind),
+      ).toEqual(['source']);
+      expect(
+        (await createPush({ ...input(stage), organizationMode: 'scope' })).id,
+      ).toBe(scoped.id);
+    } finally {
+      fake.stop();
+    }
+  },
+);
+
+check(
+  'cancellation between source blocks stops model calls and preserves memory and canceled outcome',
+  async () => {
+    const stage = await source(
+      'Calibration discussion canceled before its first model request.',
+    );
+    const batch = await createPush(input(stage)),
+      base = await memorySnapshot(),
+      fake = model();
+    try {
+      await chronicle(batch.id, {
+        buildPlan: async (id, input, stages, snapshot) =>
+          buildOrganizationPlan(id, input, stages, snapshot, {
+            llm: fake.llm,
+            progress: async () => {
+              await db
+                .update(pushBatches)
+                .set({ state: 'canceled', progress: 'Canceled by operator' })
+                .where(eq(pushBatches.id, id));
+            },
+          }),
+      });
+      const outcome = await getPush(batch.id);
+      expect(outcome.state).toBe('canceled');
+      expect(outcome.progress).toBe('Canceled by operator');
+      expect(fake.calls).toBe(0);
+      expect((await memorySnapshot()).version).toBe(base.version);
     } finally {
       fake.stop();
     }

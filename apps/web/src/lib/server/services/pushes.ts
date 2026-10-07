@@ -8,6 +8,7 @@ import {
   memoryCommits,
   memoryProjects,
   stagingSelections,
+  memoryNodes,
 } from '../db/schema';
 import { validatePush, validateStage } from '../contracts';
 import { pushInput, type PushInput } from '../contracts/memory';
@@ -19,6 +20,9 @@ export async function createPush(value: unknown) {
     ),
     projectScope: input.projectScope,
     ...(input.workflow === 'summary' ? { workflow: input.workflow } : {}),
+    ...(input.organizationMode === 'scope'
+      ? { organizationMode: 'scope' }
+      : {}),
   };
   const fingerprint = new Bun.CryptoHasher('sha256')
     .update(JSON.stringify(canonical))
@@ -53,6 +57,20 @@ export async function createPush(value: unknown) {
       if (!r || r.uploadId !== item.uploadId)
         throw new Error('Revision does not belong to selected source');
       selected.push(validateStage(r.manifest));
+    }
+    if (input.organizationMode === 'scope') {
+      if (input.workflow !== 'summary')
+        throw new Error('Scope organization requires summary workflow');
+      for (const item of input.items) {
+        const existing = await tx
+          .select()
+          .from(memoryNodes)
+          .where(eq(memoryNodes.revisionId, item.revisionId));
+        if (!existing.some((n) => n.kind === 'source'))
+          throw new Error(
+            'Organize the source before assigning unassigned segments',
+          );
+      }
     }
     const [latest] = await tx
       .select({

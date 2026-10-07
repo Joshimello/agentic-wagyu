@@ -30,7 +30,11 @@ export async function chronicle(
       .update(pushBatches)
       .set({ progress: text, updatedAt: new Date() })
       .where(
-        and(eq(pushBatches.id, pushId), ne(pushBatches.state, 'committed')),
+        and(
+          eq(pushBatches.id, pushId),
+          ne(pushBatches.state, 'committed'),
+          ne(pushBatches.state, 'canceled'),
+        ),
       );
   };
   try {
@@ -70,6 +74,11 @@ export async function chronicle(
     }
     throw new Error('Memory changed repeatedly; retry this pinned push');
   } catch (error) {
+    const [current] = await db
+      .select()
+      .from(pushBatches)
+      .where(eq(pushBatches.id, pushId));
+    if (current?.state === 'canceled') return current;
     console.error('Chronicler push failed', {
       errorType: error instanceof Error ? error.name : 'Unknown',
     });
@@ -83,7 +92,11 @@ export async function chronicle(
         updatedAt: new Date(),
       })
       .where(
-        and(eq(pushBatches.id, pushId), ne(pushBatches.state, 'committed')),
+        and(
+          eq(pushBatches.id, pushId),
+          ne(pushBatches.state, 'committed'),
+          ne(pushBatches.state, 'canceled'),
+        ),
       );
     throw error;
   }

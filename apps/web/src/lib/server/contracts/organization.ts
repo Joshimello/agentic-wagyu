@@ -116,3 +116,21 @@ export function validatePartition(
   }
   if (cursor !== last + 1) throw new Error('Source coverage is incomplete');
 }
+
+export const scopeResponse = z
+  .object({
+    assignments: z
+      .array(
+        z
+          .object({
+            segmentId: id,
+            project: match.nullable(),
+            topic: match.nullable(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+    warnings: z.array(z.string()).max(30),
+  })
+  .strict();

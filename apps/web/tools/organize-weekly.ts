@@ -13,6 +13,7 @@ const report: {
   elapsedMs: number;
   acceptPartial: boolean;
   outcomes: unknown;
+  organizationMode: 'full' | 'scope';
 }[] = [];
 async function request(path: string, options?: RequestInit) {
   // The web app may be replaced while the durable worker continues processing.
@@ -47,12 +48,25 @@ for (const source of corpus.sources) {
     (r: any) => r.id === detail.upload.currentRevisionId,
   ).manifest;
   staged.set(stage.id, stage);
+  const before = await request('/api/memory/organized');
+  const assigned = new Set(
+    before.topics.flatMap((t: any) => t.children.map((c: any) => c.nodeId)),
+  );
+  const organizationMode = before.segments.some(
+    (n: any) =>
+      n.revisionId === stage.id &&
+      !n.current.segment.contextOnly &&
+      !assigned.has(n.id),
+  )
+    ? 'scope'
+    : 'full';
   const batch = await request('/api/pushes', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       workflow: 'summary',
-      idempotencyKey: `organized-weekly:${stage.id}`,
+      organizationMode,
+      idempotencyKey: `organized-weekly:${stage.id}:organization-2-en:${organizationMode}`,
       items: [
         {
           uploadId: upload.id,
@@ -122,6 +136,7 @@ for (const source of corpus.sources) {
     elapsedMs: Date.parse(current.updatedAt) - Date.parse(current.createdAt),
     acceptPartial: !stage.coverage.complete,
     outcomes: current.outcomes,
+    organizationMode,
   });
   await Bun.write(
     '/data/evaluations/organized-weekly.json',
@@ -230,7 +245,8 @@ for (const row of report) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       workflow: 'summary',
-      idempotencyKey: `organized-weekly:${row.revisionId}`,
+      organizationMode: row.organizationMode,
+      idempotencyKey: `organized-weekly:${row.revisionId}:organization-2-en:${row.organizationMode}`,
       projectScope: { mode: 'auto' },
       items: [
         {
