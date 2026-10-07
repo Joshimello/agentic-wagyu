@@ -52,6 +52,14 @@ for (const source of corpus.sources) {
   const assigned = new Set(
     before.topics.flatMap((t: any) => t.children.map((c: any) => c.nodeId)),
   );
+  const past = (await request('/api/pushes')).find(
+    (p: any) =>
+      p.state === 'committed' &&
+      p.outcomes.some((o: any) => o.revisionId === stage.id),
+  );
+  const pastMode = past
+    ? (await request(`/api/pushes/${past.id}`)).input.organizationMode
+    : undefined;
   const organizationMode = before.segments.some(
     (n: any) =>
       n.revisionId === stage.id &&
@@ -59,7 +67,9 @@ for (const source of corpus.sources) {
       !assigned.has(n.id),
   )
     ? 'scope'
-    : 'full';
+    : pastMode === 'scope'
+      ? 'scope'
+      : 'full';
   const batch = await request('/api/pushes', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -207,7 +217,17 @@ const versions = new Map(
 for (const n of memory.nodes)
   for (const v of n.history)
     for (const c of v.children) {
-      const child: any = versions.get(c.versionId);
+      let child: any = versions.get(c.versionId);
+      if (!child) {
+        const historical = await request(
+          `/api/memory/nodes/${c.nodeId}?versionId=${c.versionId}&knownVersion=${memory.version}`,
+        );
+        child = {
+          node: historical.node.id,
+          version: historical.node.current.commitVersion,
+        };
+        versions.set(c.versionId, child);
+      }
       if (!child || child.node !== c.nodeId || child.version > v.commitVersion)
         throw new Error('Broken historical child pin');
     }

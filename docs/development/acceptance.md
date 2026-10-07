@@ -190,3 +190,33 @@ Podman checks passed:
 - Read-only document and recording corpus evaluations after publication: hashes, source mappings and portable exports remain valid, and memory stays at six commits before/after each evaluation.
 
 These establish lifecycle, provenance, isolation and history invariants. **Extraction precision/recall, semantic citation support, ownership and project-classification accuracy have not been human scored**; proposed 90%/80% targets are not claimed as met. Model confidence is uncalibrated. Unknown dates, tentative speaker/name attribution and uncertain technical terminology remain disclosed. Projects/entities have immutable scoped identities; global identity merging/remapping and derived lexical/vector Researcher retrieval are deferred. Researcher answers are not implemented in these milestones. Reports and model-generated evidence stay under ignored storage/database, outside Git and release images; originals and earlier revisions are preserved.
+
+
+## Summary-first organization (2026-10-07)
+
+**Functional acceptance passed.** `/memory` now starts with source-linked summaries. A source overview leads to contiguous discussion/section summaries, then exact ASR/native text, page/slide renders and linked frames. A continuing project leads to topic summaries across weeks and the same shared segment identities. Summary previews keep the root outline scannable; node pages contain full summaries, original evidence and recorded history. Search includes both summary prose and underlying admitted text. The earlier assertion graph remains at `/memory/assertions`.
+
+Migration `0004_organization.sql` adds immutable node identities and versions. Source/segment versions pin their staging revision and version-1 source-unit ranges. Project/topic versions pin exact child-summary versions. Publication checks complete ordered coverage, scopes, active admissions, immutable source organization and history in the same memory transaction. Corrections withdraw replaced leaves only after push and rebuild affected overviews; prior snapshots still resolve their original children and evidence. Retry checkpoints pin model/prompt/payload/image hashes, stale work rebuilds, and unchanged inputs have one effect. No MOSS or document extraction was rerun.
+
+### Real source organization
+
+The live Qwen sequence produced **two broad projects, 14 topic scopes and 120 segments** at snapshot **13**. All three VLM decks share Prompt-to-Path Planning; all three recordings share 3D Reconstruction and Gaussian Splatting. The projects remain distinct. UAV topics include task formulation, related work, experiments, prompt comparison, failure analysis and agentic direction. Reconstruction topics include model evaluation, benchmark/data-format coordination, depth evaluation, view sampling, TTT/KV cache and pose merging. A low-confidence sampling-topic match retained a separate scope with the same descriptive title; these inferred groupings still need human judgment. Unknown official project names do not imply that a clear research objective cannot receive a descriptive organizing label.
+
+| Source | Segments | Result snapshot | Queue to commit for accepted pass |
+| --- | --- | --- | --- |
+| 260629_VLM.pptx | 16 | 7 | 130.63 s |
+| 260720_VLM.pptx | 16 | 8 | 144.89 s |
+| 260804_VLM.pptx | 15 | 9 | 152.12 s |
+| 2026-09-08.mp4 | 17 | 10, then scoped at 11 | 59.65 s segmentation + 71.00 s scoping |
+| 2026-09-15.mp4 | 34 | 12 | 241.86 s |
+| 2026-09-22.mp4 | 22 | 13 | 223.89 s |
+
+These durations cover Chronicler on existing staging, not raw media processing or development/review time. September 8's first pass left every project null because no official name/catalog match was available. `organization-2-en` explicitly allows descriptive new projects and an explicit `organizationMode: "scope"` pass reads unassigned segments and source text, adding only project/topic versions. Its source overview, 17 segments and original evidence remain unchanged. One exploratory September 15 batch was canceled before publication during this correction; its checkpoint/progress history is retained and its runtime is excluded from the accepted-pass table. The replacement batch used the pinned original revision. Cancellation now stops later model requests and cannot become a failed or accepted push accidentally.
+
+### Integrity and limits
+
+The maintained real-source evaluation passed complete ordered range coverage and an independent exact-text comparison: **104,741 original characters** are reachable, without omission/reordering, through segment drilldowns. It resolves all historical child-version pins, checks project continuity/separation, preserves the four unpushed PDF controls and proves replay leaves snapshot 13 unchanged. A second complete evaluation returned the same batch IDs and results. Existing typed memory remains **292 statements, 312 versions, 20 support relations and one conflict**; all **769 unique historical citations** still resolve. New project identities share the catalog table, so the typed API's overall project catalog includes the two new organizing scopes as well.
+
+Podman checks passed 58 standard Bun regressions (313 assertions), 12 legacy memory integrations (66 assertions), seven organization integrations (53 assertions), all 16 Chromium checks, zero Svelte/TypeScript errors/warnings, frozen Bun development/release builds and release worker imports/exclusion checks. Organization cases cover SDK schema/coverage repair, checkpoint reuse, atomic rollback during node insertion, snapshot isolation, corrected sources, exact-text search, stale work, scope-only enrichment, cancellation and conservative low-confidence matching. Browser checks verify both hierarchy paths reach the same segment, source text/images, snapshot pins, raw-text search and the complete existing staging workflow. Disposable checks never write to the real corpus.
+
+Generated summaries, boundaries and topic assignments have not been human scored. They are navigation interpretations, not independent evidence or confirmation of official project ownership. Source event dates remain unconfirmed in metadata; earlier model prose can contain unverified time/identity/terminology interpretations and must be checked against originals. Technical disagreements, ASR/visual coverage limits and partial document warnings remain visible. Researcher answer generation is not implemented here; the read-only organization/search/node endpoints supply progressive retrieval for the next step. Private outputs/screenshots remain under ignored `data/evaluations/`, outside Git and release images.

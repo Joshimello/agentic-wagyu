@@ -75,7 +75,8 @@
     {#each data.memory.projects as project}<article class="card">
         <span class="badge">Project · {project.children.length} topics</span>
         <h2><a href={link(project.id)}>{project.current.title}</a></h2>
-        <p>{project.current.summary}</p>
+        <p class="preview">{project.current.summary}</p>
+        <a href={link(project.id)}>Read project summary</a>
         <ul>
           {#each project.children as child}{@const topic =
               data.memory.topics.find(
@@ -100,7 +101,8 @@
     {#each data.memory.sources as source}<article class="card">
         <span class="badge">Source · {source.children.length} segments</span>
         <h3><a href={link(source.id)}>{source.current.title}</a></h3>
-        <p>{source.current.summary}</p>
+        <p class="preview">{source.current.summary}</p>
+        <a href={link(source.id)}>Read source summary</a>
         <details>
           <summary>Discussion outline</summary>
           <ol>
@@ -158,6 +160,13 @@
     padding: 10px;
     border: 1px solid #ccd6e2;
     border-radius: 6px;
+  }
+  .preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   article p {
     white-space: pre-wrap;

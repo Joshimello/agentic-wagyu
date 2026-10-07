@@ -43,7 +43,9 @@ const input = (stage: Stage) => ({
     { uploadId: stage.uploadId, revisionId: stage.id, acceptPartial: false },
   ],
 });
-function model(options: { unassigned?: boolean } = {}) {
+function model(
+  options: { unassigned?: boolean; matchConfidence?: number } = {},
+) {
   let calls = 0,
     rejected = false;
   const server = Bun.serve({
@@ -72,7 +74,7 @@ function model(options: { unassigned?: boolean } = {}) {
                 name: 'Depth sensing',
                 description: 'Ongoing depth sensor research',
                 matchId: project?.id ?? null,
-                confidence: 1,
+                confidence: options.matchConfidence ?? 1,
                 reason:
                   'The same sensor calibration research purpose continues.',
               },
@@ -80,7 +82,7 @@ function model(options: { unassigned?: boolean } = {}) {
                 name: 'Calibration',
                 description: 'Calibration accuracy over repeated measurements',
                 matchId: topic?.id ?? null,
-                confidence: 1,
+                confidence: options.matchConfidence ?? 1,
                 reason: 'The same calibration discussion continues.',
               },
               continuesPrevious: false,
@@ -114,7 +116,7 @@ function model(options: { unassigned?: boolean } = {}) {
                 name: 'Depth sensing',
                 description: 'Ongoing depth sensor research',
                 matchId: project?.id ?? null,
-                confidence: 1,
+                confidence: options.matchConfidence ?? 1,
                 reason:
                   'The calibration discussion shares the same research objective.',
               },
@@ -122,7 +124,7 @@ function model(options: { unassigned?: boolean } = {}) {
                 name: 'Calibration',
                 description: 'Calibration accuracy',
                 matchId: topic?.id ?? null,
-                confidence: 1,
+                confidence: options.matchConfidence ?? 1,
                 reason: 'The same calibration purpose continues.',
               },
             },
@@ -496,6 +498,43 @@ check(
       expect(outcome.progress).toBe('Canceled by operator');
       expect(fake.calls).toBe(0);
       expect((await memorySnapshot()).version).toBe(base.version);
+    } finally {
+      fake.stop();
+    }
+  },
+);
+
+check(
+  'a low-confidence catalog match cannot merge same-name projects across sources',
+  async () => {
+    const stage = await source(
+      'Potentially unrelated calibration effort with uncertain project attribution.',
+    );
+    const batch = await createPush(input(stage)),
+      base = await memorySnapshot(),
+      before = await organizationView(),
+      fake = model({ matchConfidence: 0.8 });
+    try {
+      const plan = await buildOrganizationPlan(
+        batch.id,
+        batch.input,
+        [stage],
+        base,
+        { llm: fake.llm },
+      );
+      expect(plan.projects).toHaveLength(1);
+      expect(before.projects.some((p) => p.id === plan.projects[0].id)).toBe(
+        false,
+      );
+      expect(
+        plan.outcomes[0].warnings.some((w) =>
+          w.includes('Uncertain project match'),
+        ),
+      ).toBe(true);
+      await publishMemory(batch.id, plan);
+      expect((await organizationView()).projects).toHaveLength(
+        before.projects.length + 1,
+      );
     } finally {
       fake.stop();
     }
