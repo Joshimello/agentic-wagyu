@@ -49,6 +49,7 @@ for (const source of corpus.sources) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      workflow: 'assertions',
       idempotencyKey: `weekly-progress:${stage.id}`,
       items: [
         {

@@ -46,6 +46,7 @@ async function source(text: string, time = '2026-09-08T00:00:00Z') {
   return (await getUpload(accepted.uploadId)).revisions[0].manifest;
 }
 const input = (stage: Stage) => ({
+  workflow: 'assertions' as const,
   idempotencyKey: crypto.randomUUID(),
   items: [
     { uploadId: stage.uploadId, revisionId: stage.id, acceptPartial: false },

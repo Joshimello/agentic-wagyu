@@ -2,6 +2,14 @@
 
 Updated: 2026-10-06. Status: M0 and M1 accepted; M2 video staging and M3 document extraction/review are functionally accepted on the three supplied recordings and eight documents. M4 explicit push/extraction and M5 reconciliation/history are functionally accepted on six sequential real-source pushes: six memory snapshots, six resolved projects, 292 statements and 312 immutable assertion versions. All 769 unique historical citations resolve; unchanged replay preserves version 6 and the four PDF controls remain unpushed. The generated-media pilot was retired by the user. Human transcription, speaker, description, extraction and project-classification accuracy review remain pending; precision/recall targets have not been scored. See [acceptance evidence](docs/development/acceptance.md).
 
+## Summary-first memory direction (2026-10-07)
+
+The user has chosen source-linked summaries as the primary memory interface. Chronicler partitions full admitted transcripts/documents into meaningful contiguous discussion/section segments, summarizes each, and connects the same segments to source overviews and optional project/topic overviews across weeks. Summaries are retrieval entry points; exact transcript ranges, native page/slide text, renders and linked frames remain underneath. Search includes both summaries and underlying source text. New pushes use this workflow. Existing typed assertions/history remain available as a secondary comparison view, with no deletion of evidence or commits.
+
+Summary nodes have stable identities and immutable versions pinned to memory commits and child versions. Segment boundaries must cover all source units without gaps/overlap, preserve context-only passages and be independent of MOSS inference windows. Topic reappearances remain separate chronological segments. Corrected evidence only changes active organization after push; affected overviews are rebuilt from active child versions. Project/topic matching is conservative and does not promote every method or cited paper into a project. Dates and speaker identities remain explicitly uncertain where unconfirmed.
+
+Acceptance: organize the three real VLM decks and three meetings sequentially, inspect source and project/topic navigation, validate complete segmentation and all source pointers, confirm cross-week grouping and separate research efforts, search an omitted summary detail in the transcript, preserve pinned history and unpushed controls, and prove retry/unchanged replay has one publication effect. Continue Bun/Podman/local commit discipline.
+
 ## 1. Product and architecture
 
 One local SvelteKit application owns the UI, API, Drizzle schema/migrations, database services, file storage, and job lifecycle. Interpreter, Chronicler, and Researcher are agent/workflow modules executed by workers using those application services.

@@ -18,6 +18,7 @@ export async function createPush(value: unknown) {
       a.uploadId.localeCompare(b.uploadId),
     ),
     projectScope: input.projectScope,
+    ...(input.workflow === 'summary' ? { workflow: input.workflow } : {}),
   };
   const fingerprint = new Bun.CryptoHasher('sha256')
     .update(JSON.stringify(canonical))

@@ -28,7 +28,8 @@
   <p>{push.progress}</p>
   {#if push.commitVersion !== null}<p>
       Memory version {push.commitVersion} ·
-      <a href={`/memory?knownVersion=${push.commitVersion}`}
+      <a
+        href={`/memory${push.input.workflow === 'summary' ? '' : '/assertions'}?knownVersion=${push.commitVersion}`}
         >View accepted graph</a
       >
     </p>{/if}
@@ -50,7 +51,10 @@
         <a href={`/staging/${outcome.uploadId}?revision=${outcome.revisionId}`}
           >Source {outcome.revisionId.slice(0, 8)}</a
         >
-        · {outcome.disposition.replaceAll('_', ' ')} · {outcome.assertions} assertions{#if outcome.warnings.length}<details
+        · {outcome.disposition.replaceAll('_', ' ')} · {outcome.segments !==
+        undefined
+          ? `${outcome.segments} segments`
+          : `${outcome.assertions} assertions`}{#if outcome.warnings.length}<details
           >
             <summary>{outcome.warnings.length} processing notes</summary>
             <ul>

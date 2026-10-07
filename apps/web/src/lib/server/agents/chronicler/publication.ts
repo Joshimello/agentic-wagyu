@@ -12,6 +12,8 @@ import {
   statementRelations,
   evidenceAdmissions,
   knowledgeEvents,
+  memoryNodes,
+  memoryNodeVersions,
 } from '../../db/schema';
 import { validateStage, type Stage } from '../../contracts';
 import {
@@ -21,6 +23,7 @@ import {
   stableId,
   type Plan,
 } from '../../contracts/memory';
+import { validateOrganization } from './organization/validation';
 export class StaleMemory extends Error {}
 /** Publication is the only memory writer. All evidence admissions, identities and history are one transaction. */
 export async function publishMemory(pushId: string, plan: Plan) {
@@ -46,7 +49,12 @@ export async function publishMemory(pushId: string, plan: Plan) {
     const fresh = selected.filter(
       (item) => !admitted.some((a) => a.revisionId === item.revisionId),
     );
-    if (!fresh.length) {
+    const existingNodes = await tx.select().from(memoryNodes);
+    const existingNodeVersions = await tx.select().from(memoryNodeVersions);
+    const hasOrganization = Boolean(plan.organization?.versions.length);
+    if (batch.input.workflow === 'summary' && !plan.organization)
+      throw new Error('Summary push requires organization plan');
+    if (!fresh.length && !hasOrganization) {
       const outcomes = selected.map((i) => ({
         uploadId: i.uploadId,
         revisionId: i.revisionId,
@@ -85,7 +93,37 @@ export async function publishMemory(pushId: string, plan: Plan) {
         throw new Error('Partial evidence not accepted');
       stages.push(stage);
     }
-    const allowed = new Set(fresh.map((i) => i.revisionId));
+    const allowed = new Set(
+      (plan.organization ? selected : fresh).map((i) => i.revisionId),
+    );
+    if (plan.organization) {
+      if (
+        plan.entities.length ||
+        plan.statements.length ||
+        plan.versions.length ||
+        plan.relations.length
+      )
+        throw new Error('Summary push cannot publish typed assertions');
+      const active = new Map<string, string>();
+      for (const a of [...admitted].sort(
+        (a, b) => a.commitVersion - b.commitVersion,
+      ))
+        active.set(a.uploadId, a.revisionId);
+      for (const i of fresh) active.set(i.uploadId, i.revisionId);
+      for (const i of selected)
+        if (active.get(i.uploadId) !== i.revisionId)
+          throw new Error('Cannot organize obsolete source revision');
+      validateOrganization(
+        plan.organization,
+        existingNodes,
+        existingNodeVersions.map((v) => ({
+          ...v.payload,
+          commitVersion: v.commitVersion,
+        })),
+        stages,
+        new Set(active.values()),
+      );
+    }
     const existingProjects = await tx.select().from(memoryProjects),
       existingEntities = await tx.select().from(memoryEntities),
       existingStatements = await tx.select().from(statements),
@@ -228,14 +266,12 @@ export async function publishMemory(pushId: string, plan: Plan) {
         throw new Error('Support must reuse assertion identity');
     }
     const version = latest.version + 1;
-    await tx
-      .insert(memoryCommits)
-      .values({
-        id: stableId(pushId, 'commit'),
-        pushId,
-        version,
-        createdAt: sql`clock_timestamp()`,
-      });
+    await tx.insert(memoryCommits).values({
+      id: stableId(pushId, 'commit'),
+      pushId,
+      version,
+      createdAt: sql`clock_timestamp()`,
+    });
     if (plan.projects.length)
       await tx
         .insert(memoryProjects)
@@ -258,6 +294,41 @@ export async function publishMemory(pushId: string, plan: Plan) {
       await tx
         .insert(statementRelations)
         .values(plan.relations.map((r) => ({ ...r, commitVersion: version })));
+    if (plan.organization?.nodes.length)
+      await tx
+        .insert(memoryNodes)
+        .values(
+          plan.organization.nodes.map((n) => ({
+            ...n,
+            createdVersion: version,
+          })),
+        );
+    if (plan.organization?.versions.length) {
+      await tx
+        .insert(memoryNodeVersions)
+        .values(
+          plan.organization.versions.map((v) => ({
+            id: v.id,
+            nodeId: v.nodeId,
+            commitVersion: version,
+            payload: v,
+          })),
+        );
+      for (const v of plan.organization.versions)
+        await tx
+          .insert(knowledgeEvents)
+          .values({
+            id: stableId(pushId, 'summary', v.id),
+            commitVersion: version,
+            kind: 'summary_node_recorded',
+            payload: {
+              nodeId: v.nodeId,
+              versionId: v.id,
+              model: v.model,
+              promptVersion: v.promptVersion,
+            },
+          });
+    }
     for (const item of fresh) {
       const stage = stages.find((s) => s.id === item.revisionId)!;
       await tx.insert(evidenceAdmissions).values({

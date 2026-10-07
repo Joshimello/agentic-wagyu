@@ -1,212 +1,178 @@
 <script lang="ts">
-  import { onMount, untrack, tick } from 'svelte';
+  import { onMount } from 'svelte';
+  import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
-  import MemoryGraph from '../../lib/components/MemoryGraph.svelte';
   let { data } = $props();
-  let memory = $state(untrack(() => data.memory));
-  let pushes = $state(untrack(() => data.pushes));
-  let selected = $state('');
-  let showHistory = $state(false);
-  let projectId = $state(page.url.searchParams.get('projectId') ?? '');
-  let knownVersion = $state(page.url.searchParams.get('knownVersion') ?? '');
-  let effectiveDate = $state(page.url.searchParams.get('effectiveDate') ?? '');
-  let error = $state('');
-  async function inspect(id: string) {
-    selected = id;
-    await tick();
-    document
-      .getElementById('statement-detail')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  let statement = $derived(memory.statements.find((s) => s.id === selected));
-  let visible = $derived(
-    memory.statements.filter(
-      (s) => showHistory || ['active', 'conflicted'].includes(s.status),
-    ),
-  );
-  $effect(() => {
-    memory = data.memory;
-    pushes = data.pushes;
-  });
+  const link = (id: string, versionId?: string) =>
+    `/memory/nodes/${id}?knownVersion=${data.memory.version}${versionId ? `&versionId=${versionId}` : ''}`;
   onMount(() => {
-    const timer = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/memory${page.url.search}`);
-        if (response.ok) memory = await response.json();
-        const p = await fetch('/api/pushes');
-        if (p.ok) pushes = await p.json();
-      } catch {}
-    }, 3000);
+    const timer = setInterval(() => {
+      if (!page.url.searchParams.has('knownVersion')) invalidateAll();
+    }, 5000);
     return () => clearInterval(timer);
   });
 </script>
 
 <h1>Research memory</h1>
 <p class="muted">
-  Version {memory.version} · {memory.projects.length} projects · {visible.length}
-  visible assertions. Source reports remain attributed evidence.
+  Version {data.memory.version} · {data.memory.projects.length} projects · {data
+    .memory.topics.length} topics · {data.memory.sources.length} sources · {data
+    .memory.segments.length} segments
+</p>
+<p>
+  Start with a summary, then open the discussion and its original evidence. <a
+    href="/memory/assertions">Compare earlier assertion memory</a
+  >
 </p>
 <form class="card filters" method="GET">
   <label
-    >Project<select name="projectId" bind:value={projectId}
-      ><option value="">All projects</option
-      >{#each data.memory.projects as project}<option value={project.id}
-          >{project.name}</option
-        >{/each}</select
-    ></label
-  ><label
-    >Recorded knowledge<select name="knownVersion" bind:value={knownVersion}
-      ><option value="">Latest</option>{#each memory.commits as commit}<option
-          value={commit.version}
-          >Version {commit.version} · {new Date(
-            commit.createdAt,
-          ).toLocaleString()}</option
+    >Recorded knowledge<select
+      name="knownVersion"
+      value={page.url.searchParams.get('knownVersion') ?? ''}
+      ><option value="">Latest</option>{#each data.memory.commits as c}<option
+          value={c.version}>Version {c.version}</option
         >{/each}<option value="0">Before any pushes</option></select
     ></label
-  ><label
-    >Effective as of (optional)<input
-      type="date"
-      name="effectiveDate"
-      bind:value={effectiveDate}
+  >
+  <label
+    >Search summaries and source text<input
+      name="q"
+      placeholder="Topic, method, number or original wording"
+      value={page.url.searchParams.get('q') ?? ''}
     /></label
-  ><button>Apply view</button>
+  ><button>Apply</button>
 </form>
-{#if error}<p class="error">{error}</p>{/if}
-{#if !memory.projects.length}<section class="card">
-    <h2>Memory starts with an explicit push</h2>
-    <p>
-      Select reviewed files in <a href="/">staging</a> and push them to memory.
+{#if data.search}<section class="card">
+    <h2>Search results</h2>
+    <p class="muted">
+      {data.search.total} matches{data.search.truncated
+        ? ' · Showing first 20'
+        : ''}
     </p>
-  </section>{:else}
-  <section class="card">
-    <h2>Memory graph</h2>
-    <MemoryGraph {memory} onSelect={inspect} />
-  </section>
-  <section class="projects">
-    {#each memory.projects as project}<article class="card">
-        <h2>{project.name}</h2>
-        <p>{project.description}</p>
-        <a href={`/memory?projectId=${project.id}`}>Focus this project</a>
-      </article>{/each}
-  </section>
-  <section class="card">
-    <h2>Assertions and progress</h2>
-    <label class="history"
-      ><input type="checkbox" bind:checked={showHistory} />Show superseded,
-      withdrawn and future assertions</label
-    >
-    <div class="assertions">
-      {#each visible as item}<button
-          class="assertion secondary"
-          onclick={() => inspect(item.id)}
-          ><span class="badge">{item.type} · {item.status}</span><span
-            >{item.current.text}</span
-          ><small
-            >{item.current.effectiveDate ?? 'Event date unknown'} · {item
-              .history.length} recorded versions · {item.evidence.length} active evidence
-            links</small
-          ></button
-        >{/each}
-    </div>
-  </section>
-{/if}
-{#if statement}<section class="card detail" id="statement-detail">
-    <h2>{statement.type} · {statement.status}</h2>
-    <p>{statement.current.text}</p>
-    <pre>{JSON.stringify(statement.current.arguments, null, 2)}</pre>
-    <h3>Evidence</h3>
-    {#each statement.evidence as evidence}<p>
-        <a
-          href={`/evidence/${evidence.revisionId}/${evidence.primitiveId}?knownVersion=${memory.version}`}
-          >Open source {evidence.primitiveId.slice(0, 8)}</a
+    {#each data.search.hits as hit}<article>
+        <span class="badge"
+          >{hit.kind}{hit.sourceMatched ? ' · Matched original text' : ''}</span
         >
-      </p>{/each}
-    <h3>Recorded history</h3>
-    {#each statement.history as version}<article>
-        <span class="badge">Memory version {version.commitVersion}</span>
-        <p>{version.text}</p>
-        <p class="muted">
-          Effective {version.effectiveDate ?? 'date unknown'} · {version.model} ·
-          {version.promptVersion}
-        </p>
-        {#each version.evidence as evidence}<a
-            href={`/evidence/${evidence.revisionId}/${evidence.primitiveId}?knownVersion=${memory.version}`}
-            >Historical source {evidence.primitiveId.slice(0, 8)}</a
-          >
-        {/each}
+        <h3><a href={link(hit.nodeId, hit.versionId)}>{hit.title}</a></h3>
+        <p>{hit.summary}</p>
+        {#each hit.matches as match}<blockquote>{match.text}</blockquote>{/each}
       </article>{/each}
-    {#each memory.relations.filter( (r) => statement?.history.some((v) => v.id === r.fromVersionId || v.id === r.toVersionId) ) as relation}<p
-        class:warning={relation.kind === 'conflict'}
-      >
-        {relation.kind} · {relation.reason}
-      </p>{/each}
   </section>{/if}
+<section>
+  <h2>Projects and topics</h2>
+  <p class="muted">
+    Continuing research across sources. Each topic opens the same segments shown
+    in the source view.
+  </p>
+  {#if !data.memory.projects.length}<div class="card">
+      <p>
+        No organized projects in this snapshot. Select reviewed <a href="/"
+          >staging files</a
+        > and push them to memory.
+      </p>
+    </div>{/if}
+  <div class="projects">
+    {#each data.memory.projects as project}<article class="card">
+        <span class="badge">Project · {project.children.length} topics</span>
+        <h2><a href={link(project.id)}>{project.current.title}</a></h2>
+        <p>{project.current.summary}</p>
+        <ul>
+          {#each project.children as child}{@const topic =
+              data.memory.topics.find(
+                (t) => t.id === child.nodeId,
+              )}{#if topic}<li>
+                <a href={link(topic.id, child.versionId)}
+                  >{topic.current.title}</a
+                >
+                <span class="muted">· {topic.children.length} discussions</span>
+              </li>{/if}{/each}
+        </ul>
+      </article>{/each}
+  </div>
+</section>
+<section>
+  <h2>Sources and segments</h2>
+  <p class="muted">
+    Source order and exact coverage are preserved, including discussions without
+    a project assignment.
+  </p>
+  <div class="sources">
+    {#each data.memory.sources as source}<article class="card">
+        <span class="badge">Source · {source.children.length} segments</span>
+        <h3><a href={link(source.id)}>{source.current.title}</a></h3>
+        <p>{source.current.summary}</p>
+        <details>
+          <summary>Discussion outline</summary>
+          <ol>
+            {#each source.children as child}{@const segment =
+                data.memory.segments.find(
+                  (s) => s.id === child.nodeId,
+                )}{#if segment}<li>
+                  <a href={link(segment.id, child.versionId)}
+                    >{segment.current.title}</a
+                  >{segment.current.segment?.contextOnly ? ' · Context' : ''}
+                </li>{/if}{/each}
+          </ol>
+        </details>
+      </article>{/each}
+  </div>
+</section>
 <section class="card">
   <h2>Push history</h2>
-  {#if !pushes.length}<p class="muted">
-      No pushes yet.
-    </p>{/if}{#each pushes as push}<p>
+  {#each data.pushes as push}<p>
       <a href={`/pushes/${push.id}`}
         >{new Date(push.createdAt).toLocaleString()}</a
       >
-      · {push.state}{push.commitVersion !== null
-        ? ` · Memory ${push.commitVersion}`
-        : ''} · {push.progress}
+      · {push.state} · {push.progress}
     </p>{/each}
 </section>
 
 <style>
-  section,
-  .projects {
-    margin: 22px 0;
+  section {
+    margin: 28px 0;
   }
   .filters {
     display: flex;
-    gap: 14px;
+    gap: 16px;
     align-items: end;
     flex-wrap: wrap;
+  }
+  .filters label {
+    display: grid;
+    gap: 8px;
+  }
+  .filters input {
+    min-width: 340px;
+  }
+  .projects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+  }
+  .sources {
+    display: grid;
+    gap: 16px;
   }
   select {
     font: inherit;
     padding: 10px;
     border: 1px solid #ccd6e2;
     border-radius: 6px;
-    max-width: 350px;
   }
-  .projects {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 16px;
-  }
-  .history {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .assertions {
-    display: grid;
-    gap: 8px;
-    margin-top: 18px;
-  }
-  .assertion {
-    display: grid;
-    gap: 8px;
-    text-align: left;
-    font-weight: 400;
-  }
-  .assertion small {
-    color: #66768b;
-  }
-  article {
-    padding: 12px 0;
-    border-top: 1px solid #edf0f4;
-  }
-  .projects article {
-    padding: 24px;
-  }
-  pre {
+  article p {
     white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font-size: 12px;
+  }
+  li {
+    margin: 10px 0;
+  }
+  blockquote {
+    font-size: 14px;
+    border-left: 3px solid #ccd6e2;
+    padding-left: 16px;
+    max-height: 160px;
+    overflow: auto;
+  }
+  details {
+    margin-top: 14px;
   }
 </style>

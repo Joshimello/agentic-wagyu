@@ -3,9 +3,9 @@ test('memory snapshots show a stable graph, recorded history and admitted citati
   page,
 }) => {
   const initial = await (await page.request.get('/api/memory')).json();
-  await page.goto(`/memory?knownVersion=${initial.version}`);
+  await page.goto(`/memory/assertions?knownVersion=${initial.version}`);
   await expect(
-    page.getByRole('heading', { name: 'Research memory', exact: true }),
+    page.getByRole('heading', { name: 'Assertion comparison', exact: true }),
   ).toBeVisible();
   if (!initial.statements.length) {
     await expect(
@@ -101,7 +101,7 @@ test('project views scope graph assertions and empty latest filters preserve the
     true,
   );
   await page.goto(
-    `/memory?knownVersion=${current.version}&projectId=${project.id}`,
+    `/memory/assertions?knownVersion=${current.version}&projectId=${project.id}`,
   );
   await expect(
     page.getByRole('heading', { name: project.name, exact: true }),
@@ -112,7 +112,7 @@ test('project views scope graph assertions and empty latest filters preserve the
     )
   ).json();
   expect(latest.version).toBeGreaterThanOrEqual(current.version);
-  await page.goto('/memory?knownVersion=0');
+  await page.goto('/memory/assertions?knownVersion=0');
   await expect(
     page.getByRole('heading', { name: 'Memory starts with an explicit push' }),
   ).toBeVisible();

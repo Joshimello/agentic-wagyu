@@ -162,6 +162,7 @@ export const projectScope = z.discriminatedUnion('mode', [
 ]);
 export const pushInput = z
   .object({
+    workflow: z.enum(['summary', 'assertions']).default('summary'),
     idempotencyKey: z.string().min(1).max(200),
     items: z
       .array(
@@ -244,6 +245,7 @@ export type Snapshot = {
   commits: { version: number; createdAt: string; pushId: string | null }[];
 };
 export type Plan = {
+  organization?: import('./organization').OrganizationPlan;
   baseVersion: number;
   model: string;
   promptVersion: string;
@@ -257,6 +259,7 @@ export type Plan = {
     revisionId: string;
     disposition: 'incorporated' | 'duplicate' | 'no_assertions';
     assertions: number;
+    segments?: number;
     warnings: string[];
   }[];
 };

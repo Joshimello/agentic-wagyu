@@ -231,3 +231,29 @@ export const knowledgeEvents = pgTable('knowledge_events', {
   kind: text('kind').notNull(),
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
 });
+
+export const memoryNodes = pgTable('memory_nodes', {
+  id: uuid('id').primaryKey(),
+  kind: text('kind')
+    .$type<import('../contracts/organization').MemoryNode['kind']>()
+    .notNull(),
+  scopeId: uuid('scope_id'),
+  revisionId: uuid('revision_id').references(() => revisions.id),
+  createdVersion: integer('created_version')
+    .notNull()
+    .references(() => memoryCommits.version),
+});
+export const memoryNodeVersions = pgTable('memory_node_versions', {
+  id: uuid('id').primaryKey(),
+  nodeId: uuid('node_id')
+    .notNull()
+    .references(() => memoryNodes.id),
+  commitVersion: integer('commit_version')
+    .notNull()
+    .references(() => memoryCommits.version),
+  payload: jsonb('payload')
+    .$type<
+      Omit<import('../contracts/organization').NodeVersion, 'commitVersion'>
+    >()
+    .notNull(),
+});

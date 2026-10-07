@@ -4,6 +4,7 @@ import { pushBatches, revisions } from '../../db/schema';
 import { validateStage } from '../../contracts';
 import { memorySnapshot } from '../../services/memory';
 import { buildMemoryPlan } from './model';
+import { buildOrganizationPlan } from './organization/model';
 import { publishMemory, StaleMemory } from './publication';
 export async function chronicle(
   pushId: string,
@@ -48,13 +49,12 @@ export async function chronicle(
       const plan =
         batch.plan?.baseVersion === snapshot.version
           ? batch.plan
-          : await (options.buildPlan ?? buildMemoryPlan)(
-              pushId,
-              batch.input,
-              stages,
-              snapshot,
-              { progress },
-            );
+          : await (
+              options.buildPlan ??
+              (batch.input.workflow === 'summary'
+                ? buildOrganizationPlan
+                : buildMemoryPlan)
+            )(pushId, batch.input, stages, snapshot, { progress });
       await db
         .update(pushBatches)
         .set({ baseVersion: snapshot.version, plan, updatedAt: new Date() })
