@@ -33,6 +33,13 @@ export function validateOrganization(
   for (const v of proposal.versions) {
     if (versions.has(v.id) || changed.has(v.nodeId))
       throw new Error('Cannot overwrite or duplicate memory history');
+    if (
+      existingNodes.some(
+        (n) =>
+          n.id === v.nodeId && (n.kind === 'source' || n.kind === 'segment'),
+      )
+    )
+      throw new Error('Pinned source organization is immutable');
     if (!nodes.has(v.nodeId)) throw new Error('Missing node identity');
     changed.add(v.nodeId);
     versions.set(v.id, { ...v, commitVersion: 0 });
@@ -104,6 +111,13 @@ export function validateOrganization(
         0,
         sourceUnits(stages.find((s) => s.id === n.revisionId)!).length - 1,
       );
+  }
+  for (const stage of stages) {
+    const sources = [...nodes.values()].filter(
+      (n) => n.kind === 'source' && n.revisionId === stage.id,
+    );
+    if (sources.length !== 1 || !latest.has(sources[0].id))
+      throw new Error('Every selected source requires an organized overview');
   }
   for (const n of proposal.nodes) {
     if (!changed.has(n.id)) throw new Error('Unversioned new node');

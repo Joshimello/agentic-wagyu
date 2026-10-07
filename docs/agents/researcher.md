@@ -12,6 +12,14 @@ Run through Bun in the Podman worker container with reserved query capacity. Com
 
 Use `pro6000/qwen38-flash-next` through the environment-configured OpenAI-compatible gateway for development answers. Basic tool/result round trips and streaming passed; full agent SDK behavior and answer quality remain integration/evaluation work.
 
+## Summary-first retrieval direction (2026-10-07)
+
+Start with continuing project/topic or source summaries, then open relevant segment summaries and the exact transcript/page/slide evidence only as needed. Search must include underlying admitted text so omitted summary details remain discoverable. Shared segment identities connect topic and source views without duplicating evidence. Pin one memory snapshot for the entire research run, and follow the exact child-version references from each overview; newer pushes must not change earlier reads.
+
+Available read-only application endpoints are `/api/memory/organized`, `/api/memory/organized/search?q=...&projectId=...&knownVersion=...`, and `/api/memory/nodes/:id?knownVersion=...&versionId=...`. The node response exposes pinned children, summary history and original evidence for a segment. Future Researcher tools wrap these services with application-injected snapshot/project scope and bounded evidence access. Typed assertion/history tools below may supplement retrieval when old accepted assertions are relevant; they are no longer the mandatory entry point.
+
+Summaries guide discovery. Answer citations must point to exact admitted source evidence rather than citing generated overview prose as independent support. Keep disagreements/unknown dates visible, and distinguish source-reported results from the Researcher's inference. Answer generation, conversations and quality evaluation remain future work.
+
 ## Query contract and scope
 
 Input: question, optional conversation context/project/time scope, and an application-supplied memory snapshot. Default snapshot is the latest committed memory revision when the run starts. Historical questions can specify both `effectiveAt` and `knownAt`; otherwise make the interpretation explicit.

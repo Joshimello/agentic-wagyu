@@ -2,6 +2,20 @@
 
 Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md). Milestones: M4–M5, recovery in M7, and cleanup in M8.
 
+## Primary summary workflow (2026-10-07)
+
+New pushes use source-linked summaries. A meeting/document has one immutable source overview and chronological semantic segments. A continuing project has topic overviews whose leaves reference those same segment nodes. Each segment owns a complete inclusive source-unit range in its pinned revision, with exact character slices and original locators underneath; unit schema version 1 is retained for historical reads. Source/segment organization for a pinned revision is immutable. Project/topic summaries gain new versions when new evidence arrives.
+
+Read all native/ASR text and each document render in bounded blocks. Existing source-mapped recording frames may supply context. Computational blocks and speaker changes alone are not semantic boundaries; contiguous continuation proposals can merge, while later topic reappearances remain separate chronological segments. Every source unit must be covered exactly once, including context without project assignment. Match broad continuing objectives before specific topics; methods and papers normally stay within a project. An uncertain match retains a separate scope or a source-only segment. Confirmed dates/people are not inferred from filenames or anonymous speaker codes.
+
+Rebuild affected topic summaries from all active segment summaries, then project summaries from all active topics. Every overview version pins exact child versions. A corrected source is activated only after an explicit push; withdraw its earlier active leaves and rebuild affected overviews, while preserving prior snapshots and evidence. Model checkpoints include model/prompt/payload/image hashes, and stale publication rebuilds against the current memory version. Publication validates complete ranges, source admission, node scopes, immutable identities/history and child pins in the shared transaction.
+
+`organization-1-en` produces English summaries, with Chinese names normalized once using OpenCC. Native text and exact quotes remain unchanged. Warnings preserve partial extraction and attribution/technical uncertainty. Summaries are retrieval/navigation aids rather than independent confirmation. Read-only summary AND source-text search can find details omitted from the prose. User-visible results live at `/memory`; `/memory/nodes/:id` progressively opens children or exact evidence. Model-generated prose still needs human accuracy review.
+
+Run `./infra/test-organization.sh` for isolated PostgreSQL/SDK coverage, retry caching, snapshot/source correction, raw-text search and stale publication. `bun run eval:chronicler:organized` deliberately processes the six real weekly sources and checks exact text coverage, project continuity/separation, child-version pins, unpushed PDF controls and unchanged replay. Podman contains all execution, and private output stays under ignored `data/evaluations/`.
+
+The typed assertion implementation below remains a **legacy comparison workflow**, selected explicitly with `workflow: "assertions"`. Its accepted evidence/history stays intact; new summary pushes do not require entity/assertion extraction.
+
 ## Responsibility and execution
 
 Convert explicitly pushed staging revisions into persistent research knowledge. Trigger only from a user-created push batch or an explicit memory correction/re-evaluation action. Completing interpretation, editing staging, or asking a question does not trigger memory ingestion.

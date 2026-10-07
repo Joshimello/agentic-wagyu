@@ -18,7 +18,7 @@ One local SvelteKit application owns the UI, API, Drizzle schema/migrations, dat
 | --- | --- | --- | --- |
 | SvelteKit app | User actions | Upload, staging review, push, memory views, questions, evidence viewer, progress/errors | One coherent product and source of application state |
 | Interpreter | Upload or explicit reprocessing | Convert raw media/documents into text/image primitives with metadata and provenance | A reviewable staging revision |
-| Chronicler | User selects staged revisions and clicks **Push to memory** | Extract research assertions, resolve entities, reconcile changes, publish accepted knowledge | A committed memory revision |
+| Chronicler | User selects staged revisions and clicks **Push to memory** | Segment full sources, summarize discussions, update project/topic overviews and publish pinned history | A committed memory revision |
 | Researcher | User asks a question | Query committed memory, follow evidence to sources, reason and cite | An evidence-backed answer |
 
 Raw files → Interpreter → staging → user push → Chronicler → memory is the ingestion lifecycle. Questions → Researcher → memory and its source evidence → answers is the query lifecycle.
@@ -139,14 +139,14 @@ The default selection is a whole file's reviewed revision, including its related
 
 Application code creates the batch and job atomically. Chronicler reads only those pinned revisions plus committed memory needed for reconciliation. It prepares proposals outside the publication transaction. Initially serialize memory commits and recheck the current memory revision before publication.
 
-Publish all accepted assertions, evidence links, relationships, and temporal events for a push in one short transaction. A bad/unresolved claim can be withheld with a warning; an infrastructure failure cannot expose half-written memory. Every selected item receives a disposition such as incorporated, duplicate, or no accepted assertions, with a reason. Display a push summary rather than treating all extracted text as automatically accepted fact.
+Publish all source/segment summaries, project/topic overview versions, pinned child links, evidence admissions and events for a push in one short transaction. Invalid or incomplete segmentation cannot publish. Every selected item receives an incorporated/duplicate outcome with segment count and warnings. Unresolved project attribution stays under its source, and disagreements remain in the summaries and exact evidence. Existing typed assertions are a secondary comparison interface; their guards/history are retained.
 
 ### Corrections and repeat pushes
 
 - Double-clicks and job retries cannot duplicate a commit.
 - Pushing unchanged, already incorporated revisions is a no-op; memory re-evaluation with new prompts is a distinct explicit operation.
 - Reprocessing or editing an incorporated file creates a new staging revision marked **Changes not pushed**. Existing memory continues to cite the previous revision until another push completes.
-- A new push reconciles corrected evidence with earlier assertions; it does not blindly append incompatible extraction output. Preserve evidence/history and append correction/retraction events where required.
+- A new push replaces active source segments and rebuilds affected topic/project overviews; it does not blindly append incompatible extraction output. Preserve evidence/history and append correction/retraction events where required.
 - Failed pushes preserve staging and existing memory. Retry the same batch. To use newly edited inputs, create a new batch; do not mutate an in-flight batch.
 - “Remove from staging list” does not retract memory or delete cited assets. Memory retraction is a separate explicit operation; comprehensive deletion/retention UI can follow the MVP.
 
@@ -173,6 +173,7 @@ All migrations and persistence services live under `apps/web`. Separate table gr
 | `push_batches`, `push_items` | Exact revision selection, action/idempotency identity, expected/base memory revision, outcome/dispositions. |
 | `processing_runs`, `job_checkpoints` | Inputs, model/prompt/config versions, stored proposals, usage, progress, errors. |
 | `memory_commits` | Atomic publication identity and monotonic memory version, attributed to a push/correction. |
+| `memory_nodes`, `memory_node_versions` | Primary source/project/topic/segment identities, immutable summaries, exact child-version pins and source-unit ranges. |
 | `entities`, `entity_aliases`, `entity_resolution_events`, `activities` | Stable identities and historically scoped mappings. |
 | `statement_schemas`, `statements`, `statement_versions`, `statement_entity_refs` | Validated research assertions with immutable versions and relational references. |
 | `statement_evidence`, `statement_relations`, `knowledge_events` | Source links, provenance, support/conflict/replacement, append-only history. |

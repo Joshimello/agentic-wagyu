@@ -12,7 +12,10 @@ import type {
   NodeVersion,
 } from '../contracts/organization';
 import { normalize } from '../contracts/memory';
-import { segmentContent } from '../agents/chronicler/organization/source';
+import {
+  sourceUnits,
+  segmentContent,
+} from '../agents/chronicler/organization/source';
 
 export async function organizationSnapshot(
   options: { knownVersion?: number; knownAt?: string } = {},
@@ -179,7 +182,12 @@ export async function searchOrganization(
 ) {
   const view = await organizationView(options),
     q = normalize(query);
-  const limit = Math.max(1, Math.min(50, options.limit ?? 20));
+  if (
+    options.limit !== undefined &&
+    (!Number.isSafeInteger(options.limit) || options.limit < 1)
+  )
+    throw new Error('Invalid search limit');
+  const limit = Math.min(50, options.limit ?? 20);
   if (!q)
     return { version: view.version, hits: [], total: 0, truncated: false };
   const terms = q.split(/\s+/).filter(Boolean);
@@ -202,6 +210,9 @@ export async function searchOrganization(
       .where(eq(revisions.id, revisionId));
     stages.set(revisionId, r.manifest);
   }
+  const units = new Map(
+    [...stages].map(([id, stage]) => [id, sourceUnits(stage)]),
+  );
   const hits = view.nodes
     .filter((n) => allowed.has(n.id))
     .map((n) => {
@@ -221,6 +232,7 @@ export async function searchOrganization(
             stages.get(n.revisionId!)!,
             n.current.segment.firstUnit,
             n.current.segment.lastUnit,
+            units.get(n.revisionId!),
           ).texts
         : [];
       const matching = content.filter((p) =>
@@ -234,13 +246,11 @@ export async function searchOrganization(
         summary: n.current.summary,
         score: score + Math.min(5, matching.length),
         sourceMatched: matching.length > 0,
-        matches: matching
-          .slice(0, 3)
-          .map((p) => ({
-            revisionId: n.revisionId,
-            primitiveId: p.primitiveId,
-            text: p.text,
-          })),
+        matches: matching.slice(0, 3).map((p) => ({
+          revisionId: n.revisionId,
+          primitiveId: p.primitiveId,
+          text: p.text,
+        })),
         sourceMatchCount: matching.length,
       };
     })

@@ -8,6 +8,7 @@ export type SourceUnit = {
 /** Version 1 source-unit definition. Preserve it for already published segment ranges. */
 export function sourceUnits(stage: Stage): SourceUnit[] {
   const units: SourceUnit[] = [];
+  const primitives = new Map(stage.primitives.map((p) => [p.id, p]));
   const add = (
     locator: Primitive['locator'],
     textIds: string[],
@@ -21,7 +22,7 @@ export function sourceUnits(stage: Stage): SourceUnit[] {
       size = 0;
     };
     for (const id of textIds) {
-      const p = stage.primitives.find((p) => p.id === id);
+      const p = primitives.get(id);
       if (!p || p.kind !== 'text')
         throw new Error('Source text primitive is unavailable');
       if (!p.text.length) refs.push({ primitiveId: id, first: 0, last: 0 });
@@ -37,7 +38,7 @@ export function sourceUnits(stage: Stage): SourceUnit[] {
   };
   if (stage.document) {
     for (const unit of stage.document.units) {
-      const render = stage.primitives.find((p) => p.id === unit.renderId);
+      const render = primitives.get(unit.renderId);
       if (!render) throw new Error('Source render is unavailable');
       add(render.locator, unit.textIds, [unit.renderId]);
     }
@@ -90,8 +91,21 @@ export function unitBlocks(stage: Stage) {
   if (current.length) blocks.push(current);
   return blocks;
 }
-export function segmentContent(stage: Stage, first: number, last: number) {
-  const units = sourceUnits(stage).slice(first, last + 1);
+export function segmentContent(
+  stage: Stage,
+  first: number,
+  last: number,
+  allUnits = sourceUnits(stage),
+) {
+  if (
+    !Number.isSafeInteger(first) ||
+    !Number.isSafeInteger(last) ||
+    first < 0 ||
+    first > last ||
+    last >= allUnits.length
+  )
+    throw new Error('Segment outside source');
+  const units = allUnits.slice(first, last + 1);
   const texts = units.flatMap((u) => unitContent(stage, u));
   const textIds = new Set(texts.map((t) => t.primitiveId));
   const imageIds = new Set(units.flatMap((u) => u.imageIds));

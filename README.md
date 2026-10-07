@@ -19,6 +19,7 @@ podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
 ./infra/test.sh
 ./infra/test-memory.sh
+./infra/test-organization.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
@@ -70,7 +71,11 @@ Results and the adapter decision are recorded in [acceptance evidence](docs/deve
 
 Select exact revisions on Staging, choose automatic project matching or an explicit existing/new project, then click **Push selected files to memory**. The push page shows progress, per-file outcomes and warnings. Retry a failed batch with its original inputs; editing staging does not change an in-flight push or accepted memory. Repeating an incorporated revision has no duplicate knowledge effect.
 
-Open `/memory` to inspect projects, typed assertions, conflicts, supporting sources and recorded versions. Click a graph node or assertion to open its history and original evidence. Recorded-version and effective-date filters reconstruct earlier knowledge; the memory API also accepts a `knownAt` timestamp. Dates without confirmed metadata or literal source support remain unknown. Unknown dates do not authorize automatic replacement of earlier claims. Findings from different conditions stay separate. Explicit dated changes to decisions/tasks can supersede earlier versions; ambiguous disagreements retain both claims.
+Open `/memory` for the summary-first view. Sources lead to meaningful discussion/section summaries, then exact transcript ranges, native slide/page text, renders and linked frames. Projects lead to continuing topics across weeks, then the same shared segments. Every passage is retained, including context without a project assignment; a speaker or processing-window change alone is not a semantic boundary. Project matching remains conservative, and independent efforts stay separate. Source dates remain unknown unless confirmed.
+
+Search reads both summaries and underlying admitted text, so details omitted from a summary can still be found. Open a result to fetch deeper evidence only when needed. Recorded-version filters preserve earlier views, and every overview pins exact child-summary versions. Corrected evidence enters current memory only after another explicit push. Historical summaries and citations remain available. The earlier typed assertion graph is preserved at `/memory/assertions`; its `/api/memory` API remains available for comparison. New pushes use the summary workflow; legacy evaluation explicitly selects `workflow: "assertions"`.
+
+Read-only tool endpoints for downstream work are `GET /api/memory/organized`, `GET /api/memory/organized/search?q=...&projectId=...&knownVersion=...`, and `GET /api/memory/nodes/:id?knownVersion=...&versionId=...`. Search and node reads cannot access unpushed evidence. Summaries retain model/prompt provenance and uncertainty notes; source evidence remains authoritative. This supplies progressive retrieval, while Researcher answer generation remains a later step.
 
 The maintained weekly evaluation **writes real memory** by pushing the three supplied VLM decks and then the three recordings in sequence. It records partial-coverage acceptance, checks project continuity/separation and keeps the PDFs unpushed as controls. Run deliberately after reviewing those staged sources:
 
@@ -80,3 +85,11 @@ podman run --rm --network chronicler_default -v "$PWD:/app" -w /app docker.io/ov
 ```
 
 The integrity evaluation is read-only and checks every historical assertion citation against the pinned admitted source. Real model outputs have not been human scored for extraction precision/recall or project classification. Models propose changes; application validation and atomic publication enforce provenance, scope and history. No derived vector index is needed to inspect memory; hybrid Researcher retrieval comes later.
+
+The summary-first weekly evaluation also **writes real memory**, reading the six existing pinned sources without rerunning media extraction. It checks cross-week grouping, separate projects, exact full-text drilldown, historical child pins, unpushed controls and unchanged replay. Run after reviewing the corpus:
+
+```sh
+podman run --rm --network chronicler_default -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:chronicler:organized
+```
+
+Private timing and integrity reports remain under `data/evaluations/`. Neither this evaluation nor application invariants establish human-scored summary accuracy.

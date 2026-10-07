@@ -54,6 +54,17 @@ export async function publishMemory(pushId: string, plan: Plan) {
     const hasOrganization = Boolean(plan.organization?.versions.length);
     if (batch.input.workflow === 'summary' && !plan.organization)
       throw new Error('Summary push requires organization plan');
+    if (
+      batch.input.workflow === 'summary' &&
+      !hasOrganization &&
+      selected.some(
+        (i) =>
+          !existingNodes.some(
+            (n) => n.kind === 'source' && n.revisionId === i.revisionId,
+          ),
+      )
+    )
+      throw new Error('Selected source has not been organized');
     if (!fresh.length && !hasOrganization) {
       const outcomes = selected.map((i) => ({
         uploadId: i.uploadId,
@@ -295,39 +306,33 @@ export async function publishMemory(pushId: string, plan: Plan) {
         .insert(statementRelations)
         .values(plan.relations.map((r) => ({ ...r, commitVersion: version })));
     if (plan.organization?.nodes.length)
-      await tx
-        .insert(memoryNodes)
-        .values(
-          plan.organization.nodes.map((n) => ({
-            ...n,
-            createdVersion: version,
-          })),
-        );
+      await tx.insert(memoryNodes).values(
+        plan.organization.nodes.map((n) => ({
+          ...n,
+          createdVersion: version,
+        })),
+      );
     if (plan.organization?.versions.length) {
-      await tx
-        .insert(memoryNodeVersions)
-        .values(
-          plan.organization.versions.map((v) => ({
-            id: v.id,
-            nodeId: v.nodeId,
-            commitVersion: version,
-            payload: v,
-          })),
-        );
+      await tx.insert(memoryNodeVersions).values(
+        plan.organization.versions.map((v) => ({
+          id: v.id,
+          nodeId: v.nodeId,
+          commitVersion: version,
+          payload: v,
+        })),
+      );
       for (const v of plan.organization.versions)
-        await tx
-          .insert(knowledgeEvents)
-          .values({
-            id: stableId(pushId, 'summary', v.id),
-            commitVersion: version,
-            kind: 'summary_node_recorded',
-            payload: {
-              nodeId: v.nodeId,
-              versionId: v.id,
-              model: v.model,
-              promptVersion: v.promptVersion,
-            },
-          });
+        await tx.insert(knowledgeEvents).values({
+          id: stableId(pushId, 'summary', v.id),
+          commitVersion: version,
+          kind: 'summary_node_recorded',
+          payload: {
+            nodeId: v.nodeId,
+            versionId: v.id,
+            model: v.model,
+            promptVersion: v.promptVersion,
+          },
+        });
     }
     for (const item of fresh) {
       const stage = stages.find((s) => s.id === item.revisionId)!;
