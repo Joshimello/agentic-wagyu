@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import Icon from '../../../../lib/components/Icon.svelte';
+  import Disclosure from '../../../../lib/components/Disclosure.svelte';
   let { data } = $props();
   let organizing = $state(false),
     actionError = $state('');
@@ -49,8 +51,8 @@
           : 'Source text';
 </script>
 
-<a href={`/memory?knownVersion=${data.version}`}
-  >← Memory snapshot {data.version}</a
+<a class="button-link" href={`/memory?knownVersion=${data.version}`}
+  ><Icon name="arrow-left" size={16} />Memory snapshot {data.version}</a
 >
 <p class="muted">
   {#each data.parents as parent}<a href={link(parent.id)}>{parent.title}</a> ·
@@ -65,14 +67,14 @@
   <p class="summary">{data.node.current.summary}</p>
   {#if data.node.current.keywords.length}<p class="muted">
       {data.node.current.keywords.join(' · ')}
-    </p>{/if}{#if data.node.current.warnings.length}<details>
-      <summary
-        >{data.node.current.warnings.length} source and uncertainty notes</summary
-      >
+    </p>{/if}{#if data.node.current.warnings.length}<Disclosure
+      title={`${data.node.current.warnings.length} source and uncertainty notes`}
+      icon="warning"
+    >
       <ul>
         {#each data.node.current.warnings as warning}<li>{warning}</li>{/each}
       </ul>
-    </details>{/if}
+    </Disclosure>{/if}
 </section>
 {#if data.source}<p class="muted">
     {data.source.filename} · {data.source.metadata.sourceTime ??
@@ -139,16 +141,18 @@
             </figure>{/if}{/each}
       </div>{/if}
   </section>{/if}
-<details class="card history">
-  <summary
-    >Recorded summary history · {data.node.history.length} versions</summary
-  >{#each data.node.history as version}<p>
-      <a href={link(data.node.id, version.id)}
-        >Version {version.commitVersion}</a
-      >
-      · {version.model} · {version.promptVersion}
-    </p>{/each}
-</details>
+<div class="card history">
+  <Disclosure
+    title={`Recorded summary history / ${data.node.history.length} versions`}
+    icon="history"
+    >{#each data.node.history as version}<p>
+        <a href={link(data.node.id, version.id)}
+          >Version {version.commitVersion}</a
+        >
+        · {version.model} · {version.promptVersion}
+      </p>{/each}</Disclosure
+  >
+</div>
 
 <style>
   h1 {

@@ -50,6 +50,13 @@
       "when": 1791688666682,
       "tag": "0006_blue_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791723190527,
+      "tag": "0007_branch_convergence",
+      "breakpoints": true
     }
   ]
 }

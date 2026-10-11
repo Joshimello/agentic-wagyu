@@ -298,3 +298,61 @@ export const researchOutbox = pgTable('research_outbox', {
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+// Translations are derivative caches of immutable evidence, never corrections.
+export const translationJobs = pgTable(
+  'transcript_translations',
+  {
+    id: uuid('id').primaryKey(),
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => revisions.id),
+    language: text('language')
+      .$type<import('../contracts/translations').TranslationLanguage>()
+      .notNull(),
+    promptVersion: text('prompt_version').notNull(),
+    model: text('model'),
+    fingerprint: text('fingerprint').notNull(),
+    state: text('state')
+      .$type<
+        Exclude<
+          import('../contracts/translations').TranslationStatus['state'],
+          'not_requested'
+        >
+      >()
+      .notNull()
+      .default('queued'),
+    totalSegments: integer('total_segments').notNull(),
+    completedSegments: integer('completed_segments').notNull().default(0),
+    attempts: integer('attempts').notNull().default(0),
+    generation: integer('generation').notNull().default(0),
+    checkpoint: jsonb('checkpoint')
+      .$type<import('../contracts/translations').TranslatedPart[]>()
+      .notNull()
+      .default([]),
+    translations: jsonb('translations')
+      .$type<import('../contracts/translations').TranslatedPrimitive[]>()
+      .notNull()
+      .default([]),
+    error: text('error'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('transcript_translation_revision_language_prompt_unique').on(
+      t.revisionId,
+      t.language,
+      t.promptVersion,
+    ),
+  ],
+);
+
+export const translationOutbox = pgTable('translation_outbox', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => translationJobs.id),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});

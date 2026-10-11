@@ -2,7 +2,7 @@
 
 A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Explicit pushes publish cited research knowledge into an append-only memory graph. Researcher answers questions through source-linked summaries and original evidence.
 
-Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container gets only GPU 0. Services other than the web app stay on the private container network.
+Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container uses `NVIDIA_CDI_DEVICE`, defaulting to GPU 0. Services other than the web app stay on the private container network.
 
 Put the configured API credentials in private `.env` (see `.env.example`). Then:
 
@@ -11,6 +11,24 @@ Put the configured API credentials in private `.env` (see `.env.example`). Then:
 ```
 
 Open http://localhost:5173. PostgreSQL lives in the `chronicler_database` named volume; raw/derived assets and model caches live under ignored `data/`. `./infra/dev.sh down` preserves those records. Do not use `down -v` unless deliberately deleting the database.
+
+On WSL2, `nvidia-ctk cdi list` normally exposes `nvidia.com/gpu=all` rather than an indexed device. On a single-GPU WSL machine, set `NVIDIA_CDI_DEVICE=nvidia.com/gpu=all` in `.env`. The launcher reads the repository-root `.env` for Compose interpolation. Verify the selected device before starting the stack:
+
+```sh
+nvidia-ctk cdi list
+podman run --rm --device nvidia.com/gpu=all --security-opt=label=disable docker.io/library/ubuntu:24.04 nvidia-smi -L
+```
+
+Use a device name actually listed by CDI. `all` exposes all GPUs available through WSL; indexed selection remains the default on hosts that support it. A successful `nvidia-smi` check establishes container device access; media inference still needs its own smoke test.
+
+The media build downloads large PyTorch/CUDA wheels. Its locked dependency install uses a 600-second HTTP read timeout, five retries, and two concurrent downloads. If a transient download failure interrupts the build, retry the media image and then start the stack:
+
+```sh
+bash ./infra/dev.sh build media
+bash ./infra/dev.sh up -d
+```
+
+The normal rebuild reuses successful image layers. A failed build may leave no application containers to inspect; run `ps` and service logs after startup succeeds.
 
 Run development checks in Podman:
 
@@ -21,6 +39,8 @@ podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:con
 ./infra/test-memory.sh
 ./infra/test-organization.sh
 ./infra/test-research.sh
+./infra/test-translations.sh
+./infra/test-migrations.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
@@ -68,6 +88,12 @@ podman run --rm -e UV_PROJECT_ENVIRONMENT=/tmp/docling -e UV_CACHE_DIR=/data/cac
 
 Results and the adapter decision are recorded in [acceptance evidence](docs/development/acceptance.md). Private parser outputs and screenshots stay in `data/evaluations/`, outside Git and release images.
 
+## Reviewing transcripts
+
+The review workspace pairs original evidence with a short transcript preview. **Show full transcript** opens a searchable reader where you can correct original text and speaker labels. **Original / EN / 繁中** switches between source speech and revision-pinned translations. Translations are separate reading copies: they do not replace evidence or enter memory. Corrections create a new revision with its own translations; earlier revisions and translations remain available.
+
+The `translator` service uses the configured Qwen API independently of local MOSS processing. Translation progress and checkpoints are stored in PostgreSQL, and repeated requests reuse completed results. First-time translation runs when you choose a language. Visual notes share frame galleries, with every captured timestamp and original model observation available in the review details.
+
 ## Pushes and research memory
 
 Select exact revisions on Staging, choose automatic project matching or an explicit existing/new project, then click **Push selected files to memory**. The push page shows progress, per-file outcomes and warnings. Retry a failed batch with its original inputs; editing staging does not change an in-flight push or accepted memory. Repeating an incorporated revision has no duplicate knowledge effect.
@@ -114,3 +140,5 @@ podman run --rm --network chronicler_default --env-file .env -e DATABASE_URL=pos
 ```
 
 The question manifest is `evals/researcher/questions.json`. Cached answers require the same question, snapshot, model, prompt version and implementation hash. Use a new tag after changing those inputs. `--ids=p01,m01` selects cases; `--mode=retrieval` checks discovery without generating answers. `--repair-judge` repairs missing/invalid judge JSON or earlier judgments that omitted some cited images, without regenerating the original answer; prior judge results/errors remain recorded. Automated correctness/support are same-model proxies, not human quality acceptance. The ten comparison questions cover two sources already used in ingestion development; the cross-week question also helped diagnose transcript read granularity. This subset is not an untouched statistical holdout. Evaluations do not change accepted memory.
+
+Database migration `0007_branch_convergence.sql` reconciles the independently shipped Researcher and transcript-translation histories. It supports fresh installations and upgrades from either branch without rewriting applied migration records or replacing saved answers, translations, or accepted evidence. `./infra/test-migrations.sh` verifies both upgrade paths and replay in a disposable database; `./infra/test-translations.sh` checks the separate translation worker and revision-pinned caches.

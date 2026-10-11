@@ -1,0 +1,87 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import { reducedMotion } from '../ui/motion';
+  import Icon from './Icon.svelte';
+
+  let {
+    title,
+    icon,
+    open = $bindable(false),
+    children,
+    id,
+  }: {
+    title: string;
+    icon?: string;
+    open?: boolean;
+    children: Snippet;
+    id?: string;
+  } = $props();
+  const uniqueId = $props.id();
+  let panelId = $derived(id ?? `${uniqueId}-panel`);
+</script>
+
+<div class="disclosure" class:expanded={open}>
+  <button
+    class="disclosure-trigger"
+    type="button"
+    aria-expanded={open}
+    aria-controls={panelId}
+    onclick={() => (open = !open)}
+  >
+    {#if icon}<Icon name={icon} size={16} />{/if}
+    <span>{title}</span><span class="disclosure-sign"
+      ><Icon name={open ? 'minus' : 'plus'} size={16} /></span
+    >
+  </button>
+  {#if open}
+    <div
+      id={panelId}
+      class="disclosure-body"
+      transition:slide={{
+        duration: reducedMotion() ? 0 : 260,
+        easing: cubicOut,
+      }}
+    >
+      <div class="disclosure-content">{@render children()}</div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .disclosure {
+    border-bottom: 1px solid var(--border);
+  }
+  .disclosure-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.8rem 0;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    text-align: left;
+    font-size: 0.84rem;
+    font-weight: 450;
+    color: var(--muted);
+  }
+  .disclosure-trigger:hover,
+  .expanded .disclosure-trigger {
+    background: transparent;
+    color: var(--ink);
+  }
+  .disclosure-trigger:active {
+    transform: none;
+    opacity: 0.7;
+  }
+  .disclosure-sign {
+    margin-left: auto;
+    display: flex;
+  }
+  .disclosure-content {
+    padding: 0.2rem 0 1rem;
+    font-size: 0.87rem;
+  }
+</style>

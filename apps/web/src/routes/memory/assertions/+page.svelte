@@ -2,6 +2,8 @@
   import { onMount, untrack, tick } from 'svelte';
   import { page } from '$app/state';
   import MemoryGraph from '../../../lib/components/MemoryGraph.svelte';
+  import Icon from '../../../lib/components/Icon.svelte';
+  import Select from '../../../lib/components/Select.svelte';
   let { data } = $props();
   let memory = $state(untrack(() => data.memory));
   let pushes = $state(untrack(() => data.pushes));
@@ -41,30 +43,45 @@
   });
 </script>
 
-<a href="/memory">← Summary memory</a>
+<a class="button-link" href="/memory"
+  ><Icon name="arrow-left" size={16} />Summary memory</a
+>
 <h1>Assertion comparison</h1>
 <p class="muted">
   Version {memory.version} · {memory.projects.length} projects · {visible.length}
   visible assertions. Source reports remain attributed evidence.
 </p>
 <form class="card filters" method="GET">
+  <div class="filter-select">
+    <Select
+      label="Project"
+      name="projectId"
+      bind:value={projectId}
+      options={[
+        { value: '', label: 'All projects' },
+        ...data.memory.projects.map((project) => ({
+          value: project.id,
+          label: project.name,
+        })),
+      ]}
+    />
+  </div>
+  <div class="filter-select">
+    <Select
+      label="Recorded knowledge"
+      name="knownVersion"
+      bind:value={knownVersion}
+      options={[
+        { value: '', label: 'Latest' },
+        ...memory.commits.map((commit) => ({
+          value: String(commit.version),
+          label: `Version ${commit.version} / ${new Date(commit.createdAt).toLocaleString()}`,
+        })),
+        { value: '0', label: 'Before any pushes' },
+      ]}
+    />
+  </div>
   <label
-    >Project<select name="projectId" bind:value={projectId}
-      ><option value="">All projects</option
-      >{#each data.memory.projects as project}<option value={project.id}
-          >{project.name}</option
-        >{/each}</select
-    ></label
-  ><label
-    >Recorded knowledge<select name="knownVersion" bind:value={knownVersion}
-      ><option value="">Latest</option>{#each memory.commits as commit}<option
-          value={commit.version}
-          >Version {commit.version} · {new Date(
-            commit.createdAt,
-          ).toLocaleString()}</option
-        >{/each}<option value="0">Before any pushes</option></select
-    ></label
-  ><label
     >Effective as of (optional)<input
       type="date"
       name="effectiveDate"
@@ -169,11 +186,9 @@
     align-items: end;
     flex-wrap: wrap;
   }
-  select {
-    font: inherit;
-    padding: 10px;
-    border: 1px solid #ccd6e2;
-    border-radius: 6px;
+  .filter-select {
+    flex: 1;
+    min-width: 180px;
     max-width: 350px;
   }
   .projects {

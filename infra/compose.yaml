@@ -16,7 +16,7 @@ services:
   media:
     image: localhost/chronicler-media:dev
     build: {context: .., dockerfile: infra/media.Containerfile}
-    devices: ["nvidia.com/gpu=0"]
+    devices: ["${NVIDIA_CDI_DEVICE:-nvidia.com/gpu=0}"]
     volumes: ["../data:/data", "../data/cache:/cache"]
     healthcheck:
       test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8000/health',timeout=3))['ok']"]
@@ -55,6 +55,17 @@ services:
       MEDIA_URL: http://media:8000
     volumes: ["../data:/data"]
     depends_on: {web: {condition: service_healthy}, media: {condition: service_healthy}}
+    restart: unless-stopped
+  translator:
+    image: localhost/chronicler-web:dev
+    stop_grace_period: 45s
+    command: ["bun", "apps/web/workers/translate.ts"]
+    env_file: ["../.env"]
+    environment:
+      DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
+      DATA_ROOT: /data
+    volumes: ["../data:/data"]
+    depends_on: {web: {condition: service_healthy}}
     restart: unless-stopped
 volumes:
   database:
