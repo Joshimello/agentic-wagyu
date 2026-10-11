@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, type Snippet } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { popover } from '../ui/motion';
   import Icon from './Icon.svelte';
 
@@ -10,11 +10,17 @@
   }: { label: string; icon?: string; children: Snippet } = $props();
   const uniqueId = $props.id();
   let open = $state(false);
+  let ready = $state(false);
   let container = $state<HTMLDivElement>();
   let trigger = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
 
+  onMount(() => {
+    ready = true;
+  });
+
   async function show(focusFirst = false) {
+    if (!ready) return;
     open = true;
     await tick();
     if (focusFirst)
@@ -81,6 +87,8 @@
     bind:this={trigger}
     class="menu-trigger secondary"
     type="button"
+    disabled={!ready}
+    aria-busy={!ready}
     aria-expanded={open}
     aria-controls={`${uniqueId}-menu`}
     onclick={() => (open ? (open = false) : show())}
@@ -116,7 +124,7 @@
   .menu-trigger {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 0.4rem;
     padding: 0.55rem 0.8rem;
     font-size: 0.84rem;
@@ -139,6 +147,7 @@
   .menu-panel :global(button) {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.55rem;
     width: 100%;
     text-align: left;
@@ -149,6 +158,9 @@
     border: 0;
     border-radius: 4px;
     font-weight: 400;
+  }
+  .menu-panel :global(.ui-icon) {
+    align-self: center;
   }
   .menu-panel :global(a:hover),
   .menu-panel :global(button:hover) {

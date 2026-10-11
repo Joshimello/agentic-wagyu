@@ -431,7 +431,7 @@
   }
   .step-number {
     flex: 0 0 1.25rem;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-sans);
     font-size: 0.75rem;
     color: #956400;
     padding-top: 0.05rem;
@@ -486,7 +486,7 @@
     transform: scale(0.97);
   }
   button:focus-visible {
-    outline: 2px solid #346538;
+    outline: 2px solid var(--accent);
     outline-offset: 3px;
   }
   .observation-audit {
@@ -531,7 +531,7 @@
     gap: 0.3rem;
     align-items: center;
     padding: 0.3rem 0.45rem;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-sans);
     font-size: 0.7rem;
     background: #f7f6f3;
     color: #4b4a45;
@@ -562,7 +562,7 @@
     overflow-wrap: anywhere;
   }
   .annotation-id {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-sans);
     font-size: 0.68rem;
     color: #787774;
   }

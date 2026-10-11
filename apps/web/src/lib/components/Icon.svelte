@@ -98,7 +98,7 @@
 </script>
 
 <span class="ui-icon" aria-hidden="true"
-  ><CurrentIcon {size} weight="bold" /></span
+  ><CurrentIcon size={`${size / 15}rem`} weight="bold" /></span
 >
 
 <style>

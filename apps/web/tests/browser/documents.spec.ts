@@ -184,9 +184,7 @@ for (const document of corpus.documents) {
     expect(exported.ok()).toBe(true);
     expect(await exported.text()).toContain('## Document extraction');
     await page.keyboard.press('Escape');
-    const original = await page
-      .getByRole('link', { name: 'Original', exact: true })
-      .getAttribute('href');
+    const original = `/api/assets/${stage.rawAssetId}`;
     const raw = await page.request.get(original!, {
       headers: { Range: 'bytes=0-31' },
     });
@@ -274,13 +272,11 @@ test('select a recording and deck, persist exact revisions and review partial ex
     for (const item of selected.filter(
       (selection: any) => !selection.complete,
     )) {
-      const selection = page
-        .locator('.selection-item')
-        .filter({
-          has: page.locator(
-            `a[href="/staging/${item.uploadId}?revision=${item.revisionId}"]`,
-          ),
-        });
+      const selection = page.locator('.selection-item').filter({
+        has: page.locator(
+          `a[href="/staging/${item.uploadId}?revision=${item.revisionId}"]`,
+        ),
+      });
       await expect(
         selection.getByRole('checkbox', {
           name: 'Include this partial extraction when pushing',

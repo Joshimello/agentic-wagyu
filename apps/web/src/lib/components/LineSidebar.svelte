@@ -118,7 +118,6 @@
   onpointermove={proximity}
   onpointerleave={reset}
 >
-  <span class="sidebar-caption">On this page</span>
   <ul>
     {#each items as item, index (item.id)}
       <li>
@@ -160,13 +159,6 @@
     min-width: 0;
     padding: 1rem 0;
   }
-  .sidebar-caption {
-    display: block;
-    font-size: 0.69rem;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    margin: 0 0 1rem 2.1rem;
-  }
   ul {
     display: flex;
     flex-direction: column;
@@ -190,6 +182,7 @@
   button {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     width: 100%;
     min-height: 2.2rem;
     position: relative;
@@ -217,7 +210,7 @@
     height: 1.5px;
     background: color-mix(
       in srgb,
-      var(--ink) calc(var(--effect, 0) * 100%),
+      var(--accent) calc(var(--effect, 0) * 100%),
       #b4b4ac
     );
     transform: translateY(-50%) scaleX(calc(0.55 + var(--effect, 0) * 0.45));
@@ -227,10 +220,11 @@
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
+    text-align: left;
     transform: translateX(calc(var(--effect, 0) * 5px));
     color: color-mix(
       in srgb,
-      var(--ink) calc(var(--effect, 0) * 100%),
+      var(--blue-ink) calc(var(--effect, 0) * 100%),
       var(--muted)
     );
   }
@@ -245,7 +239,6 @@
       overflow-x: auto;
       margin-bottom: 1rem;
     }
-    .sidebar-caption,
     .marker,
     li::after {
       display: none;
@@ -264,13 +257,14 @@
       flex: 1;
     }
     button {
-      justify-content: center;
+      justify-content: flex-start;
       padding: 0.55rem 0.65rem;
       white-space: nowrap;
       min-height: 2.3rem;
     }
     button[aria-current='location'] {
       background: var(--surface);
+      color: var(--blue-ink);
     }
     .sidebar-label {
       transform: none;
@@ -299,7 +293,8 @@
       font-size: 0.75rem;
     }
     .sidebar-label > span {
-      text-wrap: balance;
+      text-wrap: pretty;
+      text-align: left;
     }
   }
 </style>

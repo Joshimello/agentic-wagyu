@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
   import Disclosure from './Disclosure.svelte';
+  import MediaPreview from './MediaPreview.svelte';
   import { formatTime, type GalleryFrame } from '../visual-presentation';
 
   let {
@@ -14,6 +15,7 @@
     onseek: (ms: number) => void;
   } = $props();
   let viewport = $state<HTMLDivElement>();
+  let preview = $state<MediaPreview>();
   let selected = $state(0);
   let destination: number | null = null;
   let reducedMotion = $state(false);
@@ -51,8 +53,19 @@
     } else return;
     void tick().then(() => {
       viewport
-        ?.querySelector<HTMLAnchorElement>('a[data-current="true"]')
+        ?.querySelector<HTMLButtonElement>('button[data-current="true"]')
         ?.focus({ preventScroll: true });
+    });
+  }
+  function openFrame(frame: GalleryFrame, trigger: HTMLElement) {
+    const origin =
+      viewport?.querySelector<HTMLElement>('button[data-current="true"]') ??
+      trigger;
+    void preview?.open({
+      src: `/api/assets/${frame.assetId}`,
+      kind: 'image',
+      title: `Evidence frame at ${formatTime(frame.sources[0].actualMs ?? 0, true)}`,
+      origin,
     });
   }
   onMount(() => {
@@ -111,12 +124,13 @@
           {#each frame.sources as source}
             <span class="frame-anchor" id={`frame-${source.id}`}></span>
           {/each}
-          <a
-            href={`/api/assets/${frame.assetId}`}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            class="frame-preview"
             tabindex={index === selected ? 0 : -1}
             data-current={index === selected}
+            aria-label={`Open frame captured at ${formatTime(frame.sources[0].actualMs ?? 0, true)}`}
+            onclick={(event) => openFrame(frame, event.currentTarget)}
             onkeydown={keyboard}
             title="Open full-size evidence frame"
           >
@@ -126,7 +140,7 @@
               loading="lazy"
               draggable="false"
             />
-          </a>
+          </button>
         </div>
       {/each}
     </div>
@@ -140,13 +154,13 @@
         <Icon name="play" size={15} />
         {formatTime(active.sources[0].actualMs ?? 0, true)}
       </button>
-      <a
+      <button
+        type="button"
         class="frame-open"
-        href={`/api/assets/${active.assetId}`}
-        target="_blank"
-        rel="noreferrer"
+        aria-label="Open frame"
+        onclick={(event) => openFrame(active, event.currentTarget)}
         title="Open full-size evidence frame"
-        ><Icon name="expand" size={17} /><span>Open frame</span></a
+        ><Icon name="expand" size={17} /><span>Open frame</span></button
       >
       {#if frames.length > 1}
         <div class="gallery-controls">
@@ -230,6 +244,8 @@
   </div>
 {/if}
 
+<MediaPreview bind:this={preview} />
+
 <style>
   .gallery {
     min-width: 0;
@@ -254,11 +270,15 @@
     scroll-snap-align: start;
     scroll-snap-stop: always;
   }
-  .gallery-slide a {
+  .frame-preview {
     display: grid;
     place-items: center;
     width: 100%;
     aspect-ratio: 16 / 9;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   .gallery-slide img {
     display: block;
@@ -267,7 +287,7 @@
     object-fit: contain;
     transition: opacity 180ms ease;
   }
-  .gallery-slide a:hover img {
+  .frame-preview:hover img {
     opacity: 0.94;
   }
   .frame-anchor {
@@ -286,9 +306,9 @@
     display: inline-flex;
     gap: 0.35rem;
     align-items: center;
-    background: #edf3ec;
-    color: #346538;
-    font-family: var(--font-mono, monospace);
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+    font-family: var(--font-sans);
     font-size: 0.78rem;
     padding: 0.38rem 0.55rem;
     border-radius: 6px;
@@ -301,6 +321,8 @@
     font-size: 0.8rem;
     color: #4b4a45;
     padding: 0.4rem 0.2rem;
+    border: 0;
+    background: transparent;
     text-decoration: none;
   }
   .gallery-controls {
@@ -338,8 +360,8 @@
     opacity: 0.35;
     cursor: default;
   }
-  :is(button, a, .gallery-viewport):focus-visible {
-    outline: 2px solid #346538;
+  :is(button, .gallery-viewport):focus-visible {
+    outline: 2px solid var(--accent);
     outline-offset: 3px;
   }
   .counter {
@@ -373,7 +395,7 @@
     background: #f7f6f3;
   }
   .thumbnail.chosen {
-    border-color: #346538;
+    border-color: var(--accent);
   }
   .thumbnail img {
     width: 100%;
@@ -386,7 +408,7 @@
     padding: 0.16rem 0.2rem;
     color: #4b4a45;
     background: #f7f6f3;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-sans);
     font-size: 0.64rem;
   }
   .frame-timestamps {
@@ -408,7 +430,7 @@
   }
   .frame-timestamps button {
     font: inherit;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-sans);
     color: #2f3437;
     background: transparent;
     border: 0;

@@ -524,8 +524,12 @@ test('a pinned evidence revision keeps its transcript, captions and exports sepa
   await expect(page.locator('.preview-turn p').first()).toHaveText(
     texts[0].text,
   );
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exportMenu = page.getByRole('button', { name: 'Export', exact: true });
+  await expect(exportMenu).toHaveAttribute('aria-busy', 'false');
+  await exportMenu.click();
+  await expect(exportMenu).toHaveAttribute('aria-expanded', 'true');
   const jsonLink = page.getByRole('link', { name: 'JSON', exact: true });
+  await expect(jsonLink).toBeVisible();
   const href = await jsonLink.getAttribute('href');
   expect(href).toContain(`revision=${stage.id}`);
   const exported = await page.request.get(href!);
@@ -547,4 +551,51 @@ test('a pinned evidence revision keeps its transcript, captions and exports sepa
       dialog.getByRole('button', { name: 'Edit', exact: true }),
     ).toHaveCount(0);
   await assertUnchanged(page, meeting);
+});
+
+test('Export waits for hydration and the first enabled click opens the pinned actions', async ({
+  page,
+}) => {
+  test.setTimeout(20000);
+  const meeting = await readyMeeting(page);
+  let releaseScripts!: () => void;
+  const scriptsHeld = new Promise<void>(
+    (resolve) => (releaseScripts = resolve),
+  );
+  let entryRequests = 0;
+  await page.route('**/*', async (route) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method()))
+      return route.abort();
+    if (route.request().url().includes('/_app/immutable/entry/')) {
+      entryRequests++;
+      await scriptsHeld;
+    }
+    await route.continue();
+  });
+  try {
+    await page.goto(
+      `/staging/${meeting.detail.upload.id}?revision=${meeting.stage.id}`,
+      { waitUntil: 'domcontentloaded' },
+    );
+    const exportMenu = page.getByRole('button', {
+      name: 'Export',
+      exact: true,
+    });
+    await expect.poll(() => entryRequests).toBeGreaterThan(0);
+    await expect(exportMenu).toBeDisabled();
+    await expect(exportMenu).toHaveAttribute('aria-busy', 'true');
+    releaseScripts();
+    await expect(exportMenu).toBeEnabled();
+    await expect(exportMenu).toHaveAttribute('aria-busy', 'false');
+    await exportMenu.click();
+    await expect(exportMenu).toHaveAttribute('aria-expanded', 'true');
+    const jsonLink = page.getByRole('link', { name: 'JSON', exact: true });
+    await expect(jsonLink).toBeVisible();
+    expect(await jsonLink.getAttribute('href')).toContain(
+      `revision=${meeting.stage.id}`,
+    );
+    await assertUnchanged(page, meeting);
+  } finally {
+    releaseScripts();
+  }
 });

@@ -7,7 +7,7 @@ test('memory snapshots show a stable graph, recorded history and admitted citati
   await expect(
     page.getByRole('heading', { name: 'Assertion comparison', exact: true }),
   ).toBeVisible();
-  if (!initial.statements.length) {
+  if (!initial.projects.length) {
     await expect(
       page.getByRole('heading', {
         name: 'Memory starts with an explicit push',
@@ -20,6 +20,16 @@ test('memory snapshots show a stable graph, recorded history and admitted citati
       name: 'Project memory graph with assertions and source relationships',
     }),
   ).toBeVisible();
+  if (!initial.statements.length) {
+    await expect(
+      page.getByRole('heading', {
+        name: 'Assertions and progress',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator('button.assertion')).toHaveCount(0);
+    return;
+  }
   for (const project of initial.projects) {
     const newest = initial.statements
       .filter(

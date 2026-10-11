@@ -12,6 +12,10 @@ Put the configured API credentials in private `.env` (see `.env.example`). Then:
 
 Open http://localhost:5173. PostgreSQL lives in the `chronicler_database` named volume; raw/derived assets and model caches live under ignored `data/`. `./infra/dev.sh down` preserves those records. Do not use `down -v` unless deliberately deleting the database.
 
+Choose or drop source files on Staging to expand the optional upload details. The clear button resets the chooser; Upload stays disabled until files are selected. Review a source, then use **Push To Memory** beside **Original** to publish the displayed revision. Partial extraction requires explicit acceptance. Original recordings and frames open in a same-page preview; click outside or press Escape to close it.
+
+Processing, visual/document revisions, translations and memory pushes report percentage progress from completed work. Progress reaches 100% only after successful publication; percentages measure processing stages, not an estimate of remaining time. **Cancel** targets the displayed operation, stops active requests and local media work, and preserves completed checkpoints and earlier revisions for retry. Selected sources can be removed from Staging, including queued or failed files. Removal cancels related work and clears selections while retaining originals, revisions and accepted memory so historical citations remain readable.
+
 On WSL2, `nvidia-ctk cdi list` normally exposes `nvidia.com/gpu=all` rather than an indexed device. On a single-GPU WSL machine, set `NVIDIA_CDI_DEVICE=nvidia.com/gpu=all` in `.env`. The launcher reads the repository-root `.env` for Compose interpolation. Verify the selected device before starting the stack:
 
 ```sh
@@ -36,6 +40,7 @@ Run development checks in Podman:
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
 ./infra/test.sh
+./infra/test-controls.sh
 ./infra/test-memory.sh
 ./infra/test-organization.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .

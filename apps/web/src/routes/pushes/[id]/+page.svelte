@@ -2,24 +2,92 @@
   import { onMount, untrack } from 'svelte';
   import Icon from '../../../lib/components/Icon.svelte';
   import Disclosure from '../../../lib/components/Disclosure.svelte';
+  import ProgressBar from '../../../lib/components/ProgressBar.svelte';
   let { data } = $props();
   let push = $state(untrack(() => data.push));
   let error = $state('');
+  let changing = $state(false);
+  let requestVersion = 0;
+  let active = $derived(['queued', 'processing'].includes(push.state));
+  $effect(() => {
+    ++requestVersion;
+    push = data.push;
+  });
   onMount(() => {
+    let fetching = false;
+    let disposed = false;
     const timer = setInterval(async () => {
-      const response = await fetch(`/api/pushes/${push.id}`);
-      if (response.ok) push = await response.json();
+      if (
+        fetching ||
+        changing ||
+        !['queued', 'processing'].includes(push.state)
+      )
+        return;
+      fetching = true;
+      const id = push.id;
+      const version = requestVersion;
+      try {
+        const response = await fetch(`/api/pushes/${id}`);
+        const result = await response.json();
+        if (
+          response.ok &&
+          !disposed &&
+          id === data.push.id &&
+          version === requestVersion &&
+          !changing
+        )
+          push = result;
+      } catch {
+      } finally {
+        fetching = false;
+      }
     }, 2000);
-    return () => clearInterval(timer);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
   });
   async function retry() {
-    const response = await fetch(`/api/pushes/${push.id}/retry`, {
-      method: 'POST',
-    });
-    if (response.ok) {
-      push = await response.json();
-      error = '';
-    } else error = (await response.json()).error;
+    if (changing) return;
+    ++requestVersion;
+    changing = true;
+    error = '';
+    const id = push.id;
+    try {
+      const response = await fetch(`/api/pushes/${id}/retry`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Could not retry this push');
+      if (id === data.push.id) push = result;
+    } catch (e) {
+      if (id === data.push.id)
+        error = e instanceof Error ? e.message : 'Could not retry this push';
+    } finally {
+      changing = false;
+    }
+  }
+  async function cancel() {
+    if (!active || changing) return;
+    ++requestVersion;
+    changing = true;
+    error = '';
+    const id = push.id;
+    try {
+      const response = await fetch(`/api/pushes/${id}/cancel`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Could not cancel this push');
+      if (id === data.push.id) push = result;
+    } catch (e) {
+      if (id === data.push.id)
+        error = e instanceof Error ? e.message : 'Could not cancel this push';
+    } finally {
+      changing = false;
+    }
   }
 </script>
 
@@ -27,7 +95,15 @@
 <h1>Push to memory</h1>
 <section class="card">
   <span class="badge">{push.state}</span>
-  <p>{push.progress}</p>
+  <div class="push-progress">
+    <ProgressBar
+      value={push.progressPercent ?? 0}
+      label={push.progress}
+      state={push.state}
+    />{#if active}<button class="secondary" disabled={changing} onclick={cancel}
+        ><Icon name="close" />{changing ? 'Stopping...' : 'Cancel'}</button
+      >{/if}
+  </div>
   {#if push.commitVersion !== null}<p>
       Memory version {push.commitVersion} ·
       <a
@@ -40,7 +116,9 @@
     >
       {error}
     </p>{/if}
-  {#if push.state === 'failed'}<button onclick={retry}>Retry pinned push</button
+  {#if ['failed', 'canceled'].includes(push.state)}<button
+      disabled={changing}
+      onclick={retry}><Icon name="refresh" />Retry pinned push</button
     >{/if}
   <h2>Selected evidence</h2>
   {#each push.input.items as item}<p>
@@ -68,6 +146,19 @@
 </section>
 
 <style>
+  .push-progress {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin: 1.2rem 0;
+  }
+  .push-progress :global(.progress-bar) {
+    flex: 1;
+    min-width: 0;
+  }
+  .push-progress button {
+    flex-shrink: 0;
+  }
   h1 {
     margin: 16px 0;
   }

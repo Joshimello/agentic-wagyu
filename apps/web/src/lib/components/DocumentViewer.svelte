@@ -12,6 +12,7 @@
   import Select from './Select.svelte';
   import Disclosure from './Disclosure.svelte';
   import Tooltip from './Tooltip.svelte';
+  import MediaPreview from './MediaPreview.svelte';
 
   let { stage }: { stage: Stage } = $props();
   let unitValue = $state('0');
@@ -20,6 +21,7 @@
   let previewIndices = $state<Record<string, number>>({});
   let previewOpen = $state<Record<string, boolean>>({});
   let skippedOpen = $state(false);
+  let mediaPreview = $state<MediaPreview>();
   let document = $derived(stage.document!);
   let index = $derived(
     Math.max(0, Math.min(Number(unitValue), document.units.length - 1)),
@@ -63,6 +65,26 @@
   }
   function choosePreview(id: string, next: number, total: number) {
     previewIndices[id] = Math.max(0, Math.min(next, total - 1));
+  }
+  function openImage(assetId: string, title: string, origin: HTMLElement) {
+    void mediaPreview?.open({
+      src: `/api/assets/${assetId}`,
+      kind: 'image',
+      title,
+      origin,
+    });
+  }
+  function openVideo(assetId: string, title: string, trigger: HTMLElement) {
+    const origin = trigger
+      .closest('.media-item')
+      ?.querySelector<HTMLVideoElement>('video');
+    origin?.pause();
+    void mediaPreview?.open({
+      src: `/api/assets/${assetId}`,
+      kind: 'video',
+      title,
+      origin: origin ?? trigger,
+    });
   }
   async function revealAnchor() {
     const anchor = window.location.hash.slice(1);
@@ -125,17 +147,19 @@
         ></span>{/each}
       <figure>
         {#key image.id}
-          <a
-            href={`/api/assets/${image.assetId}`}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            class="preview-frame"
+            aria-label={`Open ${caption}`}
+            onclick={(event) =>
+              openImage(image.assetId, caption, event.currentTarget)}
             title="Open full-size preview"
             in:fade={{ duration: reducedMotion() ? 0 : 180 }}
             ><img
               src={`/api/assets/${image.assetId}`}
               alt={caption}
               loading="lazy"
-            /></a
+            /></button
           >
         {/key}
         <figcaption>
@@ -257,24 +281,40 @@
   <div class="document-columns">
     <div class="source-render">
       {#if render?.kind === 'image'}
-        <a
+        {@const sourceImage = render}
+        <button
+          type="button"
           class="render-link"
-          id={`frame-${render.id}`}
-          href={`/api/assets/${render.assetId}`}
-          target="_blank"
-          rel="noreferrer"
+          id={`frame-${sourceImage.id}`}
+          aria-label={`Open ${name.toLowerCase()} ${unit.number} preview`}
+          onclick={(event) =>
+            openImage(
+              sourceImage.assetId,
+              `${name} ${unit.number} / ${label?.label ?? stage.metadata.label}`,
+              event.currentTarget,
+            )}
           title="Open full-size source render"
           ><img
-            src={`/api/assets/${render.assetId}`}
+            src={`/api/assets/${sourceImage.assetId}`}
             alt={`${name} ${unit.number} source render`}
-          /></a
+          /></button
         >
         <div class="render-toolbar">
-          <span>{name} {unit.number}</span><a
-            class="button-link"
-            href={`/api/assets/${render.assetId}`}
-            target="_blank"
-            rel="noreferrer"><Icon name="expand" size={15} />Open full size</a
+          <span>{name} {unit.number}</span><button
+            type="button"
+            class="secondary"
+            onclick={(event) => {
+              const origin =
+                event.currentTarget
+                  .closest('.source-render')
+                  ?.querySelector<HTMLElement>('.render-link') ??
+                event.currentTarget;
+              openImage(
+                sourceImage.assetId,
+                `${name} ${unit.number} / ${label?.label ?? stage.metadata.label}`,
+                origin,
+              );
+            }}><Icon name="expand" size={15} />Open full size</button
           >
         </div>
       {/if}
@@ -381,6 +421,16 @@
               description?.label ?? `Embedded ${item.kind} preview`,
             )}{/if}
           <div class="media-actions">
+            {#if item.kind === 'video'}<button
+                type="button"
+                class="secondary"
+                onclick={(event) =>
+                  openVideo(
+                    item.assetId,
+                    description?.label ?? 'Embedded video',
+                    event.currentTarget,
+                  )}><Icon name="expand" size={15} />Open video</button
+              >{/if}
             <a class="button-link" href={`/api/assets/${item.assetId}`} download
               ><Icon name="download" size={15} />Download {item.kind}</a
             >
@@ -431,6 +481,8 @@
     </Disclosure>
   {/if}
 </section>
+
+<MediaPreview bind:this={mediaPreview} />
 
 <style>
   .summary-card {
@@ -498,6 +550,11 @@
   }
   .render-link {
     display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 8px;
   }
   img {
     display: block;
@@ -525,7 +582,10 @@
     color: var(--muted);
     font-size: 0.77rem;
   }
-  .render-toolbar .button-link {
+  .render-toolbar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     font-size: 0.75rem;
     min-height: 2rem;
     padding: 0.35rem 0.5rem;
@@ -570,8 +630,8 @@
     display: inline-block;
     font-size: 0.71rem;
     font-weight: 500;
-    color: var(--green-ink);
-    background: var(--green-soft);
+    color: var(--blue-ink);
+    background: var(--blue-soft);
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
   }
@@ -625,9 +685,12 @@
   }
   .media-actions {
     display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin: 0.7rem 0 0.2rem;
   }
-  .media-actions .button-link {
+  .media-actions .button-link,
+  .media-actions button {
     font-size: 0.75rem;
   }
   figure {
@@ -643,8 +706,12 @@
     left: 0;
     scroll-margin-top: 2rem;
   }
-  .preview-gallery a {
+  .preview-frame {
     display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
   .preview-gallery img {
     aspect-ratio: 16/9;

@@ -69,7 +69,7 @@ async function inspectRecording(page: Page, video: Upload) {
   if (stage.annotations.length) {
     const gallery = page.locator('.observation-card .gallery').first();
     await expect(gallery).toBeVisible();
-    const image = gallery.locator('a[data-current="true"] img');
+    const image = gallery.locator('button[data-current="true"] img');
     await expect
       .poll(() =>
         image.evaluate(
@@ -164,9 +164,8 @@ async function inspectRecording(page: Page, video: Upload) {
   if (texts[0]?.text)
     expect(output).toContain(texts[0].text.replaceAll('\r', ''));
   await page.keyboard.press('Escape');
-  const original = await page
-    .getByRole('link', { name: 'Original', exact: true })
-    .getAttribute('href');
+  const original = await player.evaluate((element: HTMLVideoElement) => element.currentSrc || element.src);
+  expect(original).toContain(`/api/assets/${stage.rawAssetId}`);
   const raw = await page.request.get(original!, {
     headers: { Range: 'bytes=0-31' },
   });

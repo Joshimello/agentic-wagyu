@@ -113,6 +113,8 @@
   }
   .tooltip {
     position: fixed;
+    left: 0;
+    top: 0;
     z-index: 70;
     width: max-content;
     max-width: min(16rem, calc(100vw - 2rem));
@@ -124,7 +126,7 @@
     font-size: 0.75rem;
     line-height: 1.45;
     font-weight: 400;
-    text-align: center;
+    text-align: left;
     pointer-events: none;
     opacity: 0;
     visibility: hidden;

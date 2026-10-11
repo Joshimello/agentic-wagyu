@@ -4,17 +4,11 @@
   import Icon from './Icon.svelte';
   import Disclosure from './Disclosure.svelte';
   import Tooltip from './Tooltip.svelte';
+  import ProgressBar from './ProgressBar.svelte';
+  import type { TranslationStatus } from '../server/contracts/translations';
 
   type Text = Extract<Primitive, { kind: 'text' }>;
-  type Translation = {
-    state: 'not_requested' | 'queued' | 'processing' | 'ready' | 'failed';
-    revisionId: string;
-    language: 'en' | 'zh-TW';
-    completedSegments: number;
-    totalSegments: number;
-    translations: { primitiveId: string; text: string }[];
-    error: string | null;
-  };
+  type Translation = TranslationStatus;
   let {
     stage,
     uploadId,
@@ -43,6 +37,7 @@
   let language = $state<'original' | 'en' | 'zh-TW'>('original');
   let translation = $state<Translation | null>(null);
   let loading = $state(false);
+  let canceling = $state(false);
   let error = $state('');
   let notice = $state('');
   let draftLabel = $state('');
@@ -142,6 +137,7 @@
       language = 'original';
       translation = null;
       loading = false;
+      canceling = false;
       error = '';
     });
   });
@@ -149,6 +145,7 @@
     const timer = setInterval(() => {
       if (
         opened &&
+        !canceling &&
         !loading &&
         language !== 'original' &&
         ['queued', 'processing'].includes(translation?.state ?? '')
@@ -225,6 +222,7 @@
     translation = null;
     error = '';
     loading = false;
+    canceling = false;
     if (value !== 'original') await loadTranslation(true);
   }
   async function loadTranslation(enqueue: boolean) {
@@ -245,7 +243,10 @@
       let result = await response.json();
       if (!response.ok)
         throw new Error(result.error || 'Translation is unavailable.');
-      if (enqueue && ['not_requested', 'failed'].includes(result.state)) {
+      if (
+        enqueue &&
+        ['not_requested', 'failed', 'canceled'].includes(result.state)
+      ) {
         response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -289,6 +290,46 @@
     editing = true;
     error = '';
     notice = '';
+  }
+  async function cancelTranslation() {
+    if (
+      !translation?.id ||
+      canceling ||
+      !['queued', 'processing'].includes(translation.state)
+    )
+      return;
+    const id = translation.id;
+    const revision = stage.id;
+    const target = language;
+    const version = ++requestVersion;
+    controller?.abort();
+    loading = false;
+    canceling = true;
+    error = '';
+    try {
+      const response = await fetch(
+        `/api/uploads/${uploadId}/translations/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ translationId: id }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Could not cancel translation');
+      if (
+        version === requestVersion &&
+        revision === stage.id &&
+        target === language
+      )
+        translation = result;
+    } catch (e) {
+      if (version === requestVersion)
+        error = e instanceof Error ? e.message : 'Could not cancel translation';
+    } finally {
+      if (version === requestVersion) canceling = false;
+    }
   }
   async function save() {
     if (!editing || !dirty || saving) return;
@@ -493,26 +534,46 @@
             ><Icon name="translate" size={30} /></span
           >
           <h3>
-            {translation?.state === 'failed'
-              ? 'Translation needs another try'
-              : `Preparing ${languageNames[language]}`}
+            {translation?.state === 'canceled'
+              ? 'Translation canceled'
+              : translation?.state === 'failed'
+                ? 'Translation needs another try'
+                : `Preparing ${languageNames[language]}`}
           </h3>
           <p class="muted">
-            {translation?.state === 'failed'
-              ? translation.error
-              : 'You can keep reading the original while this is prepared.'}
+            {translation?.state === 'canceled'
+              ? 'Completed translation work is saved.'
+              : translation?.state === 'failed'
+                ? translation.error
+                : 'You can keep reading the original while this is prepared.'}
           </p>
-          {#if translation && translation.state !== 'failed'}<progress
-              max={Math.max(translation.totalSegments, 1)}
-              value={translation.completedSegments}
-              aria-label="Translation progress"
-            ></progress><span class="muted"
-              >{translation.completedSegments} / {translation.totalSegments} entries</span
-            >{/if}
+          {#if translation}<div class="translation-progress">
+              <ProgressBar
+                value={translation.progressPercent ??
+                  Math.round(
+                    (translation.completedSegments /
+                      Math.max(translation.totalSegments, 1)) *
+                      100,
+                  )}
+                label={`${translation.completedSegments} / ${translation.totalSegments} entries`}
+                ariaLabel="Translation progress"
+                state={translation.state}
+              />
+            </div>{/if}
           <div class="actions">
-            {#if translation?.state === 'failed'}<button
+            {#if ['failed', 'canceled'].includes(translation?.state ?? '')}<button
                 onclick={() => loadTranslation(true)}
-                ><Icon name="refresh" />Retry translation</button
+                ><Icon name="refresh" />{translation?.state === 'canceled'
+                  ? 'Resume translation'
+                  : 'Retry translation'}</button
+              >{/if}
+            {#if ['queued', 'processing'].includes(translation?.state ?? '')}<button
+                class="secondary"
+                disabled={canceling}
+                onclick={cancelTranslation}
+                ><Icon name="close" />{canceling
+                  ? 'Stopping...'
+                  : 'Cancel translation'}</button
               >{/if}<button
               class="secondary"
               onclick={() => chooseLanguage('original')}>Read original</button
@@ -882,14 +943,12 @@
     place-items: center;
     width: 4rem;
     height: 4rem;
-    background: #edf3ec;
-    color: #346538;
+    background: var(--blue-soft);
+    color: var(--accent);
     border-radius: 12px;
   }
-  progress {
-    width: min(20rem, 90%);
-    height: 0.4rem;
-    accent-color: #346538;
+  .translation-progress {
+    width: min(24rem, 90%);
   }
   @media (max-width: 700px) {
     .transcript-dialog {
@@ -921,9 +980,15 @@
     }
     .reader-footer {
       align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 0.6rem;
     }
     .reader-footer > span {
-      max-width: 40%;
+      max-width: 100%;
+      width: 100%;
+    }
+    .reader-footer .actions {
+      width: 100%;
     }
     .preview-footer {
       flex-wrap: wrap;

@@ -171,8 +171,15 @@
   .select-trigger:hover {
     background: var(--surface-soft);
   }
+  .select-trigger > span:first-child {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+  }
   .select-caret {
     display: flex;
+    flex: none;
+    align-items: center;
     transition: transform 220ms var(--ease-out);
   }
   .select-caret.turned {
@@ -184,7 +191,7 @@
     left: 0;
     z-index: 30;
     width: 100%;
-    min-width: 12rem;
+    min-width: min(12rem, 100%);
     max-height: 18rem;
     overflow: auto;
     border: 1px solid var(--border);
@@ -210,6 +217,12 @@
     text-align: left;
   }
   .select-options button.highlighted {
-    background: var(--canvas);
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+  }
+  .select-options button > span {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
   }
 </style>

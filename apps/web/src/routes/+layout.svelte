@@ -3,8 +3,7 @@
   import { page } from '$app/state';
   import { onDestroy, tick, type Snippet } from 'svelte';
   import { gsap } from 'gsap';
-  import '@fontsource-variable/outfit';
-  import '@fontsource-variable/newsreader';
+  import '@fontsource-variable/geist';
   import '../lib/styles/workspace.css';
   import Icon from '../lib/components/Icon.svelte';
 
@@ -89,7 +88,7 @@
     padding: 0 clamp(1rem, 3.5vw, 3.5rem);
   }
   .workspace-header {
-    min-height: 90px;
+    min-height: 6rem;
     display: flex;
     align-items: center;
     gap: 2rem;
@@ -154,7 +153,7 @@
     background: var(--surface);
   }
   .workspace-nav a.current {
-    background: var(--ink);
+    background: var(--accent);
     color: white;
   }
   .workspace-nav a:active {
@@ -171,11 +170,11 @@
   .status-dot {
     width: 6px;
     height: 6px;
-    background: #69816b;
+    background: var(--accent);
     border-radius: 50%;
   }
   main {
-    min-height: calc(100svh - 170px);
+    min-height: calc(100svh - 11.33rem);
     padding: 2.4rem 0 4rem;
     outline: none;
   }
@@ -204,7 +203,7 @@
   @media (max-width: 800px) {
     .workspace-header {
       gap: 1rem;
-      min-height: 78px;
+      min-height: 5.2rem;
     }
     .workspace-location {
       display: none;
@@ -214,6 +213,11 @@
     }
   }
   @media (max-width: 420px) {
+    .workspace-header {
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      padding: 0.8rem 0;
+    }
     .brand small {
       display: none;
     }
@@ -226,7 +230,7 @@
       height: 2rem;
     }
     .workspace-nav a {
-      padding: 0.45rem 0.65rem;
+      padding: 0.45rem 0.55rem;
     }
     .workspace-nav a :global(.ui-icon) {
       display: none;

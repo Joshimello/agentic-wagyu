@@ -8,12 +8,14 @@
   let {
     title,
     icon,
+    chevron = false,
     open = $bindable(false),
     children,
     id,
   }: {
     title: string;
     icon?: string;
+    chevron?: boolean;
     open?: boolean;
     children: Snippet;
     id?: string;
@@ -31,8 +33,13 @@
     onclick={() => (open = !open)}
   >
     {#if icon}<Icon name={icon} size={16} />{/if}
-    <span>{title}</span><span class="disclosure-sign"
-      ><Icon name={open ? 'minus' : 'plus'} size={16} /></span
+    <span>{title}</span><span
+      class="disclosure-sign"
+      class:turned={chevron && open}
+      ><Icon
+        name={chevron ? 'chevron-down' : open ? 'minus' : 'plus'}
+        size={16}
+      /></span
     >
   </button>
   {#if open}
@@ -56,6 +63,7 @@
   .disclosure-trigger {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.55rem;
     width: 100%;
     padding: 0.8rem 0;
@@ -79,6 +87,12 @@
   .disclosure-sign {
     margin-left: auto;
     display: flex;
+    align-items: center;
+    flex: none;
+    transition: transform 220ms var(--ease-out);
+  }
+  .disclosure-sign.turned {
+    transform: rotate(180deg);
   }
   .disclosure-content {
     padding: 0.2rem 0 1rem;

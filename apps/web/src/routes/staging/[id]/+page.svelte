@@ -10,6 +10,9 @@
   import Select from '../../../lib/components/Select.svelte';
   import Menu from '../../../lib/components/Menu.svelte';
   import Tooltip from '../../../lib/components/Tooltip.svelte';
+  import ProgressBar from '../../../lib/components/ProgressBar.svelte';
+  import MediaPreview from '../../../lib/components/MediaPreview.svelte';
+  import PushToMemory from '../../../lib/components/PushToMemory.svelte';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
@@ -17,6 +20,8 @@
   let error = $state('');
   let notice = $state('');
   let retrying = $state(false);
+  let canceling = $state(false);
+  let mediaPreview = $state<ReturnType<typeof MediaPreview>>();
   let activeSection = $state('original-evidence');
   let player = $state<HTMLVideoElement>();
   let transcript = $state<{ openTranscript: (id?: string) => Promise<void> }>();
@@ -35,7 +40,10 @@
   let isVideo = $derived(
     /\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(detail.upload.filename),
   );
-  let current = $derived(stage?.id === detail.upload.currentRevisionId);
+  let removed = $derived(Boolean(detail.upload.deletedAt));
+  let current = $derived(
+    stage?.id === detail.upload.currentRevisionId && !removed,
+  );
   let busy = $derived(['queued', 'processing'].includes(detail.run.state));
   let speakerSuggestions = $derived(
     stage?.speakerSuggestions?.filter((s) =>
@@ -194,6 +202,78 @@
       retrying = false;
     }
   }
+
+  async function cancelProcessing() {
+    if (!busy || canceling) return;
+    const uploadId = detail.upload.id;
+    const runId = detail.run.id;
+    canceling = true;
+    error = '';
+    try {
+      const response = await fetch(`/api/uploads/${uploadId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runId }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Could not cancel processing');
+      if (uploadId !== data.upload.id) return;
+      await refresh(false);
+      notice =
+        result.run.state === 'canceled'
+          ? 'Processing canceled. Completed work and earlier revisions are saved.'
+          : 'This operation already finished.';
+    } catch (e) {
+      if (uploadId === data.upload.id)
+        error = e instanceof Error ? e.message : 'Could not cancel processing';
+    } finally {
+      canceling = false;
+    }
+  }
+  async function showOriginal(event: MouseEvent) {
+    const src = `/api/assets/${detail.asset.id}`;
+    const uploadId = detail.upload.id;
+    if (isVideo) {
+      const startTime = player?.currentTime ?? 0;
+      player?.pause();
+      await mediaPreview?.open({
+        src,
+        kind: 'video',
+        title: detail.upload.filename,
+        origin: player ?? (event.currentTarget as HTMLElement),
+        startTime,
+        onclose: (time) => {
+          if (uploadId === data.upload.id && player && time !== undefined)
+            player.currentTime = time;
+        },
+      });
+    } else if (stage?.document?.format === 'pdf')
+      await mediaPreview?.open({
+        src,
+        kind: 'document',
+        title: detail.upload.filename,
+        origin: event.currentTarget as HTMLElement,
+      });
+    else {
+      const render = stage?.document
+        ? stage.primitives.find(
+            (p) => p.id === stage!.document!.units[0].renderId,
+          )
+        : null;
+      await mediaPreview?.open({
+        src: render?.kind === 'image' ? `/api/assets/${render.assetId}` : src,
+        kind:
+          render?.kind === 'image' || detail.asset.mime.startsWith('image/')
+            ? 'image'
+            : 'document',
+        title: detail.upload.filename,
+        downloadSrc: src,
+        origin: event.currentTarget as HTMLElement,
+      });
+    }
+  }
+
   function duration(ms: number | null | undefined) {
     if (!ms) return '';
     const minutes = Math.floor(ms / 60000);
@@ -213,14 +293,16 @@
     ><Icon name="arrow-left" />Back</a
   >
   <div class="header-actions">
-    <Tooltip text="Open the uploaded file"
-      ><a
-        class="button-link secondary"
-        href={`/api/assets/${detail.asset.id}`}
-        target="_blank"
-        rel="noreferrer"><Icon name="external" />Original</a
+    <Tooltip text="Preview the original source"
+      ><button class="secondary" onclick={showOriginal}
+        ><Icon name="expand" />Original</button
       ></Tooltip
     >
+    {#if stage}<PushToMemory
+        {stage}
+        projects={data.projects}
+        disabled={removed}
+      />{/if}
     {#if stage}<Menu label="Export" icon="download">
         <a href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}`}
           ><Icon name="file" />Markdown</a
@@ -235,11 +317,11 @@
         >
       </Menu>{/if}
     <Menu label="More" icon="more">
-      <button disabled={busy || retrying} onclick={() => retry()}
+      <button disabled={busy || retrying || removed} onclick={() => retry()}
         ><Icon name="refresh" />Reprocess original</button
       >
       {#if stage && (isVideo || stage.document) && current}<button
-          disabled={busy || retrying}
+          disabled={busy || retrying || removed}
           onclick={() => retry(true)}
           ><Icon name="image" />{stage.document
             ? 'Revisit document descriptions'
@@ -279,11 +361,12 @@
     >{busy
       ? 'Processing'
       : detail.run.state === 'failed'
-        ? 'Processing paused'
-        : 'Ready to review'}</strong
+        ? 'Processing failed'
+        : detail.run.state === 'canceled'
+          ? 'Canceled'
+          : 'Ready to review'}</strong
   >
-  {#if busy}<span class="muted">{detail.run.progress}</span
-    >{:else if stage && !stage.coverage.complete}<span class="review-needed"
+  {#if !busy && stage && !stage.coverage.complete}<span class="review-needed"
       ><Icon name="warning" size={14} />Partial extraction</span
     >{/if}
   {#if stage}<div class="revision-picker">
@@ -294,6 +377,18 @@
       />
     </div>{/if}
 </div>
+{#if busy}<div class="processing-strip">
+    <ProgressBar
+      value={detail.run.progressPercent ?? 0}
+      label={detail.run.progress}
+      state={detail.run.state}
+    /><button class="secondary" disabled={canceling} onclick={cancelProcessing}
+      ><Icon name="close" />{canceling ? 'Stopping...' : 'Cancel'}</button
+    >
+  </div>{/if}
+{#if removed}<p class="notice">
+    Removed from Staging. This source remains available as saved evidence.
+  </p>{/if}
 {#if detail.run.error}<p class="error" role="alert">{detail.run.error}</p>{/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="notice" role="status">{notice}</p>{/if}
@@ -305,11 +400,6 @@
         bind:active={activeSection}
         onselect={navigate}
       />
-      <div class="sidebar-note">
-        <Icon name="info" size={15} /><span
-          >Review here. Publish from Staging.</span
-        >
-      </div>
     </aside>
     <div class="review-content">
       {#if stage.coverage.warnings.length}<div class="review-notes">
@@ -347,25 +437,24 @@
                 label="Original transcript"
               /></video
             >
-          {:else if /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(detail.upload.filename)}<a
+          {:else if /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(detail.upload.filename)}<button
+              type="button"
               class="source-preview"
-              href={`/api/assets/${detail.asset.id}`}
-              target="_blank"
-              rel="noreferrer"
+              aria-label="Preview original image"
+              onclick={showOriginal}
               ><img
                 src={`/api/assets/${detail.asset.id}`}
                 alt="Original source"
-              /></a
+              /></button
             >
-          {:else}<a
+          {:else}<button
+              type="button"
               class="source-file-preview"
-              href={`/api/assets/${detail.asset.id}`}
-              target="_blank"
-              rel="noreferrer"
+              onclick={showOriginal}
               ><Icon name="file" size={42} /><strong
                 >{detail.upload.filename}</strong
-              ><span><Icon name="external" size={15} />Open original file</span
-              ></a
+              ><span><Icon name="expand" size={15} />Preview original</span
+              ></button
             >{/if}
           <div class="source-footer">
             <span
@@ -441,23 +530,41 @@
       /></span
     >
     <h2>
-      {detail.run.state === 'failed'
-        ? 'Your original is safe'
-        : 'Preparing your review'}
+      {detail.run.state === 'canceled'
+        ? 'Processing canceled'
+        : detail.run.state === 'failed'
+          ? 'Your original is safe'
+          : 'Preparing your review'}
     </h2>
     <p class="muted">
-      {detail.run.state === 'failed'
+      {['failed', 'canceled'].includes(detail.run.state)
         ? 'Use More to retry processing.'
         : 'You can leave this page. Progress is saved.'}
     </p>
-    {#if detail.run.state === 'failed'}<button
+    {#if ['failed', 'canceled'].includes(detail.run.state) && !removed}<button
         class="secondary"
         disabled={retrying}
         onclick={() => retry()}><Icon name="refresh" />Retry processing</button
       >{/if}
   </section>{/if}
 
+<MediaPreview bind:this={mediaPreview} />
+
 <style>
+  .processing-strip {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: -1rem 0 1.5rem;
+  }
+  .processing-strip :global(.progress-bar) {
+    flex: 1;
+    min-width: 0;
+  }
+  .processing-strip button {
+    flex-shrink: 0;
+  }
+
   .review-header,
   .header-actions,
   .heading,
@@ -473,6 +580,21 @@
   .review-header {
     justify-content: space-between;
     margin-bottom: 1.75rem;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .header-actions {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .header-actions :global(button) {
+    white-space: nowrap;
+  }
+  .heading > div:first-child {
+    min-width: 0;
+    max-width: 100%;
   }
   .review-header :global(.button-link),
   .review-header :global(button) {
@@ -515,7 +637,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #648468;
+    background: var(--accent);
   }
   .status-dot.working {
     background: #9b8050;
@@ -535,10 +657,15 @@
     gap: 0.5rem;
     margin-left: auto;
     min-width: 12rem;
+    max-width: 100%;
+  }
+  .revision-picker :global(.select-field) {
+    min-width: 0;
+    flex: 1;
   }
   .review-layout {
     display: grid;
-    grid-template-columns: 180px minmax(0, 1fr);
+    grid-template-columns: 12rem minmax(0, 1fr);
     gap: 2rem;
     align-items: start;
   }
@@ -547,20 +674,6 @@
     position: sticky;
     top: 7rem;
     padding-top: 0.5rem;
-  }
-  .sidebar-note {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
-    margin: 2.2rem 0.3rem 0;
-    font-size: 0.71rem;
-    color: #96938c;
-    max-width: 9rem;
-    line-height: 1.6;
-  }
-  .sidebar-note :global(svg) {
-    flex-shrink: 0;
-    margin-top: 0.1rem;
   }
   .review-content {
     min-width: 0;
@@ -616,10 +729,17 @@
     height: 100%;
     object-fit: contain;
   }
+  .source-preview {
+    padding: 0;
+    border: 0;
+    color: inherit;
+  }
   .source-file-preview {
     display: flex;
     flex: 1;
     min-height: 14rem;
+    width: 100%;
+    border: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -630,6 +750,10 @@
     border-radius: 8px;
     padding: 1rem;
     overflow-wrap: anywhere;
+  }
+  .source-file-preview:hover {
+    background: var(--blue-soft);
+    color: var(--blue-ink);
   }
   .source-file-preview span {
     display: flex;
@@ -712,9 +836,6 @@
     .review-sidebar {
       position: static;
     }
-    .sidebar-note {
-      display: none;
-    }
   }
   @media (max-width: 760px) {
     .workspace {
@@ -733,10 +854,12 @@
     }
     .header-actions {
       gap: 0.4rem;
+      width: 100%;
     }
     .revision-picker {
       margin-left: 0;
       width: 100%;
+      min-width: 0;
     }
     .status-row {
       margin-bottom: 1rem;
