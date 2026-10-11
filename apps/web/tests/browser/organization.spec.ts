@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from './fixtures';
 
 test('summary memory opens shared segments from project and source views with exact evidence', async ({
   page,

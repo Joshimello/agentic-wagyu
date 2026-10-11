@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from './fixtures';
 test('memory snapshots show a stable graph, recorded history and admitted citations', async ({
   page,
 }) => {

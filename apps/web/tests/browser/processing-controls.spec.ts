@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './fixtures';
 import type { Primitive, Stage } from '../../src/lib/server/contracts';
 import type { TranslationStatus } from '../../src/lib/server/contracts/translations';
 
@@ -204,6 +205,13 @@ test('detail publishing protects pending choices and separates changed payloads 
   const meeting = await readyMeeting(page);
   const unexpected = await blockUnhandledWrites(page);
   let view = structuredClone(meeting.detail);
+  view.memory = {
+    state: 'never_pushed',
+    revisionId: null,
+    pushId: null,
+    commitVersion: null,
+    admittedRevisionIds: [],
+  };
   const partial = view.revisions.find(
     (revision) => revision.id === meeting.stage.id,
   )!.manifest;

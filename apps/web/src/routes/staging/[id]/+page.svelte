@@ -13,6 +13,7 @@
   import ProgressBar from '../../../lib/components/ProgressBar.svelte';
   import MediaPreview from '../../../lib/components/MediaPreview.svelte';
   import PushToMemory from '../../../lib/components/PushToMemory.svelte';
+  import MeetingSummary from '../../../lib/components/MeetingSummary.svelte';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
@@ -45,6 +46,13 @@
     stage?.id === detail.upload.currentRevisionId && !removed,
   );
   let busy = $derived(['queued', 'processing'].includes(detail.run.state));
+  let alreadyPushed = $derived(
+    Boolean(
+      stage &&
+      ((detail.memory.admittedRevisionIds ?? []).includes(stage.id) ||
+        detail.memory.revisionId === stage.id),
+    ),
+  );
   let speakerSuggestions = $derived(
     stage?.speakerSuggestions?.filter((s) =>
       isUsableCandidateName(s.candidateName),
@@ -53,7 +61,7 @@
   let sections = $derived([
     {
       id: 'original-evidence',
-      label: 'Original evidence',
+      label: isVideo ? 'Original Video' : 'Original source',
       icon: isVideo ? 'video' : 'file',
     },
     {
@@ -61,6 +69,9 @@
       label: isVideo ? 'Spoken transcript' : 'Extracted text',
       icon: 'transcript',
     },
+    ...(isVideo
+      ? [{ id: 'meeting-summary', label: 'Meeting summary', icon: 'file' }]
+      : []),
     ...(stage?.document
       ? [{ id: 'document-review', label: 'Document review', icon: 'image' }]
       : [{ id: 'visual-context', label: 'Visual context', icon: 'image' }]),
@@ -75,7 +86,11 @@
   onMount(() => {
     let fetching = false;
     const timer = setInterval(async () => {
-      if (fetching || !['queued', 'processing'].includes(detail.run.state))
+      if (
+        fetching ||
+        (!['queued', 'processing'].includes(detail.run.state) &&
+          detail.memory.state !== 'push_pending')
+      )
         return;
       fetching = true;
       try {
@@ -151,6 +166,10 @@
     if (player) {
       player.currentTime = ms / 1000;
       navigate('original-evidence');
+      void player.play().catch(() => {
+        notice =
+          'Playback is paused. Press Play to continue from this timestamp.';
+      });
     }
   }
   async function revealTranscriptAnchor() {
@@ -298,10 +317,19 @@
         ><Icon name="expand" />Original</button
       ></Tooltip
     >
-    {#if stage}<PushToMemory
+    {#if stage && !alreadyPushed}<PushToMemory
         {stage}
         projects={data.projects}
         disabled={removed}
+        {alreadyPushed}
+        pending={detail.memory.state === 'push_pending'}
+        onaccepted={async (pushId) => {
+          detail = {
+            ...detail,
+            memory: { ...detail.memory, state: 'push_pending', pushId },
+          };
+          await refresh(false);
+        }}
       />{/if}
     {#if stage}<Menu label="Export" icon="download">
         <a href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}`}
@@ -346,26 +374,33 @@
     </p>
   </div>
   <span class="memory-status"
-    ><Icon name="folder" size={15} />{detail.memory.state === 'never_pushed'
-      ? 'Not in memory'
-      : detail.memory.state.replaceAll('_', ' ')}</span
+    ><Icon
+      name={alreadyPushed ? 'success' : 'folder'}
+      size={15}
+    />{alreadyPushed
+      ? 'Added to memory'
+      : detail.memory.state === 'never_pushed'
+        ? 'Not in memory'
+        : detail.memory.state.replaceAll('_', ' ')}</span
   >
 </div>
 <div class="status-row" role="status">
-  <span
-    class="status-dot"
-    class:working={busy}
-    class:failed={detail.run.state === 'failed'}
-  ></span>
-  <strong
-    >{busy
-      ? 'Processing'
-      : detail.run.state === 'failed'
-        ? 'Processing failed'
-        : detail.run.state === 'canceled'
-          ? 'Canceled'
-          : 'Ready to review'}</strong
-  >
+  {#if busy || ['failed', 'canceled'].includes(detail.run.state)}
+    <span
+      class="status-dot"
+      class:working={busy}
+      class:failed={detail.run.state === 'failed'}
+    ></span>
+    <strong
+      >{busy
+        ? 'Processing'
+        : detail.run.state === 'failed'
+          ? 'Processing failed'
+          : detail.run.state === 'canceled'
+            ? 'Canceled'
+            : ''}</strong
+    >
+  {/if}
   {#if !busy && stage && !stage.coverage.complete}<span class="review-needed"
       ><Icon name="warning" size={14} />Partial extraction</span
     >{/if}
@@ -413,7 +448,7 @@
             </ul></Disclosure
           >
         </div>{/if}
-      <div class="workspace">
+      <div class="workspace" class:document-workspace={!isVideo}>
         <section
           class="source card"
           id="original-evidence"
@@ -422,13 +457,13 @@
           <div class="panel-heading">
             <div class="panel-title">
               <Icon name={isVideo ? 'video' : 'file'} />
-              <h2 id="source-heading">Original evidence</h2>
+              <h2 id="source-heading">
+                {isVideo ? 'Original Video' : 'Original source'}
+              </h2>
             </div>
-            <span class="source-format"
-              >{isVideo
-                ? 'VIDEO'
-                : stage.document?.format.toUpperCase() || 'FILE'}</span
-            >
+            {#if !isVideo}<span class="source-format"
+                >{stage.document?.format.toUpperCase() || 'FILE'}</span
+              >{/if}
           </div>
           {#if isVideo}<video controls preload="metadata" bind:this={player}
               ><source src={`/api/assets/${detail.asset.id}`} /><track
@@ -478,16 +513,24 @@
             </dl></Disclosure
           >
         </section>
-        <TranscriptWorkspace
-          bind:this={transcript}
+        <div class="transcript-section">
+          <TranscriptWorkspace
+            bind:this={transcript}
+            {stage}
+            uploadId={detail.upload.id}
+            {isVideo}
+            canEdit={current}
+            onseek={seek}
+            onupdated={() => refresh()}
+          />
+        </div>
+      </div>
+      {#if isVideo}<MeetingSummary
           {stage}
           uploadId={detail.upload.id}
-          {isVideo}
-          canEdit={current}
-          onseek={seek}
-          onupdated={() => refresh()}
-        />
-      </div>
+          {removed}
+          ontranscript={(id) => transcript?.openTranscript(id)}
+        />{/if}
       {#if stage.document}<section id="document-review">
           <DocumentViewer {stage} />
         </section>{:else}<VisualContext
@@ -551,6 +594,15 @@
 <MediaPreview bind:this={mediaPreview} />
 
 <style>
+  .document-workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .transcript-section {
+    min-width: 0;
+  }
+  .transcript-section :global(.card) {
+    height: 100%;
+  }
   .processing-strip {
     display: flex;
     align-items: center;
@@ -607,7 +659,7 @@
   }
   h1 {
     max-width: 68rem;
-    font-size: clamp(1.9rem, 3.2vw, 3.25rem);
+    font-size: clamp(1.71rem, 2.88vw, 2.925rem);
     line-height: 1.13;
     letter-spacing: -0.045em;
     overflow-wrap: anywhere;
@@ -672,7 +724,7 @@
   .review-sidebar {
     min-width: 0;
     position: sticky;
-    top: 7rem;
+    top: 1rem;
     padding-top: 0.5rem;
   }
   .review-content {

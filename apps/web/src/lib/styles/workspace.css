@@ -28,10 +28,47 @@
 }
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  cursor: default;
+  caret-color: transparent;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable='true'] {
+  caret-color: var(--ink);
+  user-select: text;
+  cursor: text;
+}
+input[type='checkbox'],
+input[type='radio'],
+input[type='file'],
+select {
+  cursor: pointer;
+}
+button,
+.button-link,
+nav,
+summary,
+label {
+  user-select: none;
+}
+.summary-copy,
+p,
+article li,
+dd,
+.preview-turn p,
+.reader-turn p,
+.observation-copy,
+.visual-text,
+.source-text,
+blockquote,
+pre {
+  user-select: text;
 }
 a {
   color: var(--ink);

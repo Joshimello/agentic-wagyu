@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { useActivity } from '../lib/ui/activity.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import Disclosure from '../lib/components/Disclosure.svelte';
   import Select from '../lib/components/Select.svelte';
   import Tooltip from '../lib/components/Tooltip.svelte';
   import ProgressBar from '../lib/components/ProgressBar.svelte';
   let { data } = $props();
+  const activity = useActivity();
   let uploads = $state(untrack(() => data.uploads));
   let selected = $state(untrack(() => data.selections));
   let localChosen = $state<string[]>([]);
@@ -24,14 +25,57 @@
     projectMode = $state('auto'),
     projectId = $state(''),
     projectName = $state('');
+  let acceptedPushId = $state<string | null>(null);
+  function addedToMemory(
+    file: (typeof uploads)[number],
+    revisionId = file.currentRevisionId,
+  ) {
+    return Boolean(
+      revisionId &&
+      (file.memory.revisionId === revisionId ||
+        file.memory.admittedRevisionIds?.includes(revisionId) ||
+        (file.memory.state === 'incorporated' &&
+          revisionId === file.currentRevisionId)),
+    );
+  }
+  let pendingSelections = $derived(
+    selected.filter((item) => {
+      const file = uploads.find((source) => source.id === item.uploadId);
+      return file && !addedToMemory(file, item.revisionId);
+    }),
+  );
+  let unreadyChosen = $derived(
+    chosenIds.some((id) => {
+      const file = uploads.find((source) => source.id === id);
+      return (
+        file &&
+        !addedToMemory(file) &&
+        !pendingSelections.some((item) => item.uploadId === id)
+      );
+    }),
+  );
+  let memoryPushActive = $derived(
+    pendingSelections.some(
+      (item) =>
+        uploads.find((file) => file.id === item.uploadId)?.memory.state ===
+        'push_pending',
+    ) ||
+      activity.tasks.some(
+        (task) =>
+          task.kind === 'push' &&
+          task.id === acceptedPushId &&
+          ['queued', 'processing'].includes(task.state),
+      ),
+  );
   async function pushSelection() {
     if (
       pushing ||
+      memoryPushActive ||
       removing ||
       choosing ||
-      !selected.length ||
-      selected.some((item) => !item.readyForPush) ||
-      chosenIds.some((id) => !selected.some((item) => item.uploadId === id))
+      !pendingSelections.length ||
+      pendingSelections.some((item) => !item.readyForPush) ||
+      unreadyChosen
     )
       return;
     pushing = true;
@@ -42,7 +86,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idempotencyKey: crypto.randomUUID(),
-          items: selected.map((s) => ({
+          items: pendingSelections.map((s) => ({
             uploadId: s.uploadId,
             revisionId: s.revisionId,
             acceptPartial: s.acceptPartial,
@@ -57,7 +101,9 @@
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      await goto(`/pushes/${result.id}`);
+      acceptedPushId = result.id;
+      await activity.refresh();
+      activity.reveal();
     } catch (error) {
       message = error instanceof Error ? error.message : 'Push failed';
     } finally {
@@ -80,7 +126,10 @@
     if (choosing || removing || pushing) return;
     const wasPinned = selected.some((item) => item.uploadId === file.id);
     if (remove) localChosen = localChosen.filter((id) => id !== file.id);
-    if ((!file.currentRevisionId || remove) && !wasPinned) {
+    if (
+      (!file.currentRevisionId || addedToMemory(file, revisionId) || remove) &&
+      !wasPinned
+    ) {
       if (!remove && !localChosen.includes(file.id))
         localChosen = [...localChosen, file.id];
       return;
@@ -234,24 +283,89 @@
   async function upload(event: SubmitEvent) {
     event.preventDefault();
     if (busy || !sourceFiles.length) return;
+    const form = event.currentTarget as HTMLFormElement;
+    const body = new FormData(form);
+    const filenames = sourceFiles.map((file) => file.name.slice(0, 255));
+    const sessionId = crypto.randomUUID();
+    let xhr: XMLHttpRequest | undefined;
+    let canceled = false;
+    activity.beginUpload(sessionId, filenames, () => {
+      canceled = true;
+      xhr?.abort();
+    });
     refreshVersion += 1;
     busy = true;
     message = '';
-    const form = event.currentTarget as HTMLFormElement;
     try {
-      const r = await fetch('/api/uploads', {
+      const started = await fetch('/api/upload-sessions', {
         method: 'POST',
-        body: new FormData(form),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sessionId, filenames }),
       });
-      const result = await r.json();
-      if (!r.ok) throw new Error(result.error);
-      form.reset();
-      clearSourceFiles();
-      uploader = 'local';
-      groupHint = '';
-      uploads = await (await fetch('/api/uploads')).json();
+      const session = await started.json();
+      if (!started.ok)
+        throw new Error(session.error || 'Could not begin upload');
+      if (canceled || session.state === 'canceled')
+        throw new DOMException('Upload canceled', 'AbortError');
+      await new Promise<void>((resolve, reject) => {
+        xhr = new XMLHttpRequest();
+        xhr.open('POST', `/api/uploads?session=${sessionId}`);
+        xhr.responseType = 'json';
+        xhr.upload.onprogress = (event) =>
+          activity.uploadProgress(
+            sessionId,
+            event.lengthComputable
+              ? Math.round((event.loaded / event.total) * 100)
+              : null,
+          );
+        xhr.onload = () =>
+          xhr!.status >= 200 && xhr!.status < 300
+            ? resolve()
+            : reject(new Error(xhr!.response?.error || 'Upload failed'));
+        xhr.onerror = () =>
+          reject(
+            new Error(
+              'Upload connection interrupted. Check Staging before retrying.',
+            ),
+          );
+        xhr.onabort = () =>
+          reject(new DOMException('Upload canceled', 'AbortError'));
+        xhr.send(body);
+      });
+      activity.finishUpload(sessionId, 'accepted');
+      if (form.isConnected) {
+        form.reset();
+        clearSourceFiles();
+        uploader = 'local';
+        groupHint = '';
+        uploads = await (await fetch('/api/uploads')).json();
+      }
     } catch (e) {
-      message = e instanceof Error ? e.message : 'Upload failed';
+      if (!canceled) {
+        try {
+          const outcome = await fetch(
+            `/api/upload-sessions/${sessionId}/fail`,
+            { method: 'POST' },
+          );
+          const session = await outcome.json();
+          if (outcome.ok && session.state === 'accepted') {
+            activity.finishUpload(sessionId, 'accepted');
+            if (form.isConnected) {
+              form.reset();
+              clearSourceFiles();
+              uploads = await (await fetch('/api/uploads')).json();
+            }
+            return;
+          }
+        } catch {}
+      }
+      activity.finishUpload(sessionId, canceled ? 'canceled' : 'failed');
+      if (form.isConnected)
+        message = canceled
+          ? 'Upload canceled. Your chosen files are ready to retry.'
+          : e instanceof Error
+            ? e.message
+            : 'Upload failed';
     } finally {
       busy = false;
     }
@@ -420,8 +534,14 @@
                 ></span
               >
               <span class="status"
-                ><span class="badge state-badge" data-state={file.run?.state}
-                  >{file.run?.state.replaceAll('_', ' ') || 'queued'}</span
+                ><span
+                  class="badge state-badge"
+                  data-state={addedToMemory(file)
+                    ? 'incorporated'
+                    : file.run?.state}
+                  >{addedToMemory(file)
+                    ? 'Added to memory'
+                    : file.run?.state.replaceAll('_', ' ') || 'queued'}</span
                 >
                 {#if file.run && ['processing', 'queued'].includes(file.run.state)}
                   <ProgressBar
@@ -432,7 +552,9 @@
                   />
                 {/if}
                 <small
-                  >{file.memory.state.replaceAll('_', ' ')}{file.memory
+                  >{addedToMemory(file)
+                    ? 'Saved'
+                    : file.memory.state.replaceAll('_', ' ')}{file.memory
                     .commitVersion !== null
                     ? ` / Memory ${file.memory.commitVersion}`
                     : ''}</small
@@ -449,10 +571,12 @@
   {/if}
 </section>
 
-{#if selected.length}
+{#if pendingSelections.length}
   <section class="card batch-review">
     <div class="section-heading">
-      <h2>Selected files <span class="badge">{selected.length}</span></h2>
+      <h2>
+        Selected files <span class="badge">{pendingSelections.length}</span>
+      </h2>
       <Tooltip
         text="Selection saves exact revisions. Later edits keep this selection pinned until you choose the newer revision."
         ><button
@@ -463,7 +587,7 @@
         ></Tooltip
       >
     </div>
-    {#each selected as item}
+    {#each pendingSelections as item}
       {@const file = uploads.find((f) => f.id === item.uploadId)}
       <article class="selection-item">
         <div class="selection-heading">
@@ -552,25 +676,25 @@
       <button
         class="push-button"
         disabled={pushing ||
+          memoryPushActive ||
           removing ||
           choosing ||
-          chosenIds.some(
-            (id) => !selected.some((item) => item.uploadId === id),
-          ) ||
-          selected.some((s) => !s.readyForPush) ||
+          unreadyChosen ||
+          pendingSelections.some((s) => !s.readyForPush) ||
           (projectMode === 'existing' && !projectId) ||
           (projectMode === 'new' && !projectName.trim())}
         onclick={pushSelection}
-        ><Icon name={pushing ? 'clock' : 'arrow-up'} size={18} />{pushing
+        ><Icon
+          name={pushing || memoryPushActive ? 'clock' : 'arrow-up'}
+          size={18}
+        />{pushing || memoryPushActive
           ? 'Creating push...'
           : 'Push To Memory'}</button
       >
-      {#if chosenIds.some((id) => !selected.some((item) => item.uploadId === id))}<p
-          class="hint"
-        >
+      {#if unreadyChosen}<p class="hint">
           Some selected files are not ready to push yet.
         </p>
-      {:else if selected.some((s) => !s.readyForPush)}<p class="hint">
+      {:else if pendingSelections.some((s) => !s.readyForPush)}<p class="hint">
           Review partial extraction before pushing.
         </p>{:else}<Tooltip
           text="Automatic matching may create multiple projects from one meeting. Upload grouping alone does not merge projects."
@@ -622,6 +746,9 @@
     align-items: center;
     gap: 2rem;
     margin-bottom: 2rem;
+  }
+  .intro h1 {
+    font-size: clamp(1.8rem, 2.97vw, 2.7rem);
   }
   .intro p {
     margin-bottom: 0;

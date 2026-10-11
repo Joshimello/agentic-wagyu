@@ -1,7 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './fixtures';
 
 const queuedId = '11111111-1111-4111-8111-111111111111';
 const readyId = '22222222-2222-4222-8222-222222222222';
+const savedId = '44444444-4444-4444-8444-444444444444';
 const revisionId = '33333333-3333-4333-8333-333333333333';
 const metadata = {
   uploader: 'local',
@@ -22,7 +24,7 @@ function source(id: string, filename: string, ready = false) {
       progress: ready ? 'Ready for review' : 'Transcribing window 2 of 4',
       progressPercent: ready ? 100 : 43,
     },
-    memory: { state: 'never_pushed', commitVersion: null },
+    memory: { state: 'never_pushed', commitVersion: null as number | null },
   };
 }
 
@@ -55,11 +57,19 @@ async function rejectBrowserWrites(page: Page) {
   });
 }
 
-async function isolatedHome(page: Page) {
+async function isolatedHome(page: Page, includeSaved = false) {
   let sources = [
     source(queuedId, 'Processing meeting.mp4'),
     source(readyId, 'Reviewed meeting.mp4', true),
   ];
+  if (includeSaved) {
+    const saved = source(savedId, 'Saved meeting.mp4', true);
+    sources.push({
+      ...saved,
+      run: { ...saved.run, state: 'ready_with_warnings' },
+      memory: { state: 'incorporated', commitVersion: 3 },
+    });
+  }
   let selections: Selection[] = [];
   const removed: string[][] = [];
   const selectionWrites: unknown[] = [];
@@ -113,6 +123,46 @@ async function isolatedHome(page: Page) {
   ).toHaveCount(0);
   return { removed, selectionWrites };
 }
+
+test('saved sources show their memory status and remain removable without a push menu', async ({
+  page,
+}) => {
+  const { removed, selectionWrites } = await isolatedHome(page, true);
+  const row = page
+    .locator('.selectable-row')
+    .filter({ hasText: 'Saved meeting.mp4' });
+  await expect(row.getByText('Added to memory', { exact: true })).toBeVisible();
+  await expect(row).not.toContainText('ready with warnings');
+  await row.getByRole('checkbox').check();
+  expect(selectionWrites).toEqual([]);
+  await expect(
+    page.getByRole('button', { name: 'Push To Memory', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('combobox', { name: /Project matching/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Remove selected', exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole('checkbox', { name: 'Select Reviewed meeting.mp4', exact: true })
+    .check();
+  await expect(
+    page.getByRole('button', { name: 'Push To Memory', exact: true }),
+  ).toBeEnabled();
+  expect(selectionWrites).toEqual([
+    { uploadId: readyId, revisionId, acceptPartial: false },
+  ]);
+  await page
+    .getByRole('button', { name: 'Remove selected', exact: true })
+    .click();
+  await page
+    .getByRole('dialog', { name: 'Remove selected files from Staging?' })
+    .getByRole('button', { name: 'Remove files', exact: true })
+    .click();
+  expect(removed).toHaveLength(1);
+  expect([...removed[0]].sort()).toEqual([readyId, savedId].sort());
+});
 
 test('choosing and clearing files controls upload details without sending an upload', async ({
   page,

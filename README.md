@@ -14,6 +14,10 @@ Open http://localhost:5173. PostgreSQL lives in the `chronicler_database` named 
 
 Choose or drop source files on Staging to expand the optional upload details. The clear button resets the chooser; Upload stays disabled until files are selected. Review a source, then use **Push To Memory** beside **Original** to publish the displayed revision. Partial extraction requires explicit acceptance. Original recordings and frames open in a same-page preview; click outside or press Escape to close it.
 
+The header **Status** popup tracks uploads, transcription, visual/document reviews, translations, meeting summaries and memory pushes across page navigation. Cancel targets the displayed task; completed entries can be dismissed. Upload progress measures transferred bytes, with a durable cancellation fence before source acceptance. A successful memory push keeps you on the review page and changes the admitted revision's button to **Pushed to memory**. Revision history stays accessible, and a newer corrected revision can be pushed separately.
+
+Meeting details place **Original Video** beside **Meeting summary**, with the full-width spoken transcript below. Timestamp buttons seek and start playback. Summaries read the complete reviewed transcript in bounded blocks, retain completed reading on cancellation, and link topics/projects back to their source text. They are English reading aids with Traditional Chinese names/quotations, cached per immutable revision; generating one does not admit evidence to memory. New interpretations/corrections queue a fresh summary, while existing reviewed meetings generate theirs when opened. Partial transcripts remain labeled as partial.
+
 Processing, visual/document revisions, translations and memory pushes report percentage progress from completed work. Progress reaches 100% only after successful publication; percentages measure processing stages, not an estimate of remaining time. **Cancel** targets the displayed operation, stops active requests and local media work, and preserves completed checkpoints and earlier revisions for retry. Selected sources can be removed from Staging, including queued or failed files. Removal cancels related work and clears selections while retaining originals, revisions and accepted memory so historical citations remain readable.
 
 On WSL2, `nvidia-ctk cdi list` normally exposes `nvidia.com/gpu=all` rather than an indexed device. On a single-GPU WSL machine, set `NVIDIA_CDI_DEVICE=nvidia.com/gpu=all` in `.env`. The launcher reads the repository-root `.env` for Compose interpolation. Verify the selected device before starting the stack:
@@ -41,6 +45,7 @@ podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run check
 podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:contracts
 ./infra/test.sh
 ./infra/test-controls.sh
+./infra/test-activity.sh
 ./infra/test-memory.sh
 ./infra/test-organization.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .

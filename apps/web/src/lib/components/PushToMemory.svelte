@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { useActivity } from '../ui/activity.svelte';
   import type { Stage } from '../server/contracts';
   import Icon from './Icon.svelte';
   import Disclosure from './Disclosure.svelte';
@@ -10,10 +10,16 @@
     stage,
     projects = [],
     disabled = false,
+    alreadyPushed = false,
+    pending = false,
+    onaccepted,
   }: {
     stage: Stage;
     projects?: { id: string; name: string }[];
     disabled?: boolean;
+    alreadyPushed?: boolean;
+    pending?: boolean;
+    onaccepted?: (pushId: string) => Promise<void>;
   } = $props();
   let dialog = $state<HTMLDialogElement>();
   let pinned = $state<Stage | null>(null);
@@ -25,6 +31,17 @@
   let error = $state('');
   let idempotencyKey = '';
   let submittedPayload = '';
+  const activity = useActivity();
+  let acceptedPushId = $state<string | null>(null);
+  let activePush = $derived(
+    pending ||
+      activity.tasks.some(
+        (task) =>
+          task.kind === 'push' &&
+          task.id === acceptedPushId &&
+          ['queued', 'processing'].includes(task.state),
+      ),
+  );
   let scopeOptions = $derived([
     { value: 'auto', label: 'Match automatically' },
     ...(projects.length
@@ -33,7 +50,7 @@
     { value: 'new', label: 'Create a project' },
   ]);
   async function open() {
-    if (disabled || pushing) return;
+    if (disabled || pushing || alreadyPushed || activePush) return;
     pinned = stage;
     acceptPartial = false;
     error = '';
@@ -47,6 +64,8 @@
       !pinned ||
       pushing ||
       disabled ||
+      alreadyPushed ||
+      activePush ||
       (!pinned.coverage.complete && !acceptPartial) ||
       (projectMode === 'existing' && !projectId) ||
       (projectMode === 'new' && !projectName.trim())
@@ -80,7 +99,11 @@
       if (!response.ok)
         throw new Error(result.error || 'Could not push this revision');
       dialog?.close();
-      await goto(`/pushes/${result.id}`);
+      acceptedPushId = result.id;
+      try {
+        await onaccepted?.(result.id);
+      } catch {}
+      activity.reveal();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not push this revision';
     } finally {
@@ -89,8 +112,16 @@
   }
 </script>
 
-<button type="button" disabled={disabled || pushing} onclick={open}
-  ><Icon name="folder" />Push To Memory</button
+<button
+  type="button"
+  class:secondary={alreadyPushed}
+  disabled={disabled || pushing || alreadyPushed || activePush}
+  onclick={open}
+  ><Icon name={alreadyPushed ? 'success' : 'folder'} />{alreadyPushed
+    ? 'Pushed to memory'
+    : pushing || activePush
+      ? 'Pushing to memory'
+      : 'Push To Memory'}</button
 >
 <dialog
   bind:this={dialog}

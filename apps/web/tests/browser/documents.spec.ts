@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './fixtures';
 import corpus from '../../../../evals/documents.json';
 import type { Stage, Primitive } from '../../src/lib/server/contracts';
 

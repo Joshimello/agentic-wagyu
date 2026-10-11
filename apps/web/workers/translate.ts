@@ -6,8 +6,28 @@ import {
 } from '../src/lib/server/jobs/translations';
 import { translateRevision } from '../src/lib/server/agents/translation';
 import { sqlClient } from '../src/lib/server/db/client';
+import {
+  setupSummaryQueue,
+  dispatchSummaries,
+  reconcileSummaries,
+  summaryQueue,
+} from '../src/lib/server/jobs/summaries';
+import { summarizeMeeting } from '../src/lib/server/agents/summary';
 
 const boss = await startTranslationQueue();
+await setupSummaryQueue(boss);
+await boss.work<{ summaryId: string; generation?: number }>(
+  summaryQueue,
+  { batchSize: 1 },
+  async (jobs) => {
+    for (const job of jobs)
+      await summarizeMeeting(job.data.summaryId, {
+        signal: job.signal,
+        generation: job.data.generation,
+        retrying: job.retryCount < 3,
+      });
+  },
+);
 await boss.work<{ translationId: string; generation?: number }>(
   translationQueue,
   { batchSize: 1 },
@@ -26,8 +46,10 @@ const pump = (async () => {
   while (!stopping) {
     try {
       await dispatchTranslations(boss);
+      await dispatchSummaries(boss);
       if (Date.now() >= nextReconciliation) {
         await reconcileTranslations(boss);
+        await reconcileSummaries(boss);
         nextReconciliation = Date.now() + 30000;
       }
     } catch {
@@ -47,4 +69,4 @@ async function stop() {
 }
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);
-console.log('Transcript translation worker ready');
+console.log('Transcript translation and meeting summary worker ready');

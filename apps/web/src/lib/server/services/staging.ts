@@ -5,6 +5,7 @@ import { uploads, revisions } from '../db/schema';
 import { validateStage, id, type Stage } from '../contracts';
 import { isUsableCandidateName } from '../../speaker-names';
 import { cleanEnglishReview } from '../review-language';
+import { enqueueSummary } from './summaries';
 import {
   normalizeTranscription,
   traditionalChinese,
@@ -35,7 +36,11 @@ export async function correctStage(uploadId: string, value: unknown) {
       .from(uploads)
       .where(eq(uploads.id, uploadId))
       .for('update');
-    if (!upload || upload.deletedAt || upload.currentRevisionId !== correction.baseRevisionId)
+    if (
+      !upload ||
+      upload.deletedAt ||
+      upload.currentRevisionId !== correction.baseRevisionId
+    )
       throw new Error(
         'Staging changed. Reload the current revision before saving your correction.',
       );
@@ -120,6 +125,7 @@ export async function correctStage(uploadId: string, value: unknown) {
       parentRevisionId: base.id,
       manifest: stage,
     });
+    await enqueueSummary(tx, stage);
     await tx
       .update(uploads)
       .set({ currentRevisionId: stage.id })

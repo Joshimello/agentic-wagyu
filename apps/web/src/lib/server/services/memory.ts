@@ -240,6 +240,7 @@ export async function memoryRelationship(
     revisionId: admitted[0]?.revisionId ?? null,
     commitVersion: admitted[0]?.commitVersion ?? null,
     pushId: batch?.id ?? null,
+    admittedRevisionIds: admitted.map((admission) => admission.revisionId),
   };
 }
 export async function evidenceView(

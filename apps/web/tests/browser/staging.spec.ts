@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './fixtures';
 import corpus from '../../../../evals/meetings.json';
 import type { Primitive, Stage } from '../../src/lib/server/contracts';
 import { isUsableCandidateName } from '../../src/lib/speaker-names';
@@ -164,7 +165,9 @@ async function inspectRecording(page: Page, video: Upload) {
   if (texts[0]?.text)
     expect(output).toContain(texts[0].text.replaceAll('\r', ''));
   await page.keyboard.press('Escape');
-  const original = await player.evaluate((element: HTMLVideoElement) => element.currentSrc || element.src);
+  const original = await player.evaluate(
+    (element: HTMLVideoElement) => element.currentSrc || element.src,
+  );
   expect(original).toContain(`/api/assets/${stage.rawAssetId}`);
   const raw = await page.request.get(original!, {
     headers: { Range: 'bytes=0-31' },

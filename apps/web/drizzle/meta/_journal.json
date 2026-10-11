@@ -50,6 +50,13 @@
       "when": 1791721227220,
       "tag": "0006_processing_control",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791727811021,
+      "tag": "0007_workspace_activity",
+      "breakpoints": true
     }
   ]
 }

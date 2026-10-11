@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { expect, type Page, type Route } from '@playwright/test';
+import { test } from './fixtures';
 import type { Primitive, Stage } from '../../src/lib/server/contracts';
 
 type Text = Extract<Primitive, { kind: 'text' }>;

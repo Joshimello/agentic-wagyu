@@ -18,6 +18,7 @@ import { buildVideo, revisitContext } from './video';
 import { applyTranscript } from './transcript';
 import { buildDocument, documentFormat } from './documents';
 import { enrichDocument } from './document-review';
+import { enqueueSummary } from '../../services/summaries';
 
 export async function interpret(
   runId: string,
@@ -268,6 +269,7 @@ export async function interpret(
           parentRevisionId: stage.parentRevisionId,
           manifest: stage,
         });
+        await enqueueSummary(tx, stage);
         await tx
           .update(runs)
           .set({

@@ -7,6 +7,7 @@ import {
   outbox,
   revisions,
   memoryCommits,
+  uploadSessions,
 } from '../db/schema';
 import { storeBytes } from '../storage';
 import { metadata } from '../contracts';
@@ -23,7 +24,12 @@ type UploadFields = {
 export async function acceptUpload(file: File, fields: UploadFields) {
   return (await acceptUploadBatch([file], fields))[0];
 }
-export async function acceptUploadBatch(files: File[], fields: UploadFields) {
+export async function acceptUploadBatch(
+  files: File[],
+  fields: UploadFields,
+  options: { signal?: AbortSignal; sessionId?: string } = {},
+) {
+  options.signal?.throwIfAborted();
   if (!files.length || files.length > 20)
     throw new Error('Choose between 1 and 20 files');
   if (
@@ -42,6 +48,7 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
     mime: string;
   }[] = [];
   for (const file of files) {
+    options.signal?.throwIfAborted();
     const filename = file.name.replace(/[\x00-\x1f]/g, '').slice(0, 255);
     const meta = metadata.parse({
       uploader: fields.uploader?.trim() || 'local',
@@ -57,6 +64,7 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
         : {}),
     });
     const stored = await storeBytes(new Uint8Array(await file.arrayBuffer()));
+    options.signal?.throwIfAborted();
     prepared.push({
       filename,
       meta,
@@ -65,6 +73,16 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
     });
   }
   return db.transaction(async (tx) => {
+    options.signal?.throwIfAborted();
+    if (options.sessionId) {
+      const [session] = await tx
+        .select()
+        .from(uploadSessions)
+        .where(eq(uploadSessions.id, options.sessionId))
+        .for('update');
+      if (!session || session.state !== 'uploading')
+        throw new Error('Upload was canceled or already accepted');
+    }
     const accepted = [];
     for (const file of prepared) {
       const uploadId = crypto.randomUUID(),
@@ -87,6 +105,12 @@ export async function acceptUploadBatch(files: File[], fields: UploadFields) {
       await tx.insert(outbox).values({ id: runId });
       accepted.push({ uploadId, runId });
     }
+    options.signal?.throwIfAborted();
+    if (options.sessionId)
+      await tx
+        .update(uploadSessions)
+        .set({ state: 'accepted', accepted, updatedAt: new Date() })
+        .where(eq(uploadSessions.id, options.sessionId));
     return accepted;
   });
 }

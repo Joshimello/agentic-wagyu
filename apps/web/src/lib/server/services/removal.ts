@@ -10,6 +10,8 @@ import {
   outbox,
   translationOutbox,
   chroniclerOutbox,
+  summaryJobs,
+  summaryOutbox,
 } from '../db/schema';
 import { id } from '../contracts';
 import { cancelUploadRun } from './uploads';
@@ -58,6 +60,27 @@ export async function removeUploads(value: unknown) {
       )
       .returning({ id: runs.id, uploadId: runs.uploadId });
     const selectedUploadIds = sources.map((source) => source.id);
+    const pendingSummaries = await tx.execute<{ id: string }>(sql`
+      update meeting_summaries as summary
+      set state = 'canceled', generation = generation + 1, error = null, updated_at = now()
+      from staging_revisions as revision
+      where summary.revision_id = revision.id and revision.upload_id in (${sql.join(
+        selectedUploadIds.map((source) => sql`${source}::uuid`),
+        sql`, `,
+      )})
+        and summary.state in ('queued', 'processing')
+      returning summary.id
+    `);
+    if (pendingSummaries.length)
+      await tx
+        .update(summaryOutbox)
+        .set({ dispatchedAt: new Date() })
+        .where(
+          inArray(
+            summaryOutbox.id,
+            [...pendingSummaries].map((job) => job.id),
+          ),
+        );
     const pendingTranslations = await tx.execute<{
       id: string;
       uploadId: string;

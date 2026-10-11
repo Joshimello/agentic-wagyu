@@ -319,3 +319,67 @@ export const translationOutbox = pgTable('translation_outbox', {
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+export const summaryJobs = pgTable(
+  'meeting_summaries',
+  {
+    id: uuid('id').primaryKey(),
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => revisions.id),
+    promptVersion: text('prompt_version').notNull(),
+    model: text('model'),
+    state: text('state')
+      .$type<
+        Exclude<
+          import('../contracts/summaries').SummaryStatus['state'],
+          'not_requested'
+        >
+      >()
+      .notNull()
+      .default('queued'),
+    progressPercent: integer('progress_percent').notNull().default(0),
+    generation: integer('generation').notNull().default(0),
+    checkpoint: jsonb('checkpoint')
+      .$type<import('../contracts/summaries').MeetingSummary[]>()
+      .notNull()
+      .default([]),
+    summary:
+      jsonb('summary').$type<import('../contracts/summaries').MeetingSummary>(),
+    error: text('error'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('meeting_summary_revision_prompt_unique').on(
+      t.revisionId,
+      t.promptVersion,
+    ),
+  ],
+);
+export const summaryOutbox = pgTable('summary_outbox', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => summaryJobs.id),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+export const uploadSessions = pgTable('upload_sessions', {
+  id: uuid('id').primaryKey(),
+  filenames: jsonb('filenames').$type<string[]>().notNull().default([]),
+  state: text('state')
+    .$type<'uploading' | 'accepted' | 'canceled' | 'failed'>()
+    .notNull()
+    .default('uploading'),
+  accepted: jsonb('accepted')
+    .$type<{ uploadId: string; runId: string }[]>()
+    .notNull()
+    .default([]),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
