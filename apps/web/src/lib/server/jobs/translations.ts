@@ -31,13 +31,18 @@ export async function dispatchTranslations(boss: PgBoss) {
     .select()
     .from(translationOutbox)
     .innerJoin(translationJobs, eq(translationOutbox.id, translationJobs.id))
-    .where(isNull(translationOutbox.dispatchedAt))
+    .where(
+      and(
+        isNull(translationOutbox.dispatchedAt),
+        eq(translationJobs.state, 'queued'),
+      ),
+    )
     .limit(50);
   for (const row of pending) {
     const job = row.transcript_translations;
     await boss.send(
       translationQueue,
-      { translationId: job.id },
+      { translationId: job.id, generation: job.generation },
       {
         id: stableId(job.id, 'translation-queue', String(job.generation)),
       },

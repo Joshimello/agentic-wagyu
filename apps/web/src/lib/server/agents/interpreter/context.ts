@@ -1,3 +1,4 @@
+import type { JobProgress } from '../../jobs/control';
 import { z } from 'zod';
 import type OpenAI from 'openai';
 import type { Stage, Primitive } from '../../contracts';
@@ -118,9 +119,11 @@ export function validateSearch(
 export async function enrichContext(
   stage: Stage,
   getSheet: (times: number[]) => Promise<Sheet>,
-  progress: (message: string) => Promise<void> = async () => {},
+  progress: JobProgress = async () => {},
   llm: ReturnType<typeof llmClient> = llmClient(),
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const { client, model } = llm;
   // Verified on the configured Qwen gateway: reasoning otherwise consumes the
   // whole output budget before returning structured content. Other providers
@@ -144,32 +147,41 @@ export async function enrichContext(
   for (let index = 0; index < blocks.length; index++) {
     await progress(
       `Reading transcript block ${index + 1}/${blocks.length} for missing context`,
+      70 + (10 * index) / blocks.length,
     );
     const block = blocks[index];
-    const response = await client.chat.completions.create({
-      model,
-      ...providerOptions,
-      temperature: 0,
-      max_tokens: 8192,
-      messages: [
-        {
-          role: 'system',
-          content: `${safety} Read EVERY transcript line in this contiguous block. Find concrete gaps in meaning that video could resolve: 'this diagram', unclear slide references, table values, code, gestures or presenter handoffs. Ask precise questions that clarify the quoted speech, not generic questions about what a frame shows. Prioritize consequential gaps (1 highest, 3 lowest). Speaker identity questions need a real introduction/handoff/name cue. Do not select evenly spaced or random timestamps. Return at most six questions, each citing the relevant T references. Empty questions is valid when nothing needs visual evidence.`,
-        },
-        {
-          role: 'user',
-          content: `Speaker references:\n${speakerTable}\nTranscript (milliseconds on original recording):\n${block.content}`,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'context_questions',
-          strict: true,
-          schema: z.toJSONSchema(planSchema),
+    const response = await client.chat.completions.create(
+      {
+        model,
+        ...providerOptions,
+        temperature: 0,
+        max_tokens: 8192,
+        messages: [
+          {
+            role: 'system',
+            content: `${safety} Read EVERY transcript line in this contiguous block. Find concrete gaps in meaning that video could resolve: 'this diagram', unclear slide references, table values, code, gestures or presenter handoffs. Ask precise questions that clarify the quoted speech, not generic questions about what a frame shows. Prioritize consequential gaps (1 highest, 3 lowest). Speaker identity questions need a real introduction/handoff/name cue. Do not select evenly spaced or random timestamps. Return at most six questions, each citing the relevant T references. Empty questions is valid when nothing needs visual evidence.`,
+          },
+          {
+            role: 'user',
+            content: `Speaker references:\n${speakerTable}\nTranscript (milliseconds on original recording):\n${block.content}`,
+          },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'context_questions',
+            strict: true,
+            schema: z.toJSONSchema(planSchema),
+          },
         },
       },
-    });
+      { signal },
+    );
+    signal?.throwIfAborted();
+    await progress(
+      `Read transcript block ${index + 1}/${blocks.length}`,
+      70 + (10 * (index + 1)) / blocks.length,
+    );
     if (response.choices[0]?.finish_reason === 'length')
       throw new Error('Transcript plan truncated');
     const plan = planSchema.parse(
@@ -226,6 +238,7 @@ export async function enrichContext(
     }
     await progress(
       `Searching video for transcript question ${index + 1}/${plans.length}`,
+      80 + (16 * index) / plans.length,
     );
     const targets = plan.transcriptRefs.map((ref) => byRef.get(ref)!);
     const nearby = new Set<number>();
@@ -258,40 +271,45 @@ export async function enrichContext(
     let sheets = 0;
     try {
       for (let round = 0; round < 4; round++) {
-        const response = await client.chat.completions.create({
-          model,
-          ...providerOptions,
-          messages,
-          temperature: 0,
-          max_tokens: 4096,
-          tools: [
-            {
-              type: 'function',
-              function: {
-                name: 'get_contact_sheet',
-                description:
-                  'Search up to four frames near the cited speech to answer this question; include the reason for each search.',
+        signal?.throwIfAborted();
+        const response = await client.chat.completions.create(
+          {
+            model,
+            ...providerOptions,
+            messages,
+            temperature: 0,
+            max_tokens: 4096,
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'get_contact_sheet',
+                  description:
+                    'Search up to four frames near the cited speech to answer this question; include the reason for each search.',
+                  strict: true,
+                  parameters: z.toJSONSchema(searchSchema),
+                },
+              },
+            ],
+            parallel_tool_calls: false,
+            tool_choice:
+              round === 0 && plan.purpose === 'visual_context'
+                ? { type: 'function', function: { name: 'get_contact_sheet' } }
+                : sheets >= 2
+                  ? 'none'
+                  : 'auto',
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'context_answer',
                 strict: true,
-                parameters: z.toJSONSchema(searchSchema),
+                schema: z.toJSONSchema(answerSchema),
               },
             },
-          ],
-          parallel_tool_calls: false,
-          tool_choice:
-            round === 0 && plan.purpose === 'visual_context'
-              ? { type: 'function', function: { name: 'get_contact_sheet' } }
-              : sheets >= 2
-                ? 'none'
-                : 'auto',
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'context_answer',
-              strict: true,
-              schema: z.toJSONSchema(answerSchema),
-            },
           },
-        });
+          { signal },
+        );
+        signal?.throwIfAborted();
         const choice = response.choices[0];
         if (!choice || choice.finish_reason === 'length')
           throw new Error('Context answer truncated');
@@ -341,6 +359,7 @@ export async function enrichContext(
                 ],
               });
             } catch {
+              signal?.throwIfAborted();
               messages.push({
                 role: 'tool',
                 tool_call_id: call.id,
@@ -417,10 +436,12 @@ export async function enrichContext(
         question.explanation =
           'No validated evidence was found within the search budget';
     } catch {
+      signal?.throwIfAborted();
       question.explanation =
         'The visual response could not be validated; speech and search evidence are preserved';
     }
   }
+  await progress('Visual context reviewed', 96);
   // Retain all searched frames so that the question/search audit remains resolvable.
   stage.primitives.push(...observed.values());
   const unresolved = stage.context.questions.filter(

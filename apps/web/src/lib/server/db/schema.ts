@@ -28,6 +28,7 @@ export const uploads = pgTable('uploads', {
   filename: text('filename').notNull(),
   metadata: jsonb('metadata').$type<Stage['metadata']>().notNull(),
   currentRevisionId: uuid('current_revision_id'),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
 export const runs = pgTable('interpretation_runs', {
@@ -37,6 +38,7 @@ export const runs = pgTable('interpretation_runs', {
     .references(() => uploads.id),
   state: text('state').notNull().default('queued'),
   progress: text('progress').notNull().default('Waiting for worker'),
+  progressPercent: integer('progress_percent').notNull().default(0),
   attempts: integer('attempts').notNull().default(0),
   error: text('error'),
   revisionId: uuid('revision_id'),
@@ -97,6 +99,8 @@ export const pushBatches = pgTable('push_batches', {
   commitVersion: integer('commit_version'),
   attempts: integer('attempts').notNull().default(0),
   progress: text('progress').notNull().default('Waiting for Chronicler'),
+  progressPercent: integer('progress_percent').notNull().default(0),
+  generation: integer('generation').notNull().default(0),
   error: text('error'),
   checkpoints: jsonb('checkpoints')
     .$type<Record<string, unknown>>()

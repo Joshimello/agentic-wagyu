@@ -16,9 +16,11 @@ export type TranslationPart = {
 export type TranslatedPart = { ref: string; text: string };
 export type TranslationStatus = {
   id: string | null;
-  state: 'not_requested' | 'queued' | 'processing' | 'ready' | 'failed';
+  state:
+    'not_requested' | 'queued' | 'processing' | 'ready' | 'failed' | 'canceled';
   revisionId: string;
   language: TranslationLanguage;
+  progressPercent: number;
   completedSegments: number;
   totalSegments: number;
   translations: TranslatedPrimitive[];

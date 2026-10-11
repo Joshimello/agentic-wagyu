@@ -4,6 +4,191 @@ import { validateStage, type Stage } from '../src/lib/server/contracts';
 import { config } from '../src/lib/server/config';
 import { rm } from 'node:fs/promises';
 
+test('an in-flight media progress response cannot overwrite a completed phase', async () => {
+  const runId = crypto.randomUUID(),
+    uploadId = crypto.randomUUID();
+  const stage: Stage = {
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    uploadId,
+    rawAssetId: crypto.randomUUID(),
+    parentRevisionId: null,
+    createdAt: new Date().toISOString(),
+    metadata: {
+      uploader: 'local',
+      uploadedAt: new Date().toISOString(),
+      label: 'Progress phase regression',
+      sourceTime: null,
+      sourceTimeOrigin: 'unknown',
+    },
+    primitives: [],
+    annotations: [],
+    coverage: { complete: true, durationMs: null, warnings: [] },
+    provenance: {
+      adapter: 'video',
+      model: null,
+      modelRevision: null,
+      promptVersion: null,
+    },
+  };
+  let releaseTranscript!: () => void,
+    releaseStatus!: () => void,
+    statusStarted!: () => void;
+  const transcript = new Promise<void>((resolve) => {
+    releaseTranscript = resolve;
+  });
+  const status = new Promise<void>((resolve) => {
+    releaseStatus = resolve;
+  });
+  const polling = new Promise<void>((resolve) => {
+    statusStarted = resolve;
+  });
+  const messages: string[] = [],
+    previousFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url).endsWith('/probe'))
+      return Response.json({ durationMs: 1000, hasAudio: true });
+    if (String(url).endsWith('/transcribe')) {
+      await transcript;
+      return Response.json({
+        durationMs: 1000,
+        model: 'MOSS',
+        revision: 'pinned',
+        truncated: false,
+        segments: [
+          { start: 0, end: 0.5, speaker: 'S01', text: 'Saved speech' },
+        ],
+      });
+    }
+    if (String(url).endsWith(`/jobs/${runId}`)) {
+      statusStarted();
+      await status;
+      return Response.json({
+        stage: 'transcribing',
+        startMs: 0,
+        coveredMs: 250,
+      });
+    }
+    throw new Error('Unexpected model request');
+  }) as typeof fetch;
+  try {
+    const processing = buildVideo(
+      stage,
+      `assets/aa/${'a'.repeat(64)}`,
+      runId,
+      async (message) => {
+        messages.push(message);
+      },
+    );
+    await polling;
+    releaseTranscript();
+    await Bun.sleep(30);
+    expect(messages.some((message) => message.startsWith('Transcribed'))).toBe(
+      false,
+    );
+    releaseStatus();
+    await processing;
+    expect(messages.some((message) => message.startsWith('Transcribed'))).toBe(
+      true,
+    );
+    expect(messages.at(-1)).not.toBe(
+      'Transcribing audio window 1/1 with local MOSS',
+    );
+  } finally {
+    releaseTranscript();
+    releaseStatus();
+    globalThis.fetch = previousFetch;
+    for (const id of [runId, uploadId])
+      await rm(`${config.dataRoot}/runs/${id}`, {
+        recursive: true,
+        force: true,
+      });
+  }
+});
+
+test('a new run after cancellation reuses completed audio windows and aborts the active request', async () => {
+  const firstRun = crypto.randomUUID(),
+    nextRun = crypto.randomUUID(),
+    uploadId = crypto.randomUUID();
+  const controller = new AbortController();
+  const key = `assets/aa/${'a'.repeat(64)}`;
+  const make = (): Stage => ({
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    uploadId,
+    rawAssetId: crypto.randomUUID(),
+    parentRevisionId: null,
+    createdAt: new Date().toISOString(),
+    metadata: {
+      uploader: 'local',
+      uploadedAt: new Date().toISOString(),
+      label: 'Canceled windows',
+      sourceTime: null,
+      sourceTimeOrigin: 'unknown',
+    },
+    primitives: [],
+    annotations: [],
+    coverage: { complete: true, durationMs: null, warnings: [] },
+    provenance: {
+      adapter: 'video',
+      model: null,
+      modelRevision: null,
+      promptVersion: null,
+    },
+  });
+  const previousFetch = globalThis.fetch,
+    calls: number[] = [];
+  let cancel = true;
+  globalThis.fetch = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    if (String(url).endsWith('/probe'))
+      return Response.json({ durationMs: 1801000, hasAudio: true });
+    if (!String(url).endsWith('/transcribe'))
+      throw new Error('Unexpected model request');
+    const body = JSON.parse(String(init?.body));
+    calls.push(body.startMs);
+    if (body.startMs === 1800000 && cancel) {
+      cancel = false;
+      controller.abort(new Error('User canceled'));
+      expect(init!.signal!.aborted).toBe(true);
+      throw controller.signal.reason;
+    }
+    return Response.json({
+      durationMs: body.durationMs,
+      model: 'MOSS',
+      revision: 'pinned',
+      truncated: false,
+      segments: [{ start: 0, end: 0.5, speaker: 'S01', text: 'Saved speech' }],
+    });
+  }) as typeof fetch;
+  try {
+    const progress: number[] = [];
+    await expect(
+      buildVideo(
+        make(),
+        key,
+        firstRun,
+        async (_message, percent) => {
+          if (percent !== undefined) progress.push(percent);
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow('User canceled');
+    expect(progress.every((value) => value < 100)).toBe(true);
+    await buildVideo(make(), key, nextRun, async () => {});
+    expect(calls).toEqual([0, 1800000, 1800000]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const id of [firstRun, nextRun, uploadId])
+      await rm(`${config.dataRoot}/runs/${id}`, {
+        recursive: true,
+        force: true,
+      });
+  }
+});
+
 test('interrupted audio processing resumes saved sections and rejects a mismatched checkpoint', async () => {
   const runId = crypto.randomUUID(),
     uploadId = crypto.randomUUID();
@@ -79,22 +264,24 @@ test('interrupted audio processing resumes saved sections and rejects a mismatch
     expect(calls).toEqual([0, 1800000, 1800000, 0]);
   } finally {
     globalThis.fetch = previousFetch;
-    await rm(`${config.dataRoot}/runs/${runId}`, {
-      recursive: true,
-      force: true,
-    });
+    for (const id of [runId, uploadId])
+      await rm(`${config.dataRoot}/runs/${id}`, {
+        recursive: true,
+        force: true,
+      });
   }
 });
 
 test('video uses only 30-minute windows, preserves coverage warnings, and never conflates speakers', async () => {
   const runId = crypto.randomUUID(),
     key = `assets/aa/${'a'.repeat(64)}`;
+  const uploadId = crypto.randomUUID();
   const originalFetch = globalThis.fetch;
   const calls: number[][] = [];
   const make = (): Stage => ({
     schemaVersion: 1,
     id: crypto.randomUUID(),
-    uploadId: crypto.randomUUID(),
+    uploadId,
     rawAssetId: crypto.randomUUID(),
     parentRevisionId: null,
     createdAt: new Date().toISOString(),
@@ -160,9 +347,10 @@ test('video uses only 30-minute windows, preserves coverage warnings, and never 
     expect(calls).toHaveLength(3);
   } finally {
     globalThis.fetch = originalFetch;
-    await rm(`${config.dataRoot}/runs/${runId}`, {
-      recursive: true,
-      force: true,
-    });
+    for (const id of [runId, uploadId])
+      await rm(`${config.dataRoot}/runs/${id}`, {
+        recursive: true,
+        force: true,
+      });
   }
 });

@@ -68,6 +68,38 @@ test('frame searches stay near cited speech and reject unrelated or invalid time
   for (const times of [[400000], [-1], [2.5], [2000, 2000], [], [500000]])
     expect(() => validateSearch(times, [speech(2)], 500000)).toThrow();
 });
+
+test('canceling a context request aborts its model call instead of becoming a warning or retry', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const llm = {
+    model: 'context-cancellation-regression',
+    client: {
+      chat: {
+        completions: {
+          create: async (_input: unknown, options: { signal: AbortSignal }) => {
+            calls++;
+            expect(options.signal).toBe(controller.signal);
+            controller.abort(new Error('User canceled'));
+            throw new Error('Request aborted');
+          },
+        },
+      },
+    },
+  } as unknown as ReturnType<typeof llmClient>;
+  await expect(
+    enrichContext(
+      stage(),
+      async () => {
+        throw new Error('Unexpected frame request');
+      },
+      async () => {},
+      llm,
+      controller.signal,
+    ),
+  ).rejects.toThrow('Request aborted');
+  expect(calls).toBe(1);
+});
 test('context agent reads before searching and keeps names separate from unchanged speech', async () => {
   const value = stage(),
     original = structuredClone(

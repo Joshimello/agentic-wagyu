@@ -8,6 +8,7 @@ from PIL import Image, ImageOps
 from pptx import Presentation
 from media import ROOT, store_image
 from document_media import extract_media
+from jobs import check_cancelled, progress, commit, run_command, cancellable_lock
 
 ADAPTER = "documents-3"
 MAX_UNITS = 400
@@ -15,7 +16,7 @@ _lock = threading.Lock()  # Poppler/LibreOffice memory use is bounded to one doc
 
 
 def command(args, timeout=180):
-    return subprocess.run(
+    return run_command(
         args,
         check=True,
         capture_output=True,
@@ -27,8 +28,8 @@ def command(args, timeout=180):
 def versions():
     return {
         "libreoffice": command(["libreoffice", "--version"]).decode().strip(),
-        "poppler": subprocess.run(
-            ["pdftoppm", "-v"], capture_output=True, text=True
+        "poppler": run_command(
+            ["pdftoppm", "-v"], capture_output=True, text=True, check=False, timeout=30
         ).stderr.splitlines()[0],
         "tesseract": command(["tesseract", "--version"]).decode().splitlines()[0],
         "python-pptx": __import__("pptx").__version__,
@@ -102,7 +103,9 @@ def pdf_units(pdf, tmp):
     if not 1 <= len(pages) <= MAX_UNITS:
         raise ValueError(f"Document must contain 1–{MAX_UNITS} pages")
     units = []
+    progress(stage='extracting_pages',totalUnits=len(pages),completedUnits=0)
     for n, page in enumerate(pages, 1):
+        check_cancelled()
         width = float(page.get("width"))
         height = float(page.get("height"))
         texts = []
@@ -150,12 +153,14 @@ def pdf_units(pdf, tmp):
                 "warnings": warnings,
             }
         )
+        progress(completedUnits=n)
     return units
 
 
 def shapes_text(shapes, width, height, grouped=False):
     texts = []
     for shape in shapes:
+        check_cancelled()
         if shape.shape_type == 6:
             texts.extend(shapes_text(shape.shapes, width, height, True))
             continue
@@ -201,6 +206,7 @@ def pptx_units(path, tmp):
     unsupported = {}
     with ZipFile(local) as archive:
         for name in archive.namelist():
+            check_cancelled()
             if re.fullmatch(r"ppt/(?:slides|notesSlides)/[^/]+\.xml", name):
                 content = archive.read(name)
                 fonts.update(
@@ -243,7 +249,9 @@ def pptx_units(path, tmp):
             "Rendered slide count mismatch; refusing incorrect source mappings"
         )
     units = []
+    progress(stage='extracting_slides',totalUnits=len(presentation.slides),completedUnits=0)
     for n, slide in enumerate(presentation.slides, 1):
+        check_cancelled()
         texts = shapes_text(
             slide.shapes, int(presentation.slide_width), int(presentation.slide_height)
         )
@@ -271,6 +279,7 @@ def pptx_units(path, tmp):
                 "warnings": warnings,
             }
         )
+        progress(completedUnits=n)
     warnings = [
         "Static slide renders may differ from PowerPoint; charts, equations and diagrams remain in the render."
     ]
@@ -319,10 +328,11 @@ def image_units(path, tmp):
 
 
 def extract(path, format):
+    check_cancelled()
     if format not in ("pdf", "pptx", "image"):
         raise ValueError("Unsupported document format")
     cache = ROOT / "documents" / path.name / f"{ADAPTER}-{format}.json"
-    with _lock:
+    with cancellable_lock(_lock):
         if cache.is_file():
             result = json.loads(cache.read_text())
             if all(
@@ -370,5 +380,8 @@ def extract(path, format):
         ) as temp:
             json.dump(result, temp, ensure_ascii=False)
             temporary = Path(temp.name)
-        os.replace(temporary, cache)
+        try:
+            commit(lambda: os.replace(temporary, cache))
+        finally:
+            temporary.unlink(missing_ok=True)
         return result

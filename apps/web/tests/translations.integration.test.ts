@@ -264,6 +264,7 @@ check(
       expect(rows.count).toBe(1);
       expect((await boss.getJobById(translationQueue, queueId))?.data).toEqual({
         translationId: requested.id,
+        generation: 0,
       });
       await db
         .update(translationJobs)

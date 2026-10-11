@@ -14,6 +14,7 @@ import {
   knowledgeEvents,
   memoryNodes,
   memoryNodeVersions,
+  uploads,
 } from '../../db/schema';
 import { validateStage, type Stage } from '../../contracts';
 import {
@@ -26,8 +27,13 @@ import {
 import { validateOrganization } from './organization/validation';
 export class StaleMemory extends Error {}
 /** Publication is the only memory writer. All evidence admissions, identities and history are one transaction. */
-export async function publishMemory(pushId: string, plan: Plan) {
+export async function publishMemory(
+  pushId: string,
+  plan: Plan,
+  generation?: number,
+) {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(736501)`);
     await tx.execute(sql`select pg_advisory_xact_lock(736502)`);
     const [batch] = await tx
       .select()
@@ -35,7 +41,12 @@ export async function publishMemory(pushId: string, plan: Plan) {
       .where(eq(pushBatches.id, pushId))
       .for('update');
     if (!batch) throw new Error('Push not found');
-    if (batch.state === 'committed' || batch.state === 'canceled') return batch;
+    if (
+      batch.state === 'committed' ||
+      batch.state === 'canceled' ||
+      (generation !== undefined && batch.generation !== generation)
+    )
+      return batch;
     const [latest] = await tx
       .select({
         version: sql<number>`coalesce(max(${memoryCommits.version}),0)::int`,
@@ -45,6 +56,14 @@ export async function publishMemory(pushId: string, plan: Plan) {
       .select()
       .from(pushItems)
       .where(eq(pushItems.pushId, pushId));
+    for (const item of selected) {
+      const [upload] = await tx
+        .select()
+        .from(uploads)
+        .where(eq(uploads.id, item.uploadId));
+      if (!upload || upload.deletedAt)
+        throw new Error('Selected source was removed from staging');
+    }
     const admitted = await tx.select().from(evidenceAdmissions);
     const fresh = selected.filter(
       (item) => !admitted.some((a) => a.revisionId === item.revisionId),
@@ -77,6 +96,7 @@ export async function publishMemory(pushId: string, plan: Plan) {
         .update(pushBatches)
         .set({
           state: 'committed',
+          progressPercent: 100,
           commitVersion: latest.version,
           outcomes,
           progress: 'Already incorporated; memory unchanged',
@@ -377,6 +397,7 @@ export async function publishMemory(pushId: string, plan: Plan) {
       .update(pushBatches)
       .set({
         state: 'committed',
+        progressPercent: 100,
         commitVersion: version,
         outcomes: plan.outcomes,
         plan,

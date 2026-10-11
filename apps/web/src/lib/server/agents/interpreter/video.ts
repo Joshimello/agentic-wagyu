@@ -9,6 +9,7 @@ import { type Stage, type Primitive } from '../../contracts';
 import { contextPromptVersion, enrichContext } from './context';
 import { asrSchema, applyTranscript } from './transcript';
 import { audioSections, joinAudioSections } from './audio-sections';
+import { type JobProgress } from '../../jobs/control';
 import { normalizeTranscription } from '../../text-normalization';
 
 const assetSchema = z.object({
@@ -36,12 +37,18 @@ const sheetSchema = z.object({
 export const contactArguments = z
   .object({ timesMs: z.array(z.number().int().nonnegative()).min(1).max(8) })
   .strict();
-async function mediaRequest(route: string, body: unknown) {
+async function mediaRequest(
+  route: string,
+  body: unknown,
+  signal?: AbortSignal,
+) {
   const r = await fetch(`${config.mediaUrl}/${route}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(960000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(960000)])
+      : AbortSignal.timeout(960000),
   });
   const result = await r.json();
   if (!r.ok)
@@ -65,10 +72,19 @@ async function registerAsset(asset: z.infer<typeof assetSchema>) {
     .where(eq(assets.sha256, asset.sha256));
   return row;
 }
-export async function getContactSheet(storageKey: string, timesMs: number[]) {
+export async function getContactSheet(
+  storageKey: string,
+  timesMs: number[],
+  signal?: AbortSignal,
+  jobId?: string,
+) {
   const { timesMs: times } = contactArguments.parse({ timesMs });
   const sheet = sheetSchema.parse(
-    await mediaRequest('contact-sheet', { storageKey, timesMs: times }),
+    await mediaRequest(
+      'contact-sheet',
+      { storageKey, timesMs: times, jobId },
+      signal,
+    ),
   );
   const frames: Primitive[] = [];
   for (const frame of sheet.frames) {
@@ -99,13 +115,18 @@ export async function buildVideo(
   stage: Stage,
   storageKey: string,
   runId: string,
-  onProgress: (message: string) => Promise<void>,
+  onProgress: JobProgress,
+  signal?: AbortSignal,
 ) {
   const cacheDir = assetPath(`runs/${runId}`);
+  const windowCacheDir = assetPath(`runs/${stage.uploadId}/moss-windows-v2`);
   await mkdir(cacheDir, { recursive: true });
+  await mkdir(windowCacheDir, { recursive: true });
+  signal?.throwIfAborted();
   const meta = z
     .object({ durationMs: z.number().int().positive(), hasAudio: z.boolean() })
-    .parse(await mediaRequest('probe', { storageKey }));
+    .parse(await mediaRequest('probe', { storageKey, jobId: runId }, signal));
+  await onProgress('Recording inspected', 5);
   if (meta.durationMs > 4 * 60 * 60 * 1000)
     throw new Error(
       'Recording exceeds the four-hour processing limit; original is preserved.',
@@ -114,13 +135,18 @@ export async function buildVideo(
     const values: unknown[] = [];
     const sections = audioSections(meta.durationMs, windowMs);
     for (const section of sections) {
+      signal?.throwIfAborted();
       await onProgress(
         `Transcribing ${windowMs / 60000}-minute audio window ${section.index + 1}/${sections.length} with local MOSS`,
+        5 + (65 * section.startMs) / meta.durationMs,
       );
       const path = `${cacheDir}/part-${windowMs}-${section.index}.json`;
+      const sharedPath = `${windowCacheDir}/part-${windowMs}-${section.index}.json`;
       let value: unknown;
       try {
-        const checkpoint = await Bun.file(path).json();
+        const checkpoint = await Bun.file(
+          (await Bun.file(path).exists()) ? path : sharedPath,
+        ).json();
         if (
           checkpoint.storageKey !== storageKey ||
           checkpoint.startMs !== section.startMs ||
@@ -131,11 +157,58 @@ export async function buildVideo(
         asrSchema.parse(checkpoint.result);
         value = checkpoint.result;
       } catch {
-        value = await mediaRequest('transcribe', {
-          storageKey,
-          startMs: section.startMs,
-          durationMs: section.durationMs,
-        });
+        signal?.throwIfAborted();
+        let polling: Promise<void> | undefined;
+        let acceptingProgress = true;
+        const timer = setInterval(() => {
+          if (polling || signal?.aborted || !acceptingProgress) return;
+          polling = (async () => {
+            try {
+              const response = await fetch(`${config.mediaUrl}/jobs/${runId}`, {
+                signal: signal
+                  ? AbortSignal.any([signal, AbortSignal.timeout(3000)])
+                  : AbortSignal.timeout(3000),
+              });
+              if (!response.ok) return;
+              const status = await response.json();
+              if (
+                !acceptingProgress ||
+                signal?.aborted ||
+                status.stage !== 'transcribing' ||
+                status.startMs !== section.startMs ||
+                typeof status.coveredMs !== 'number'
+              )
+                return;
+              const covered = Math.min(
+                section.durationMs,
+                Math.max(0, status.coveredMs),
+              );
+              await onProgress(
+                `Transcribing audio window ${section.index + 1}/${sections.length} with local MOSS`,
+                5 + (65 * (section.startMs + covered)) / meta.durationMs,
+              );
+            } catch {
+            } finally {
+              polling = undefined;
+            }
+          })();
+        }, 1500);
+        try {
+          value = await mediaRequest(
+            'transcribe',
+            {
+              storageKey,
+              jobId: runId,
+              startMs: section.startMs,
+              durationMs: section.durationMs,
+            },
+            signal,
+          );
+        } finally {
+          acceptingProgress = false;
+          clearInterval(timer);
+          await polling;
+        }
         asrSchema.parse(value);
         const temp = `${cacheDir}/${crypto.randomUUID()}.tmp`;
         await Bun.write(
@@ -143,8 +216,16 @@ export async function buildVideo(
           JSON.stringify({ version: 2, storageKey, ...section, result: value }),
         );
         await rename(temp, path);
+        const sharedTemp = `${windowCacheDir}/${crypto.randomUUID()}.tmp`;
+        await Bun.write(sharedTemp, Bun.file(path));
+        await rename(sharedTemp, sharedPath);
       }
+      signal?.throwIfAborted();
       values.push(value);
+      await onProgress(
+        `Transcribed audio window ${section.index + 1}/${sections.length}`,
+        5 + (65 * (section.startMs + section.durationMs)) / meta.durationMs,
+      );
     }
     return asrSchema.parse(
       joinAudioSections(meta.durationMs, values, windowMs),
@@ -167,15 +248,18 @@ export async function buildVideo(
     },
   };
   applyTranscript(stage, result);
-  await revisitContext(stage, storageKey, onProgress);
+  await revisitContext(stage, storageKey, onProgress, signal, runId);
   return stage;
 }
 /** Revisit visuals without rerunning ASR or replacing user-corrected speech. */
 export async function revisitContext(
   stage: Stage,
   storageKey: string,
-  progress: (message: string) => Promise<void> = async () => {},
+  progress: JobProgress = async () => {},
+  signal?: AbortSignal,
+  jobId?: string,
 ) {
+  signal?.throwIfAborted();
   normalizeTranscription(stage);
   stage.primitives = stage.primitives.filter((p) => p.kind === 'text');
   stage.annotations = [];
@@ -193,10 +277,13 @@ export async function revisitContext(
   try {
     await enrichContext(
       stage,
-      (times) => getContactSheet(storageKey, times),
+      (times) => getContactSheet(storageKey, times, signal, jobId),
       progress,
+      undefined,
+      signal,
     );
   } catch (error) {
+    signal?.throwIfAborted();
     console.error('Context planning failed', {
       errorType: error instanceof Error ? error.name : 'Unknown',
     });

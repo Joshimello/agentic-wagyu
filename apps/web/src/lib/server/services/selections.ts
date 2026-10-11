@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
 import { stagingSelections, revisions, uploads } from '../db/schema';
@@ -15,7 +15,8 @@ export async function listSelections() {
     .select()
     .from(stagingSelections)
     .innerJoin(revisions, eq(stagingSelections.revisionId, revisions.id))
-    .innerJoin(uploads, eq(stagingSelections.uploadId, uploads.id));
+    .innerJoin(uploads, eq(stagingSelections.uploadId, uploads.id))
+    .where(isNull(uploads.deletedAt));
   return rows.map((row) => {
     const stage = validateStage(row.staging_revisions.manifest);
     return {
@@ -43,7 +44,7 @@ export async function selectRevision(value: unknown) {
       .select()
       .from(revisions)
       .where(eq(revisions.id, item.revisionId));
-    if (!upload || !revision || revision.uploadId !== upload.id)
+    if (!upload || upload.deletedAt || !revision || revision.uploadId !== upload.id)
       throw new Error('Revision does not belong to this source');
     validateStage(revision.manifest);
     const [existing] = await tx

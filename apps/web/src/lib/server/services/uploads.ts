@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   assets,
@@ -95,6 +95,7 @@ export async function listUploads() {
     .select()
     .from(uploads)
     .innerJoin(assets, eq(uploads.assetId, assets.id))
+    .where(isNull(uploads.deletedAt))
     .orderBy(desc(uploads.createdAt));
   return Promise.all(
     rows.map(async (row) => {
@@ -154,7 +155,7 @@ export async function retryUpload(id: string, inputRevisionId?: string) {
       .from(uploads)
       .where(eq(uploads.id, id))
       .for('update');
-    if (!upload) throw new Error('Upload not found');
+    if (!upload || upload.deletedAt) throw new Error('Upload not found');
     if (inputRevisionId && upload.currentRevisionId !== inputRevisionId)
       throw new Error(
         'Staging changed. Reload before revisiting descriptions.',
@@ -190,4 +191,54 @@ export async function memoryCount() {
     .select({ count: sql<number>`count(*)::int` })
     .from(memoryCommits);
   return row.count;
+}
+
+export async function cancelUploadRun(uploadId: string, runId: string) {
+  const run = await db.transaction(async (tx) => {
+    // Use the same upload-then-run lock order as publication and deletion.
+    const [upload] = await tx
+      .select()
+      .from(uploads)
+      .where(eq(uploads.id, uploadId))
+      .for('update');
+    if (!upload) throw new Error('Upload not found');
+    const [current] = await tx
+      .select()
+      .from(runs)
+      .where(and(eq(runs.id, runId), eq(runs.uploadId, uploadId)))
+      .for('update');
+    if (!current) throw new Error('Run not found for this upload');
+    if (!['queued', 'processing'].includes(current.state)) return current;
+    const [canceled] = await tx
+      .update(runs)
+      .set({
+        state: 'canceled',
+        progress: 'Canceled; completed work is saved',
+        error: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(runs.id, runId), inArray(runs.state, ['queued', 'processing'])),
+      )
+      .returning();
+    await tx
+      .update(outbox)
+      .set({ dispatchedAt: new Date() })
+      .where(eq(outbox.id, runId));
+    return canceled;
+  });
+  if (run.state === 'canceled') {
+    // A tombstone also stops a request that arrives after this endpoint returns.
+    try {
+      await fetch(`${config.mediaUrl}/jobs/${runId}/cancel`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      console.warn(
+        'Media cancellation deferred; worker will retry cancellation',
+      );
+    }
+  }
+  return run;
 }

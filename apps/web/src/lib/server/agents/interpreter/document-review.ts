@@ -1,3 +1,4 @@
+import type { JobProgress } from '../../jobs/control';
 import { z } from 'zod';
 import { mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -98,12 +99,14 @@ function failureReason(error: unknown) {
 export async function enrichDocument(
   stage: Stage,
   storageKey: string,
-  progress: (message: string) => Promise<void> = async () => {},
+  progress: JobProgress = async () => {},
   llm?: ReturnType<typeof llmClient>,
   resolveImage?: (
     primitiveId: string,
   ) => Promise<{ sha256: string; url: string }>,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const { client, model } = llm ?? llmClient();
   const document = stage.document!;
   const review: Review = {
@@ -273,17 +276,22 @@ export async function enrichDocument(
             ]
           : [];
       try {
-        const response = await client.chat.completions.create({
-          model,
-          temperature: 0,
-          max_tokens: task === 'summary' ? 2048 : 3000,
-          response_format: { type: 'json_object' },
-          ...providerOptions,
-          messages: [
-            { role: 'system', content: safety },
-            { role: 'user', content: [...content, ...repair] as any },
-          ],
-        });
+        signal?.throwIfAborted();
+        const response = await client.chat.completions.create(
+          {
+            model,
+            temperature: 0,
+            max_tokens: task === 'summary' ? 2048 : 3000,
+            response_format: { type: 'json_object' },
+            ...providerOptions,
+            messages: [
+              { role: 'system', content: safety },
+              { role: 'user', content: [...content, ...repair] as any },
+            ],
+          },
+          { signal },
+        );
+        signal?.throwIfAborted();
         const choice = response.choices[0];
         if (choice?.finish_reason === 'length')
           throw new Error('Document description was truncated');
@@ -296,6 +304,7 @@ export async function enrichDocument(
         await rename(temporary, cache);
         return parsed;
       } catch (error) {
+        signal?.throwIfAborted();
         console.warn('Document review request failed', {
           task,
           attempt: attempt + 1,
@@ -345,6 +354,7 @@ export async function enrichDocument(
       tasks.slice(start, start + 2).map(async (task) => {
         await progress(
           `Describing document: ${review.unitsRead.length}/${units.length} pages/slides, ${review.mediaRead.length}/${(document.media ?? []).length} media`,
+          35 + (50 * start) / Math.max(1, tasks.length),
         );
         try {
           const result = await request(
@@ -411,6 +421,7 @@ export async function enrichDocument(
             }
           }
         } catch (error) {
+          signal?.throwIfAborted();
           if (
             typeof error === 'object' &&
             error !== null &&
@@ -437,7 +448,7 @@ export async function enrichDocument(
       'Model API is unavailable; remaining document descriptions and summary were deferred. Revisit document descriptions after the serving backend recovers.',
     );
   else if (review.unitLabels.length) {
-    await progress('Writing the whole-document summary');
+    await progress('Writing the whole-document summary', 87);
     const notes = review.unitLabels
       .map(
         (label) => `U${label.unitNumber}: ${label.label}. ${label.description}`,
@@ -480,6 +491,7 @@ export async function enrichDocument(
         ],
       };
     } catch (error) {
+      signal?.throwIfAborted();
       review.warnings.push(
         `${failureReason(error)}. Whole-document summary unavailable after two attempts; per-item labels and sources are retained.`,
       );
@@ -488,6 +500,8 @@ export async function enrichDocument(
     review.warnings.push(
       'No page/slide descriptions succeeded; whole-document summary unavailable.',
     );
+  signal?.throwIfAborted();
+  await progress('Document descriptions reviewed', 96);
   review.complete =
     review.unitsRead.length === units.length &&
     review.mediaRead.length === (document.media ?? []).length &&

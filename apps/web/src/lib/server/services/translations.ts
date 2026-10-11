@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   revisions,
@@ -32,6 +32,15 @@ function status(row: typeof translationJobs.$inferSelect): TranslationStatus {
     state: row.state,
     revisionId: row.revisionId,
     language: row.language,
+    progressPercent:
+      row.state === 'ready'
+        ? 100
+        : Math.min(
+            99,
+            Math.floor(
+              (100 * row.completedSegments) / Math.max(1, row.totalSegments),
+            ),
+          ),
     completedSegments: row.completedSegments,
     totalSegments: row.totalSegments,
     translations: row.translations,
@@ -74,6 +83,7 @@ export async function getTranslation(
     id: null,
     state: 'not_requested',
     ...input,
+    progressPercent: 0,
     completedSegments: 0,
     totalSegments: revision.manifest.primitives.filter((p) => p.kind === 'text')
       .length,
@@ -98,7 +108,8 @@ export async function requestTranslation(
       .from(uploads)
       .where(eq(uploads.id, uploadId))
       .for('update');
-    if (!upload) throw new TranslationRequestError('Upload not found', 404);
+    if (!upload || upload.deletedAt)
+      throw new TranslationRequestError('Upload not found', 404);
     const [revision] = await tx
       .select()
       .from(revisions)
@@ -124,7 +135,8 @@ export async function requestTranslation(
         ),
       )
       .for('update');
-    if (cached && cached.state !== 'failed') return status(cached);
+    if (cached && !['failed', 'canceled'].includes(cached.state))
+      return status(cached);
     if (cached) {
       const [retried] = await tx
         .update(translationJobs)
@@ -164,5 +176,63 @@ export async function requestTranslation(
     if (parts.length)
       await tx.insert(translationOutbox).values({ id: created.id });
     return status(created);
+  });
+}
+
+export async function cancelTranslation(
+  uploadId: string,
+  translationId: string,
+): Promise<TranslationStatus> {
+  id.parse(uploadId);
+  id.parse(translationId);
+  return db.transaction(async (tx) => {
+    const [upload] = await tx
+      .select()
+      .from(uploads)
+      .where(eq(uploads.id, uploadId))
+      .for('update');
+    if (!upload) throw new TranslationRequestError('Upload not found', 404);
+    const [owned] = await tx
+      .select({ id: translationJobs.id })
+      .from(translationJobs)
+      .innerJoin(revisions, eq(translationJobs.revisionId, revisions.id))
+      .where(
+        and(
+          eq(translationJobs.id, translationId),
+          eq(revisions.uploadId, uploadId),
+        ),
+      );
+    if (!owned)
+      throw new TranslationRequestError(
+        'Translation not found for this upload',
+        404,
+      );
+    const [current] = await tx
+      .select()
+      .from(translationJobs)
+      .where(eq(translationJobs.id, translationId))
+      .for('update');
+    if (!['queued', 'processing'].includes(current.state))
+      return status(current);
+    const [canceled] = await tx
+      .update(translationJobs)
+      .set({
+        state: 'canceled',
+        error: null,
+        generation: sql`${translationJobs.generation}+1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(translationJobs.id, translationId),
+          inArray(translationJobs.state, ['queued', 'processing']),
+        ),
+      )
+      .returning();
+    await tx
+      .update(translationOutbox)
+      .set({ dispatchedAt: new Date() })
+      .where(eq(translationOutbox.id, translationId));
+    return status(canceled);
   });
 }

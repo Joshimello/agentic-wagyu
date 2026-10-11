@@ -3,7 +3,12 @@ import { test, expect, afterAll } from 'bun:test';
 import OpenAI from 'openai';
 import { eq, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../src/lib/server/db/client';
-import { pushBatches } from '../src/lib/server/db/schema';
+import {
+  pushBatches,
+  memoryCommits,
+  memoryNodes,
+  memoryProjects,
+} from '../src/lib/server/db/schema';
 import { acceptUpload, getUpload } from '../src/lib/server/services/uploads';
 import { interpret } from '../src/lib/server/agents/interpreter';
 import {
@@ -37,6 +42,64 @@ async function source(text: string) {
   await interpret(accepted.runId);
   return (await getUpload(accepted.uploadId)).revisions[0].manifest;
 }
+
+check(
+  'summary pushes accept organized project scopes while assertions require legacy project identities',
+  async () => {
+    const stage = await source('Research scope selection regression.');
+    const version = (await memorySnapshot()).version + 1;
+    await db.insert(memoryCommits).values({ id: crypto.randomUUID(), version });
+    const organizedId = crypto.randomUUID(),
+      topicId = crypto.randomUUID(),
+      legacyId = crypto.randomUUID();
+    await db.insert(memoryNodes).values([
+      { id: organizedId, kind: 'project', createdVersion: version },
+      {
+        id: topicId,
+        kind: 'topic',
+        scopeId: organizedId,
+        createdVersion: version,
+      },
+    ]);
+    await db
+      .insert(memoryProjects)
+      .values({
+        id: legacyId,
+        name: 'Sensor calibration scope regression',
+        description: 'Legacy sensor project',
+        aliases: [],
+        evidence: [],
+        origin: 'user',
+        createdVersion: version,
+      });
+    const request = (
+      workflow: 'summary' | 'assertions',
+      projectId: string,
+    ) => ({
+      ...input(stage),
+      workflow,
+      projectScope: { mode: 'existing', projectId },
+    });
+    expect(
+      (await createPush(request('summary', organizedId))).input.projectScope,
+    ).toEqual({ mode: 'existing', projectId: organizedId });
+    await expect(
+      createPush(request('assertions', organizedId)),
+    ).rejects.toThrow('Selected project does not exist');
+    await expect(createPush(request('summary', topicId))).rejects.toThrow(
+      'Selected project does not exist',
+    );
+    await expect(
+      createPush(request('summary', crypto.randomUUID())),
+    ).rejects.toThrow('Selected project does not exist');
+    expect((await createPush(request('summary', legacyId))).state).toBe(
+      'queued',
+    );
+    expect((await createPush(request('assertions', legacyId))).state).toBe(
+      'queued',
+    );
+  },
+);
 const input = (stage: Stage) => ({
   idempotencyKey: crypto.randomUUID(),
   items: [

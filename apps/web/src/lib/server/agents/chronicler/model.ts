@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { assets, pushBatches } from '../../db/schema';
 import { assetPath } from '../../storage';
@@ -43,8 +43,10 @@ const resolutionSchema = z
   })
   .strict();
 type Options = {
+  signal?: AbortSignal;
+  generation?: number;
   llm?: ReturnType<typeof llmClient>;
-  progress?: (text: string) => Promise<void>;
+  progress?: (text: string, percent?: number) => Promise<void>;
 };
 export async function buildMemoryPlan(
   pushId: string,
@@ -78,6 +80,7 @@ export async function buildMemoryPlan(
     schema: z.ZodType<T>,
     check: (v: T) => void = () => {},
   ) {
+    options.signal?.throwIfAborted();
     const key = new Bun.CryptoHasher('sha256')
       .update(
         JSON.stringify({
@@ -120,28 +123,33 @@ export async function buildMemoryPlan(
               }
             : {}),
         });
-        const result = await client.chat.completions.create({
-          model,
-          temperature: 0,
-          max_tokens: 12000,
-          response_format: { type: 'json_object' },
-          ...(/qwen/i.test(model)
-            ? { chat_template_kwargs: { enable_thinking: false } }
-            : {}),
-          messages: [
-            { role: 'system', content: safety },
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: instruction },
-                ...images.map((image) => ({
-                  type: 'image_url' as const,
-                  image_url: { url: image.url },
-                })),
-              ],
-            },
-          ],
-        });
+        options.signal?.throwIfAborted();
+        const result = await client.chat.completions.create(
+          {
+            model,
+            temperature: 0,
+            max_tokens: 12000,
+            response_format: { type: 'json_object' },
+            ...(/qwen/i.test(model)
+              ? { chat_template_kwargs: { enable_thinking: false } }
+              : {}),
+            messages: [
+              { role: 'system', content: safety },
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: instruction },
+                  ...images.map((image) => ({
+                    type: 'image_url' as const,
+                    image_url: { url: image.url },
+                  })),
+                ],
+              },
+            ],
+          },
+          { signal: options.signal },
+        );
+        options.signal?.throwIfAborted();
         if (result.choices[0]?.finish_reason === 'length')
           throw new Error('Memory proposal was truncated');
         repairCandidate = JSON.parse(
@@ -153,9 +161,19 @@ export async function buildMemoryPlan(
         await db
           .update(pushBatches)
           .set({ checkpoints, updatedAt: new Date() })
-          .where(eq(pushBatches.id, pushId));
+          .where(
+            and(
+              eq(pushBatches.id, pushId),
+              ne(pushBatches.state, 'canceled'),
+              ne(pushBatches.state, 'committed'),
+              ...(options.generation === undefined
+                ? []
+                : [eq(pushBatches.generation, options.generation)]),
+            ),
+          );
         return parsed;
       } catch (error) {
+        options.signal?.throwIfAborted();
         last = error;
         console.warn('Chronicler proposal failed', {
           task,
@@ -218,6 +236,7 @@ export async function buildMemoryPlan(
     for (const block of sourceBlocks(stage)) {
       await progress(
         `Reading pushed evidence: ${++read}/${total} source blocks`,
+        5 + (80 * (read - 1)) / Math.max(1, total),
       );
       const refs = new Map(
         block.primitives.map((p, index) => [`E${index + 1}`, p]),
@@ -666,6 +685,8 @@ export async function buildMemoryPlan(
     if (s) projectsUsed.add(s.projectId);
   }
   plan.projects = plan.projects.filter((p) => projectsUsed.has(p.id));
+  await progress('Memory evidence reconciled', 90);
+  options.signal?.throwIfAborted();
   return plan;
 }
 function compatibleSupport(claim: AssertionProposal, target: StatementVersion) {

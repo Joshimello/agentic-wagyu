@@ -5,9 +5,11 @@ from pathlib import Path
 from zipfile import ZipFile
 from PIL import Image, ImageOps
 from media import ROOT, source, probe, contact_sheet, store_image
+from jobs import ProcessingCancelled, check_cancelled, commit
 
 
 def store_blob(data, mime):
+    check_cancelled()
     digest = hashlib.sha256(data).hexdigest()
     key = f"assets/{digest[:2]}/{digest}"
     path = ROOT / key
@@ -17,7 +19,7 @@ def store_blob(data, mime):
             temporary.write(data)
             tmp = Path(temporary.name)
         try:
-            os.link(tmp, path)
+            commit(lambda: os.link(tmp, path))
         except FileExistsError:
             pass
         finally:
@@ -27,6 +29,7 @@ def store_blob(data, mime):
 
 def all_shapes(shapes, grouped=False):
     for shape in shapes:
+        check_cancelled()
         yield shape, grouped
         if shape.shape_type == 6:
             yield from all_shapes(shape.shapes, True)
@@ -49,6 +52,7 @@ def extract_media(path, presentation, units):
                 associations.setdefault(name, set()).add(n)
 
     for n, slide in enumerate(presentation.slides, 1):
+        check_cancelled()
         for part in [
             slide.part,
             slide.slide_layout.part,
@@ -87,6 +91,7 @@ def extract_media(path, presentation, units):
             for n in archive.namelist()
             if n.startswith("ppt/media/") and not n.endswith("/")
         ):
+            check_cancelled()
             data = archive.read(name)
             suffix = Path(name).suffix.lower()
             mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
@@ -149,6 +154,8 @@ def extract_media(path, presentation, units):
                     warnings.append(
                         "Label uses four sampled video frames; motion between samples and embedded audio are not interpreted."
                     )
+                except ProcessingCancelled:
+                    raise
                 except Exception:
                     warnings.append(
                         "Video bytes extracted; preview decoding unavailable. Inspect or download the original clip."
@@ -174,6 +181,8 @@ def extract_media(path, presentation, units):
                         }
                     ]
                     origin = "decoded_image"
+                except ProcessingCancelled:
+                    raise
                 except Exception:
                     position = positions.get(name)
                     if position:

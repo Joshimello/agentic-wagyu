@@ -114,6 +114,40 @@ test('plain summaries display paragraph breaks and keep machine citation codes o
     ),
   ).toBe('Research comparison.\n\nMethods remain provisional.');
 });
+
+test('canceling document review stops model requests without validation retries', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const llm = {
+    model: 'document-cancellation-regression',
+    client: {
+      chat: {
+        completions: {
+          create: async (_input: unknown, options: { signal: AbortSignal }) => {
+            calls++;
+            expect(options.signal).toBe(controller.signal);
+            controller.abort(new Error('User canceled'));
+            throw new Error('Request aborted');
+          },
+        },
+      },
+    },
+  } as unknown as ReturnType<typeof llmClient>;
+  await expect(
+    enrichDocument(
+      document('pdf', 1),
+      'cancel-regression-unused',
+      async () => {},
+      llm,
+      async () => ({
+        sha256: 'cancel-frame',
+        url: 'data:image/jpeg;base64,YQ==',
+      }),
+      controller.signal,
+    ),
+  ).rejects.toThrow('User canceled');
+  expect(calls).toBe(1);
+});
 const image = async (id: string) => ({
   sha256: id,
   url: 'data:image/jpeg;base64,aGVsbG8=',

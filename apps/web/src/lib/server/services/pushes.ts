@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   pushBatches,
@@ -9,6 +9,7 @@ import {
   memoryProjects,
   stagingSelections,
   memoryNodes,
+  uploads,
 } from '../db/schema';
 import { validatePush, validateStage } from '../contracts';
 import { pushInput, type PushInput } from '../contracts/memory';
@@ -50,6 +51,13 @@ export async function createPush(value: unknown) {
     if (same) return same;
     const selected = [];
     for (const item of input.items) {
+      const [upload] = await tx
+        .select()
+        .from(uploads)
+        .where(eq(uploads.id, item.uploadId))
+        .for('update');
+      if (!upload || upload.deletedAt)
+        throw new Error('Selected source was removed from staging');
       const [r] = await tx
         .select()
         .from(revisions)
@@ -93,7 +101,20 @@ export async function createPush(value: unknown) {
         .select()
         .from(memoryProjects)
         .where(eq(memoryProjects.id, input.projectScope.projectId));
-      if (!project) throw new Error('Selected project does not exist');
+      const [organizedProject] =
+        !project && input.workflow === 'summary'
+          ? await tx
+              .select()
+              .from(memoryNodes)
+              .where(
+                and(
+                  eq(memoryNodes.id, input.projectScope.projectId),
+                  eq(memoryNodes.kind, 'project'),
+                ),
+              )
+          : [];
+      if (!project && !organizedProject)
+        throw new Error('Selected project does not exist');
     }
     const [batch] = await tx
       .insert(pushBatches)
@@ -119,6 +140,7 @@ export async function listPushes() {
       id: pushBatches.id,
       state: pushBatches.state,
       progress: pushBatches.progress,
+      progressPercent: pushBatches.progressPercent,
       error: pushBatches.error,
       commitVersion: pushBatches.commitVersion,
       outcomes: pushBatches.outcomes,
@@ -139,6 +161,7 @@ export async function getPush(id: string) {
 }
 export async function retryPush(id: string) {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(736501)`);
     const [batch] = await tx
       .select()
       .from(pushBatches)
@@ -146,21 +169,59 @@ export async function retryPush(id: string) {
       .for('update');
     if (!batch) throw new Error('Push not found');
     if (batch.state === 'committed') return batch;
-    if (batch.state !== 'failed')
-      throw new Error('Push must fail before retrying');
-    await tx
+    if (!['failed', 'canceled'].includes(batch.state))
+      throw new Error('Push must stop before retrying');
+    for (const item of batch.input.items) {
+      const [upload] = await tx
+        .select()
+        .from(uploads)
+        .where(eq(uploads.id, item.uploadId));
+      if (!upload || upload.deletedAt)
+        throw new Error('Selected source was removed from staging');
+    }
+    const [retried] = await tx
       .update(pushBatches)
       .set({
         state: 'queued',
         error: null,
         progress: 'Waiting for Chronicler',
+        generation: sql`${pushBatches.generation}+1`,
         updatedAt: new Date(),
       })
-      .where(eq(pushBatches.id, id));
+      .where(eq(pushBatches.id, id))
+      .returning();
     await tx
       .update(chroniclerOutbox)
       .set({ dispatchedAt: null })
       .where(eq(chroniclerOutbox.id, id));
-    return { ...batch, state: 'queued' };
+    return retried;
   });
+}
+
+export async function cancelPush(pushId: string) {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(736501)`);
+    const [batch] = await tx
+      .select()
+      .from(pushBatches)
+      .where(eq(pushBatches.id, pushId))
+      .for('update');
+    if (!batch) throw new Error('Push not found');
+    if (!['queued', 'processing'].includes(batch.state)) return;
+    await tx
+      .update(pushBatches)
+      .set({
+        state: 'canceled',
+        error: null,
+        generation: sql`${pushBatches.generation}+1`,
+        progress: 'Canceled; completed work is saved',
+        updatedAt: new Date(),
+      })
+      .where(eq(pushBatches.id, pushId));
+    await tx
+      .update(chroniclerOutbox)
+      .set({ dispatchedAt: new Date() })
+      .where(eq(chroniclerOutbox.id, pushId));
+  });
+  return getPush(pushId);
 }

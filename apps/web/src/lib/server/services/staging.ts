@@ -35,7 +35,7 @@ export async function correctStage(uploadId: string, value: unknown) {
       .from(uploads)
       .where(eq(uploads.id, uploadId))
       .for('update');
-    if (!upload || upload.currentRevisionId !== correction.baseRevisionId)
+    if (!upload || upload.deletedAt || upload.currentRevisionId !== correction.baseRevisionId)
       throw new Error(
         'Staging changed. Reload the current revision before saving your correction.',
       );

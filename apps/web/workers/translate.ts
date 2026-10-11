@@ -8,13 +8,14 @@ import { translateRevision } from '../src/lib/server/agents/translation';
 import { sqlClient } from '../src/lib/server/db/client';
 
 const boss = await startTranslationQueue();
-await boss.work<{ translationId: string }>(
+await boss.work<{ translationId: string; generation?: number }>(
   translationQueue,
   { batchSize: 1 },
   async (jobs) => {
     for (const job of jobs)
       await translateRevision(job.data.translationId, {
         signal: job.signal,
+        generation: job.data.generation,
         retrying: job.retryCount < 3,
       });
   },

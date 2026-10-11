@@ -2,57 +2,65 @@ import hashlib, io, json, math, os, re, subprocess, tempfile
 from pathlib import Path
 import av
 from PIL import Image, ImageDraw, ImageFont
+from jobs import check_cancelled, progress, commit, run_command
 ROOT=Path(os.environ.get('DATA_ROOT','/data')).resolve()
 
 def source(key):
+    check_cancelled()
     if not re.fullmatch(r'assets/[0-9a-f]{2}/[0-9a-f]{64}',key): raise ValueError('Invalid raw asset key')
     path=(ROOT/key).resolve()
     if not path.is_relative_to(ROOT) or not path.is_file(): raise ValueError('Raw asset unavailable')
     return path
 
 def probe(path):
-    result=subprocess.run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)],capture_output=True,text=True,check=True,timeout=30)
+    result=run_command(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(path)],capture_output=True,text=True,check=True,timeout=30)
     meta=json.loads(result.stdout); duration=float(meta['format']['duration']); origin=float(meta['format'].get('start_time',0))
     if not math.isfinite(duration) or duration<=0: raise ValueError('Invalid media duration')
     return {'durationMs':round(duration*1000),'originSeconds':origin,'hasAudio':any(s['codec_type']=='audio' for s in meta['streams']),'hasVideo':any(s['codec_type']=='video' for s in meta['streams'])}
 
 def audio(path,dest):
     # Preserve offsets/gaps, normalize the container start to zero, and pad delayed audio.
-    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-copyts','-start_at_zero','-i',str(path),'-vn','-af','aresample=16000:async=1:first_pts=0','-ac','1','-ar','16000',str(dest)],check=True,timeout=900)
+    run_command(['ffmpeg','-nostdin','-v','error','-y','-copyts','-start_at_zero','-i',str(path),'-vn','-af','aresample=16000:async=1:first_pts=0','-ac','1','-ar','16000',str(dest)],check=True,timeout=900)
 
 def audio_part(path,dest,start_ms,duration_ms):
+    check_cancelled()
     # Cache normalization once. Subsequent sections seek the WAV, not the compressed video.
     cache=ROOT/'audio';cache.mkdir(parents=True,exist_ok=True)
     wav=cache/f'{path.name}-normalized-1.wav'
     if not wav.exists():
         with tempfile.NamedTemporaryFile(dir=cache,suffix='.wav',delete=False) as tmp: temp=Path(tmp.name)
         try:
-            audio(path,temp);os.replace(temp,wav)
+            audio(path,temp);commit(lambda: os.replace(temp,wav))
         finally: temp.unlink(missing_ok=True)
-    subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-ss',str(start_ms/1000),'-i',str(wav),'-t',str(duration_ms/1000),'-c:a','pcm_s16le',str(dest)],check=True,timeout=60)
+    run_command(['ffmpeg','-nostdin','-v','error','-y','-ss',str(start_ms/1000),'-i',str(wav),'-t',str(duration_ms/1000),'-c:a','pcm_s16le',str(dest)],check=True,timeout=60)
 
 def store_image(img):
+    check_cancelled()
     buf=io.BytesIO();img.save(buf,format='JPEG',quality=88);data=buf.getvalue();digest=hashlib.sha256(data).hexdigest()
     key=f'assets/{digest[:2]}/{digest}';path=ROOT/key;path.parent.mkdir(parents=True,exist_ok=True)
     if not path.exists():
         with tempfile.NamedTemporaryFile(dir=path.parent,delete=False) as tmp: tmp.write(data);temp=Path(tmp.name)
-        try: os.link(temp,path)
+        try: commit(lambda: os.link(temp,path))
         except FileExistsError: pass
         finally: temp.unlink()
     return {'storageKey':key,'sha256':digest,'bytes':len(data),'mime':'image/jpeg'}
 
 def contact_sheet(path,times):
+    check_cancelled()
     meta=probe(path);duration=meta['durationMs'];origin=meta['originSeconds']
     if not meta['hasVideo']: raise ValueError('No video stream')
     if not 1<=len(times)<=8 or len(set(times))!=len(times) or any(type(t) is not int or t<0 or t>=duration for t in times): raise ValueError('Request 1–8 unique integer timestamps within the container timeline')
     frames=[]
+    progress(stage='extracting_frames',totalUnits=len(times),completedUnits=0)
     # Seek to a preceding keyframe, then decode real presentation timestamps.
     with av.open(str(path)) as container:
         stream=container.streams.video[0]
         for requested in sorted(times):
+            check_cancelled()
             container.seek(int((origin+requested/1000)/stream.time_base),stream=stream,backward=True)
             previous=None
             for frame in container.decode(stream):
+                check_cancelled()
                 if frame.time is None: continue
                 actual=round((frame.time-origin)*1000)
                 if actual<0 or actual>=duration: continue
@@ -62,6 +70,7 @@ def contact_sheet(path,times):
             frame,actual=previous
             img=frame.to_image().convert('RGB');img.thumbnail((1280,720))
             frames.append({'requestedMs':requested,'actualMs':actual,'width':img.width,'height':img.height,'asset':store_image(img),'image':img})
+            progress(completedUnits=len(frames))
     if len(frames)!=len(times): raise ValueError('Requested frames could not be decoded')
     columns=min(2,len(frames));cell_width=1280 if len(frames)==1 else 960;cell_height=760 if len(frames)==1 else 570
     sheet=Image.new('RGB',(cell_width*columns,cell_height*math.ceil(len(frames)/columns)), '#101b2a');draw=ImageDraw.Draw(sheet)

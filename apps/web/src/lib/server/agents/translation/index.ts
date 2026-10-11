@@ -1,6 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../../db/client';
-import { revisions, translationJobs } from '../../db/schema';
+import { revisions, translationJobs, uploads } from '../../db/schema';
+import { watchJob } from '../../jobs/control';
 import { llmClient } from '../../llm/client';
 import {
   translationPromptVersion,
@@ -21,6 +22,7 @@ type Options = {
   llm?: ReturnType<typeof llmClient>;
   signal?: AbortSignal;
   retrying?: boolean;
+  generation?: number;
   translate?: (
     parts: readonly TranslationPart[],
     language: TranslationLanguage,
@@ -61,6 +63,7 @@ export async function translateRevision(
 ) {
   const connection = await sqlClient.reserve();
   let locked = false;
+  let control: ReturnType<typeof watchJob> | undefined;
   try {
     // A session lock prevents duplicate deliveries from racing checkpoint writes.
     const [lock] =
@@ -71,8 +74,37 @@ export async function translateRevision(
       .select()
       .from(translationJobs)
       .where(eq(translationJobs.id, translationId));
-    if (!job || job.state === 'ready') return;
-    await db
+    if (
+      !job ||
+      ['ready', 'canceled'].includes(job.state) ||
+      (options.generation !== undefined &&
+        options.generation !== job.generation)
+    )
+      return;
+    const guard = and(
+      eq(translationJobs.id, translationId),
+      eq(translationJobs.generation, job.generation),
+      eq(translationJobs.state, 'processing'),
+    );
+    control = watchJob(async () => {
+      const [current] = await db
+        .select({
+          state: translationJobs.state,
+          generation: translationJobs.generation,
+          deletedAt: uploads.deletedAt,
+        })
+        .from(translationJobs)
+        .innerJoin(revisions, eq(translationJobs.revisionId, revisions.id))
+        .innerJoin(uploads, eq(revisions.uploadId, uploads.id))
+        .where(eq(translationJobs.id, translationId));
+      return (
+        !!current &&
+        current.generation === job.generation &&
+        ['queued', 'processing', 'failed'].includes(current.state) &&
+        !current.deletedAt
+      );
+    }, options.signal);
+    const claimed = await db
       .update(translationJobs)
       .set({
         state: 'processing',
@@ -80,9 +112,17 @@ export async function translateRevision(
         error: null,
         updatedAt: new Date(),
       })
-      .where(eq(translationJobs.id, translationId));
+      .where(
+        and(
+          eq(translationJobs.id, translationId),
+          eq(translationJobs.generation, job.generation),
+          inArray(translationJobs.state, ['queued', 'failed', 'processing']),
+        ),
+      )
+      .returning();
+    if (!claimed.length) return;
     try {
-      options.signal?.throwIfAborted();
+      await control.assertActive();
       const [revision] = await db
         .select()
         .from(revisions)
@@ -131,17 +171,17 @@ export async function translateRevision(
       await db
         .update(translationJobs)
         .set({ model, updatedAt: new Date() })
-        .where(eq(translationJobs.id, translationId));
+        .where(guard);
       for (const batch of translationBatches(pending)) {
-        options.signal?.throwIfAborted();
+        await control.assertActive();
         const translated = options.translate
           ? await options.translate(batch, job.language)
           : await translateBatch(batch, job.language, {
               llm,
               model: model ?? undefined,
-              signal: options.signal,
+              signal: control.signal,
             });
-        options.signal?.throwIfAborted();
+        await control.assertActive();
         checkpoint.push(
           ...validateTranslationBatch(batch, { translations: translated }),
         );
@@ -154,7 +194,7 @@ export async function translateRevision(
             completedSegments: translations.length,
             updatedAt: new Date(),
           })
-          .where(eq(translationJobs.id, translationId));
+          .where(guard);
       }
       const translations = completedTranslations(parts, checkpoint);
       if (translations.length !== job.totalSegments)
@@ -169,8 +209,17 @@ export async function translateRevision(
           error: null,
           updatedAt: new Date(),
         })
-        .where(eq(translationJobs.id, translationId));
+        .where(guard);
     } catch (error) {
+      const [current] = await db
+        .select()
+        .from(translationJobs)
+        .where(eq(translationJobs.id, translationId));
+      if (
+        current?.state === 'canceled' ||
+        current?.generation !== job.generation
+      )
+        return;
       await db
         .update(translationJobs)
         .set({
@@ -178,10 +227,17 @@ export async function translateRevision(
           error: publicError(error),
           updatedAt: new Date(),
         })
+        .where(guard);
+      const [latest] = await db
+        .select()
+        .from(translationJobs)
         .where(eq(translationJobs.id, translationId));
+      if (latest?.state === 'canceled' || latest?.generation !== job.generation)
+        return;
       throw error;
     }
   } finally {
+    control?.stop();
     try {
       if (locked)
         await connection`select pg_advisory_unlock(hashtextextended(${translationId}, 72417))`;

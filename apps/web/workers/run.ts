@@ -14,14 +14,19 @@ await boss.work<{ runId: string }>(
   queueName,
   { batchSize: 1 },
   async (jobs) => {
-    for (const job of jobs) await interpret(job.data.runId);
+    for (const job of jobs)
+      await interpret(job.data.runId, { signal: job.signal });
   },
 );
-await boss.work<{ pushId: string }>(
+await boss.work<{ pushId: string; generation?: number }>(
   chroniclerQueue,
   { batchSize: 1 },
   async (jobs) => {
-    for (const job of jobs) await chronicle(job.data.pushId);
+    for (const job of jobs)
+      await chronicle(job.data.pushId, {
+        signal: job.signal,
+        generation: job.data.generation,
+      });
   },
 );
 let stopping = false;

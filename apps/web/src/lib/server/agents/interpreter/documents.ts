@@ -1,3 +1,4 @@
+import type { JobProgress } from '../../jobs/control';
 import { z } from 'zod';
 import { enrichDocument } from './document-review';
 import { eq } from 'drizzle-orm';
@@ -118,17 +119,70 @@ export async function buildDocument(
   stage: Stage,
   storageKey: string,
   format: 'pdf' | 'pptx' | 'image',
-  progress: (message: string) => Promise<void>,
+  progress: JobProgress,
+  signal?: AbortSignal,
+  jobId?: string,
 ) {
   await progress(
     `Extracting ${format === 'image' ? 'image and OCR' : format === 'pptx' ? 'slide text, notes and renders' : 'page text and renders'}`,
+    5,
   );
-  const response = await fetch(`${config.mediaUrl}/document`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ storageKey, format }),
-    signal: AbortSignal.timeout(1800000),
-  });
+  let polling: Promise<void> | undefined;
+  let acceptingProgress = true;
+  const timer = jobId
+    ? setInterval(() => {
+        if (polling || signal?.aborted || !acceptingProgress) return;
+        polling = (async () => {
+          try {
+            const response = await fetch(`${config.mediaUrl}/jobs/${jobId}`, {
+              signal: signal
+                ? AbortSignal.any([signal, AbortSignal.timeout(3000)])
+                : AbortSignal.timeout(3000),
+            });
+            if (!response.ok) return;
+            const status = await response.json();
+            if (
+              !acceptingProgress ||
+              signal?.aborted ||
+              !['extracting_pages', 'extracting_slides'].includes(
+                status.stage,
+              ) ||
+              !Number.isInteger(status.totalUnits) ||
+              status.totalUnits <= 0 ||
+              !Number.isInteger(status.completedUnits)
+            )
+              return;
+            const completed = Math.min(
+              status.totalUnits,
+              Math.max(0, status.completedUnits),
+            );
+            await progress(
+              `Extracted ${completed}/${status.totalUnits} ${format === 'pptx' ? 'slides' : 'pages'}`,
+              5 + (30 * completed) / status.totalUnits,
+            );
+          } catch {
+          } finally {
+            polling = undefined;
+          }
+        })();
+      }, 1500)
+    : undefined;
+  let response: Response;
+  try {
+    response = await fetch(`${config.mediaUrl}/document`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storageKey, format, jobId }),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(1800000)])
+        : AbortSignal.timeout(1800000),
+    });
+  } finally {
+    acceptingProgress = false;
+    if (timer) clearInterval(timer);
+    await polling;
+  }
+  signal?.throwIfAborted();
   const raw = await response.json();
   if (!response.ok)
     throw new Error(
@@ -245,8 +299,17 @@ export async function buildDocument(
     promptVersion: null,
   };
   try {
-    await enrichDocument(stage, storageKey, progress);
+    await progress('Document source extracted', 35);
+    await enrichDocument(
+      stage,
+      storageKey,
+      progress,
+      undefined,
+      undefined,
+      signal,
+    );
   } catch {
+    signal?.throwIfAborted();
     delete stage.document.review;
     stage.coverage.warnings.push(
       'Document labels and summary are unavailable; source extraction is preserved. Configure the model and revisit document descriptions.',
@@ -254,5 +317,6 @@ export async function buildDocument(
   }
   await progress(
     `Prepared ${units.length} ${format === 'pptx' ? 'slides' : format === 'pdf' ? 'pages' : 'image'} for review`,
+    96,
   );
 }
