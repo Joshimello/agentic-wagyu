@@ -20,6 +20,7 @@
   let shadeAnimation: Animation | undefined;
   let returnFocus: HTMLElement | null = null;
   let previousOverflow: string | undefined;
+  let scrollContainer: HTMLElement | null = null;
   let transitionVersion = 0;
   let closeReported = false;
   const uniqueId = $props.id();
@@ -85,8 +86,9 @@
   }
   function restorePage() {
     if (previousOverflow !== undefined) {
-      window.document.documentElement.style.overflow = previousOverflow;
+      if (scrollContainer) scrollContainer.style.overflow = previousOverflow;
       previousOverflow = undefined;
+      scrollContainer = null;
     }
     if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
     returnFocus = null;
@@ -119,8 +121,11 @@
         focused instanceof HTMLElement && focused !== window.document.body
           ? focused
           : (value.origin ?? null);
-      previousOverflow = window.document.documentElement.style.overflow;
-      window.document.documentElement.style.overflow = 'hidden';
+      scrollContainer =
+        window.document.querySelector<HTMLElement>('.workspace-scroll') ??
+        window.document.documentElement;
+      previousOverflow = scrollContainer.style.overflow;
+      scrollContainer.style.overflow = 'hidden';
     }
     item = value;
     await tick();
@@ -140,11 +145,11 @@
         },
         { transform: 'none', opacity: 1 },
       ],
-      { duration: 340, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'both' },
+      { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'both' },
     );
     shadeAnimation = shade.animate(
       [{ opacity: current?.shadeOpacity ?? 0 }, { opacity: 1 }],
-      { duration: 260, easing: 'ease-out', fill: 'both' },
+      { duration: 160, easing: 'ease-out', fill: 'both' },
     );
   }
   export function close() {
@@ -169,11 +174,11 @@
         { transform: current.transform, opacity: current.opacity },
         { transform: originTransform(), opacity: 0 },
       ],
-      { duration: 220, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' },
+      { duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' },
     );
     shadeAnimation = shade.animate(
       [{ opacity: current.shadeOpacity }, { opacity: 0 }],
-      { duration: 220, easing: 'ease-in', fill: 'both' },
+      { duration: 160, easing: 'ease-in', fill: 'both' },
     );
     void surfaceAnimation.finished.then(
       () => finishClose(version),

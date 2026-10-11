@@ -47,7 +47,7 @@
       id={panelId}
       class="disclosure-body"
       transition:slide={{
-        duration: reducedMotion() ? 0 : 260,
+        duration: reducedMotion() ? 0 : 160,
         easing: cubicOut,
       }}
     >
@@ -89,7 +89,7 @@
     display: flex;
     align-items: center;
     flex: none;
-    transition: transform 220ms var(--ease-out);
+    transition: transform 140ms var(--ease-out);
   }
   .disclosure-sign.turned {
     transform: rotate(180deg);
