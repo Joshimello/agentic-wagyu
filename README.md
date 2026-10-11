@@ -1,6 +1,6 @@
 # Chronicler
 
-A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Explicit pushes publish cited research knowledge into an append-only memory graph. Researcher questions are the next implementation step.
+A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Explicit pushes publish cited research knowledge into an append-only memory graph. Researcher answers questions through source-linked summaries and original evidence.
 
 Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container gets only GPU 0. Services other than the web app stay on the private container network.
 
@@ -20,6 +20,7 @@ podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:con
 ./infra/test.sh
 ./infra/test-memory.sh
 ./infra/test-organization.sh
+./infra/test-research.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
@@ -36,7 +37,7 @@ podman run --rm -v "$PWD/data:/data" -v "$PWD/services/media:/service/source:ro"
 podman run --rm --network chronicler_default -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:interpreter:video
 ```
 
-The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. Researcher answers are a later milestone.
+The import runner checks hashes and skips already imported files. The read-only live evaluation runs after all three uploads are ready; it writes ignored reports under `data/evaluations/`. The media regressions use temporary transformations of actual recording excerpts and remove their temporary assets. No reference transcript or speaker labels have been supplied, so application checks do not establish transcription or diarization accuracy. Researcher can inspect admitted transcripts and their linked frames after an explicit push.
 
 ## Documents and saved selections
 
@@ -93,3 +94,23 @@ podman run --rm --network chronicler_default -v "$PWD:/app" -v "$PWD/data:/data"
 ```
 
 Private timing and integrity reports remain under `data/evaluations/`. Neither this evaluation nor application invariants establish human-scored summary accuracy.
+
+
+## Ask Researcher
+
+Open `/ask`, choose an optional project or historical memory snapshot, and ask a question. Researcher starts from project/topic or source summaries, searches summaries and original text, then reads exact transcript/slide/page evidence and relevant images. Answers distinguish source reports, inference, conflicting evidence, and missing information. Each claim links to the original evidence at the saved snapshot; text links show the exact cited excerpt. Consecutive ASR utterances are grouped into readable spans with original speaker/timestamp labels and per-utterance text references. Previous answers remain inspectable after later pushes. A canceled or failed question can be retried with its original scope.
+
+Questions use a dedicated queue consumer alongside the ingestion consumers. Researcher tools cannot publish knowledge, edit staging, or select arbitrary raw paths. Unpushed files and newer unpushed revisions are excluded. The application saves the question, answer, citations, tool trace, model/prompt provenance, usage and run state. Queue capacity is independent of ingestion; the model gateway's throughput is shared.
+
+The optional event-date filter includes source dates on or before the selected day, excludes unknown dates, and labels file-derived dates as tentative. This differs from a memory snapshot, which records when evidence was accepted. Date-filtered aggregate prose is hidden so later summaries cannot bypass the filter.
+
+Retrieval currently combines two multilingual lexical channels (summary/title/keywords and original text) with reciprocal rank fusion and hierarchy traversal. Chinese search normalizes Simplified/Traditional variants. The configured gateway returned HTTP 404 for embeddings; no embedding index or semantic-search coverage is claimed. Results disclose pagination and evidence budgets, and a constrained run returns a partial answer or acknowledges missing evidence. Model-generated prose still needs source-support review.
+
+Run the maintained real-corpus evaluation inside Podman (reports stay in ignored `data/evaluations/researcher/`):
+
+```sh
+podman run --rm --network chronicler_default --env-file .env -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:researcher --repeat=3 --concurrency=4 --tag=review
+podman run --rm --network chronicler_default --env-file .env -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app" -v "$PWD/data:/data" -w /app docker.io/oven/bun:1.4.2 bun run eval:researcher --holdout --mode=fragments --repeat=1 --concurrency=2 --tag=review
+```
+
+The question manifest is `evals/researcher/questions.json`. Cached answers require the same question, snapshot, model, prompt version and implementation hash. Use a new tag after changing those inputs. `--ids=p01,m01` selects cases; `--mode=retrieval` checks discovery without generating answers. `--repair-judge` repairs missing/invalid judge JSON or earlier judgments that omitted some cited images, without regenerating the original answer; prior judge results/errors remain recorded. Automated correctness/support are same-model proxies, not human quality acceptance. The ten comparison questions cover two sources already used in ingestion development; the cross-week question also helped diagnose transcript read granularity. This subset is not an untouched statistical holdout. Evaluations do not change accepted memory.
