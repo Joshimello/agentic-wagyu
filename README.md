@@ -49,6 +49,6 @@ A live release workflow uses fresh database/evidence volumes, a real meeting exc
 CHRONICLER_PROJECT=chronicler_workflow_example CHRONICLER_PORT=5174 ./infra/verify-workflow.sh
 ```
 
-Add `--evaluate` for repeated source-holdout questions. Human transcription, organization and answer-quality scoring remains separate from functional checks and same-model automated judgments. See [acceptance history](docs/development/acceptance.md) and [the lifecycle pilot](docs/development/lifecycle-pilot.md) for recorded evidence and limitations.
+Add `--evaluate` for repeated source-holdout questions. Human transcription, organization and answer-quality scoring remains separate from functional checks and same-model automated judgments. See [clean release verification](docs/development/release-verification.md), [acceptance history](docs/development/acceptance.md) and [the lifecycle pilot](docs/development/lifecycle-pilot.md) for recorded evidence and limitations.
 
 Agent contracts are documented for [Interpreter](docs/agents/interpreter.md), [Chronicler](docs/agents/chronicler.md) and [Researcher](docs/agents/researcher.md). The implementation architecture and development history remain in [plan.md](plan.md).

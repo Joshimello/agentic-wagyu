@@ -192,11 +192,6 @@ for (const document of corpus.documents) {
     });
     expect(raw.status()).toBe(206);
     expect((await raw.body()).byteLength).toBe(32);
-    if (document.filename === '260629_VLM.pptx')
-      await page.screenshot({
-        path: '/data/evaluations/document-viewer.png',
-        fullPage: true,
-      });
     const after = await (
       await page.request.get(`/api/uploads/${file!.id}`)
     ).json();
@@ -297,10 +292,6 @@ test('select a recording and deck, persist exact revisions and review partial ex
         );
       }
     }
-    await page.screenshot({
-      path: '/data/evaluations/document-selection.png',
-      fullPage: true,
-    });
   } finally {
     for (const file of files) {
       if (!file) continue;

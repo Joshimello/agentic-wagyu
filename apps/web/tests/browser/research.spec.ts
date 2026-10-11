@@ -59,9 +59,4 @@ test('saved real answers open exact pinned excerpts and original visual evidence
       page.getByAltText('Cited original visual evidence'),
     ).toBeVisible();
   }
-  await page.goto(`/ask/${run.id}`);
-  await page.screenshot({
-    path: '/data/evaluations/researcher-answer.png',
-    fullPage: true,
-  });
 });

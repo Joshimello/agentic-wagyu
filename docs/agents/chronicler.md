@@ -1,6 +1,6 @@
 # Chronicler worker
 
-Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md).
+Updated: 2026-10-11. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Primary summary workflow (2026-10-07)
 
@@ -26,7 +26,7 @@ The worker lives under `apps/web/src/lib/server/agents/chronicler`. It uses shar
 
 Input: immutable push batch ID and its pinned staging revision selection. Output: proposals plus an atomically published memory commit with per-item dispositions. The application validates and commits; the model has no unrestricted write access.
 
-Run through the shared Bun worker image under Podman, using the app's Drizzle services and database container. Commit each coherent, checked extraction/reconciliation increment. M8 consolidates useful milestone cases into durable memory tests and removes temporary selectors/harnesses; preserve migrations, accepted history, and version provenance.
+Run through the shared Bun worker image under Podman, using the app's Drizzle services and database container. Commit each coherent, checked extraction/reconciliation increment. Keep durable memory regressions and preserve migrations, accepted history and version provenance.
 
 ## Push processing
 
@@ -77,7 +77,7 @@ Example: A assigns Alice to T; B says Bob took over September 20 but is pushed S
 
 ## Verification
 
-M4 tests a video/deck push, unpushed control source, edits during a job, zero-assertion outcomes, model failure, and crashes before/after commit. M5 tests A/B in both arrival orders, a later dispute, corrected-ASR repush, unchanged repush, stale concurrent work, and view rebuild.
+Regression tests cover video/deck pushes, unpushed controls, edits during a job, zero-assertion outcomes, model failure, crashes before/after commit, A/B updates in both arrival orders, disputes, corrected-ASR repush, unchanged replay, stale concurrent work and view rebuild.
 
 Every accepted assertion must have valid evidence. Proposed extraction goals: precision ≥90%, recall ≥80% on human-adjudicated fixtures, with all critical decision/commitment cases correct. All temporal/conflict/retry invariants are strict pass gates. Rebuild projections from accepted records without rerunning a model.
 

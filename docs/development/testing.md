@@ -14,6 +14,8 @@ Use `infra/test.sh` from a checkout with Podman. It builds a frozen Bun developm
 
 Set `CHRONICLER_FIXTURE_ROOT` to another private corpus directory for document/media checks. Browser checks use `WEB_URL` (default `http://localhost:5173`) and write disposable results under `data/browser-results`. Each check image is built from the current checkout. Python test-only JSON Schema tooling lives in the `checks` image target, outside the runtime image.
 
+Browser checks restore selection drafts and preserve source revisions/accepted memory. The Ask submission case creates a saved question at empty snapshot 0, so prefer a restored or dedicated corpus workspace when its question history should stay separate from daily use. Saved answers remain application history rather than being silently deleted by test cleanup.
+
 Inside an already provisioned Podman check container, the stable Bun entrypoints are `bun run check`, `bun run test`, `bun run test:integration`, `bun run test:e2e` and `bun run build`. The integration runner requires `TEST_DATABASE_URL` pointing to a disposable PostgreSQL server where it can create/drop its own databases. Every suite gets a fresh database and a separate Bun process, so closed pools, queue schemas, model environment overrides and prior accepted memory cannot leak between suites. Migration tests independently reconstruct both historical branches. `--suite=operations` selects one integration suite; real-document checks use `--suite=documents` with media/fixtures provisioned by the shell launcher.
 
 ## Full release workflow

@@ -8,7 +8,7 @@ Answer questions using committed research memory and its admitted source evidenc
 
 Researcher is under `apps/web/src/lib/server/agents/researcher`. Its tools are read-only application services using the shared Drizzle/retrieval/storage layer. It can trace sources without running media ingestion or changing research memory. Persisting messages, citations, usage, and run status is application bookkeeping, not agent memory write access.
 
-Run through Bun in the Podman worker container with reserved query capacity. Commit checked retrieval/answer changes in small coherent increments. M8 removes temporary QA/demo harnesses and generated reports while retaining lasting staging-isolation, snapshot, citation, and read-only-access tests; keep maintained quality evaluations separate from release images.
+Run through Bun in the Podman worker container with reserved query capacity. Commit checked retrieval/answer changes in small coherent increments. Retain lasting staging-isolation, snapshot, citation and read-only-access tests; keep maintained quality evaluations outside release images.
 
 Use `pro6000/qwen38-flash-next` through the environment-configured OpenAI-compatible gateway for development answers. The bounded Chat Completions tool loop is implemented with the pinned SDK. The UI polls durable run progress; token streaming is not required for this version. Semantic quality is evaluated separately from citation and scope validity.
 
