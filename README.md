@@ -2,7 +2,7 @@
 
 A local SvelteKit application with Bun workers. Uploads become inspectable staging revisions. Explicit pushes publish cited research knowledge into an append-only memory graph. Researcher questions are the next implementation step.
 
-Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container gets only GPU 0. Services other than the web app stay on the private container network.
+Prerequisites: Bun 1.4.2, rootless Podman, NVIDIA drivers and CDI, and the pinned compose launcher (`uv tool install podman-compose==1.5.0`). The media container uses `NVIDIA_CDI_DEVICE`, defaulting to GPU 0. Services other than the web app stay on the private container network.
 
 Put the configured API credentials in private `.env` (see `.env.example`). Then:
 
@@ -11,6 +11,15 @@ Put the configured API credentials in private `.env` (see `.env.example`). Then:
 ```
 
 Open http://localhost:5173. PostgreSQL lives in the `chronicler_database` named volume; raw/derived assets and model caches live under ignored `data/`. `./infra/dev.sh down` preserves those records. Do not use `down -v` unless deliberately deleting the database.
+
+On WSL2, `nvidia-ctk cdi list` normally exposes `nvidia.com/gpu=all` rather than an indexed device. On a single-GPU WSL machine, set `NVIDIA_CDI_DEVICE=nvidia.com/gpu=all` in `.env`. The launcher reads the repository-root `.env` for Compose interpolation. Verify the selected device before starting the stack:
+
+```sh
+nvidia-ctk cdi list
+podman run --rm --device nvidia.com/gpu=all --security-opt=label=disable docker.io/library/ubuntu:24.04 nvidia-smi -L
+```
+
+Use a device name actually listed by CDI. `all` exposes all GPUs available through WSL; indexed selection remains the default on hosts that support it. A successful `nvidia-smi` check establishes container device access; media inference still needs its own smoke test.
 
 Run development checks in Podman:
 

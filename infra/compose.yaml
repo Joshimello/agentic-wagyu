@@ -16,7 +16,7 @@ services:
   media:
     image: localhost/chronicler-media:dev
     build: {context: .., dockerfile: infra/media.Containerfile}
-    devices: ["nvidia.com/gpu=0"]
+    devices: ["${NVIDIA_CDI_DEVICE:-nvidia.com/gpu=0}"]
     volumes: ["../data:/data", "../data/cache:/cache"]
     healthcheck:
       test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8000/health',timeout=3))['ok']"]
