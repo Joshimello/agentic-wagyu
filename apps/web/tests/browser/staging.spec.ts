@@ -29,7 +29,9 @@ async function inspectRecording(page: Page, video: Upload) {
     page.getByRole('heading', { name: 'Spoken transcript', exact: true }),
   ).toBeVisible();
   await expect(page.locator('.memory-status')).toContainText(
-    before.memory.state === 'never_pushed'
+    before.memory.state === 'incorporated'
+      ? 'Added to memory'
+      : before.memory.state === 'never_pushed'
       ? 'Not in memory'
       : before.memory.state.replaceAll('_', ' '),
   );
