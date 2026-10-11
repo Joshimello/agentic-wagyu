@@ -56,5 +56,16 @@ services:
     volumes: ["../data:/data"]
     depends_on: {web: {condition: service_healthy}, media: {condition: service_healthy}}
     restart: unless-stopped
+  translator:
+    image: localhost/chronicler-web:dev
+    stop_grace_period: 45s
+    command: ["bun", "apps/web/workers/translate.ts"]
+    env_file: ["../.env"]
+    environment:
+      DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
+      DATA_ROOT: /data
+    volumes: ["../data:/data"]
+    depends_on: {web: {condition: service_healthy}}
+    restart: unless-stopped
 volumes:
   database:
