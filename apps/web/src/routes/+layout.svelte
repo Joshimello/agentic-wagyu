@@ -7,11 +7,12 @@
   <header>
     <a class="brand" href="/">◈ <strong>Chronicler</strong></a><span
       class="local"
-      ><a href="/">Staging</a> · <a href="/memory">Memory</a> · LOCAL WORKSPACE</span
+      ><a href="/">Staging</a> · <a href="/memory">Memory</a> ·
+      <a href="/ask">Ask</a> · LOCAL WORKSPACE</span
     >
   </header>
   <main>{@render children()}</main>
-  <footer>Raw evidence → Interpreter → Staging → Memory</footer>
+  <footer>Raw evidence → Interpreter → Staging → Memory → Researcher</footer>
 </div>
 
 <style>

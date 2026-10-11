@@ -11,7 +11,7 @@
   <h2>{data.filename}</h2>
   <p class="muted">Pinned revision {data.revisionId} · {primitive.role}</p>
   {#if primitive.kind === 'text'}<blockquote>
-      {primitive.text}
+      {data.excerpt ?? primitive.text}
     </blockquote>{:else}<img
       src={`/api/assets/${primitive.assetId}`}
       alt="Cited original visual evidence"

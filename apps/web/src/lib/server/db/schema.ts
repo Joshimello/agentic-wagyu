@@ -257,3 +257,43 @@ export const memoryNodeVersions = pgTable('memory_node_versions', {
     >()
     .notNull(),
 });
+
+export const researchRuns = pgTable('research_runs', {
+  id: uuid('id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  input: jsonb('input')
+    .$type<import('../contracts/research').ResearchInput>()
+    .notNull(),
+  scope: jsonb('scope')
+    .$type<import('../contracts/research').ResearchScope>()
+    .notNull(),
+  state: text('state').notNull().default('queued'),
+  progress: text('progress').notNull().default('Waiting for Researcher'),
+  attempts: integer('attempts').notNull().default(0),
+  error: text('error'),
+  answer:
+    jsonb('answer').$type<import('../contracts/research').ResearchAnswer>(),
+  trace: jsonb('trace')
+    .$type<import('../contracts/research').ResearchTrace[]>()
+    .notNull()
+    .default([]),
+  usage: jsonb('usage').$type<{
+    inputTokens: number;
+    outputTokens: number;
+    calls: number;
+    elapsedMs: number;
+  }>(),
+  model: text('model'),
+  promptVersion: text('prompt_version'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+export const researchOutbox = pgTable('research_outbox', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => researchRuns.id),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
