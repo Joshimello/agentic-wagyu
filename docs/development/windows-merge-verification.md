@@ -23,6 +23,10 @@ Interpreter/Chronicler recovery recognizes leases from both branch implementatio
 
 The original workspace has memory version 2, 56 assets and four uploads. Live probes use only the restored workspace; its synthetic probe advances that copy to version 4. Main evidence, accepted memory, caches and history remain intact.
 
+The merged application is deployed at `http://localhost:5173`. Ask and Operations return HTTP 200; web/database/media are healthy and both Bun workers report ready. Post-upgrade checks still report memory version 2, 56 assets and four uploads, with the new Researcher and usage tables present.
+
 ## Limits
 
 The supplied legacy VLM decks/PDFs and September recordings used by the upstream corpus checks are absent locally. Those cases are explicitly skipped rather than represented as passing. Original evidence pointers and real recording review are exercised with this PC's corpus. Human transcription, speaker identity, organization and answer-support scoring remain independent semantic acceptance tasks; functional passes do not establish universal answer accuracy.
+
+A camera-rotation question abstained after reading pose/intrinsic-calibration segments without reaching the relevant opening transcript. Its bounded retrieval trace remains in the restored workspace for a quality follow-up. The direct NVDR success-rate question returns two valid original citations. This observation is separate from merge compatibility and source/history integrity.
