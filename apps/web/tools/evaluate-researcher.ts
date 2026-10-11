@@ -11,9 +11,6 @@ import { readResearchImage } from '../src/lib/server/agents/researcher';
 import { llmClient } from '../src/lib/server/llm/client';
 import { researchPromptVersion } from '../src/lib/server/contracts/research';
 import { segmentContent } from '../src/lib/server/agents/chronicler/organization/source';
-const manifest = await Bun.file(
-  new URL('../../../evals/researcher/questions.json', import.meta.url),
-).json();
 type Question = {
   id: string;
   question: string;
@@ -31,6 +28,13 @@ const args = process.argv.slice(2),
       ?.split('=')
       .slice(1)
       .join('=') ?? defaultValue;
+const manifest = await Bun.file(
+  arg(
+    '--manifest',
+    new URL('../../../evals/researcher/questions.json', import.meta.url)
+      .pathname,
+  ),
+).json();
 const mode = arg('--mode', 'summary'),
   repeat = Number(arg('--repeat', '1')),
   concurrency = Number(arg('--concurrency', '3')),

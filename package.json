@@ -21,7 +21,8 @@
     "eval:chronicler:weekly": "bun apps/web/tools/push-weekly.ts",
     "eval:memory:integrity": "bun apps/web/tools/check-memory.ts",
     "eval:chronicler:organized": "bun apps/web/tools/organize-weekly.ts",
-    "eval:researcher": "bun apps/web/tools/evaluate-researcher.ts"
+    "eval:researcher": "bun apps/web/tools/evaluate-researcher.ts",
+    "verify:mvp": "bun apps/web/tools/verify-mvp.ts"
   },
   "dependencies": {
     "zod": "4.3.6"
