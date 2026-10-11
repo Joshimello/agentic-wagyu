@@ -18,6 +18,26 @@ import { traditionalChinese } from '../../text-normalization';
 
 const normalize = (s: string) =>
   traditionalChinese(s).normalize('NFKC').toLowerCase();
+/** Explicit file references outrank generic topical words, within the frozen scope. */
+function namesFile(query: string, filename: string) {
+  const name = normalize(filename),
+    text = normalize(query);
+  if (!name) return false;
+  let offset = text.indexOf(name);
+  while (offset >= 0) {
+    const before = text[offset - 1],
+      after = text[offset + name.length];
+    if (
+      (!before || !/[\p{L}\p{N}_.+\-]/u.test(before)) &&
+      (!after || !/[\p{L}\p{N}_+\-]/u.test(after)) &&
+      (after !== '.' ||
+        !/[\p{L}\p{N}_+\-]/u.test(text[offset + name.length + 1] ?? ''))
+    )
+      return true;
+    offset = text.indexOf(name, offset + 1);
+  }
+  return false;
+}
 export function queryTerms(query: string) {
   const normalized = normalize(query);
   const words =
@@ -235,6 +255,14 @@ export class ResearchCorpus {
       rank(channel).forEach((d, i) =>
         scores.set(d.id, (scores.get(d.id) ?? 0) + 1 / (30 + i)),
       );
+    if (!fragmentsOnly)
+      for (const d of docs) {
+        const filename = d.n.revisionId
+          ? this.data.stages.get(d.n.revisionId)?.filename
+          : undefined;
+        if (filename && namesFile(query, filename))
+          scores.set(d.n.id, 1 + (scores.get(d.n.id) ?? 0));
+      }
     const ranked = [...scores].sort(
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
     );

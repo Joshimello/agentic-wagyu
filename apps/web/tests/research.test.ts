@@ -185,6 +185,32 @@ test('rank fusion searches original details omitted from summaries', () => {
   expect(result.hits.map((h) => h.nodeId)).toEqual([segment]);
   expect(result.hits[0].sourceMatched).toBe(true);
 });
+test('explicit filenames outrank topical distractors without widening project scope or matching suffixes', () => {
+  const { corpus, snapshot } = fixture();
+  const otherSource = corpus.data.stages.get(otherRevision)!;
+  otherSource.filename = 'other-notes.txt';
+  for (const v of snapshot.versions.filter((v) =>
+    [other, otherSegment].includes(v.nodeId),
+  )) {
+    v.title = 'Research goals and technical approach';
+    v.summary = 'Research goals proposed technical approach';
+  }
+  const all = new ResearchCorpus(corpus.data, { version: 1 });
+  const targeted = all.search(
+    'According to notes.txt, what are the research goals and proposed technical approach?',
+    1,
+  );
+  expect(targeted.hits[0].source).toBe('notes.txt');
+  expect(all.search('Read other-notes.txt.', 1).hits[0].source).toBe(
+    'other-notes.txt',
+  );
+  expect(
+    corpus
+      .search('Read other-notes.txt.')
+      .hits.some((h) => h.source === 'other-notes.txt'),
+  ).toBe(false);
+  expect(all.search('Read subnotes.txt.', 1).hits).toHaveLength(0);
+});
 test('project scope rejects other projects, their segments, invented IDs and versions', () => {
   const { corpus } = fixture();
   expect(() => corpus.openSegment(otherSegment)).toThrow();
