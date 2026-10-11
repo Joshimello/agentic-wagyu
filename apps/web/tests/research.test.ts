@@ -375,6 +375,101 @@ test('context budget produces an explicit limited answer without more retrieval 
   }
 });
 
+test('discovery cannot exhaust context through repeated searches before original evidence reads', async () => {
+  const { corpus } = fixture();
+  let requests = 0;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = await request.json();
+      requests++;
+      let message;
+      if (requests <= 3) {
+        if (requests === 3) {
+          expect(body.tool_choice).toBe('required');
+          expect(body.tools.map((t: any) => t.function.name)).toEqual([
+            'openSegment',
+          ]);
+          expect(body.messages.at(-1).content).toContain(segment);
+        }
+        message = {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: `call-${requests}`,
+              type: 'function',
+              function: {
+                name: requests === 3 ? 'openSegment' : 'searchMemory',
+                arguments: JSON.stringify(
+                  requests === 3
+                    ? { nodeId: segment }
+                    : { query: 'calibration' },
+                ),
+              },
+            },
+          ],
+        };
+      } else {
+        expect(body.tool_choice).toBe('auto');
+        const citation = [...corpus.inspected][0];
+        message = {
+          role: 'assistant',
+          content: JSON.stringify({
+            status: 'answered',
+            claims: [
+              {
+                text: 'Calibration error is 0.2 mm.',
+                basis: 'source',
+                citations: [citation],
+              },
+            ],
+            limitations: [],
+          }),
+        };
+      }
+      return Response.json({
+        id: 'read',
+        object: 'chat.completion',
+        created: 1,
+        model: 'test',
+        choices: [
+          {
+            index: 0,
+            finish_reason: message.tool_calls ? 'tool_calls' : 'stop',
+            message,
+          },
+        ],
+      });
+    },
+  });
+  try {
+    const result = await answerQuestion(
+      'What is the calibration error?',
+      corpus,
+      {
+        llm: {
+          client: new OpenAI({
+            apiKey: 'test',
+            baseURL: `http://localhost:${server.port}/v1`,
+            maxRetries: 0,
+          }),
+          model: 'test',
+        },
+      },
+    );
+    expect(result.answer.status).toBe('answered');
+    expect(result.trace.map((t) => t.tool)).toEqual([
+      'searchMemory',
+      'searchMemory',
+      'openSegment',
+    ]);
+    expect(result.answer.citations[0].quote).toContain('0.2 mm');
+  } finally {
+    server.stop(true);
+  }
+});
+
 test('contiguous speech turns become complete cited spans with exact source pointers and speaker context', () => {
   const { corpus, stage, snapshot } = fixture();
   stage.primitives = Array.from({ length: 12 }, (_, i) => ({

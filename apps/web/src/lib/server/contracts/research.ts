@@ -63,7 +63,7 @@ export type ResearchTrace = {
   arguments: unknown;
   result: unknown;
 };
-export const researchPromptVersion = 'researcher-4-en';
+export const researchPromptVersion = 'researcher-5-en';
 export const researchLimits = {
   rounds: 10,
   calls: 24,
