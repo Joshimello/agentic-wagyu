@@ -68,14 +68,12 @@ async function admit(stage: Stage, project?: string) {
   const ids = nodes.map(() => crypto.randomUUID());
   await db.transaction(async (tx) => {
     await tx.insert(memoryCommits).values({ id: crypto.randomUUID(), version });
-    await tx
-      .insert(evidenceAdmissions)
-      .values({
-        revisionId: stage.id,
-        uploadId: stage.uploadId,
-        commitVersion: version,
-        sourceTime: null,
-      });
+    await tx.insert(evidenceAdmissions).values({
+      revisionId: stage.id,
+      uploadId: stage.uploadId,
+      commitVersion: version,
+      sourceTime: null,
+    });
     for (const [i, n] of nodes.entries()) {
       if (!project || i > 0)
         await tx.insert(memoryNodes).values({ ...n, createdVersion: version });
@@ -85,40 +83,37 @@ async function admit(stage: Stage, project?: string) {
           : i === 1 || i === 2
             ? [{ nodeId: segment, versionId: ids[3] }]
             : [];
-      await tx
-        .insert(memoryNodeVersions)
-        .values({
+      await tx.insert(memoryNodeVersions).values({
+        id: ids[i],
+        nodeId: n.id,
+        commitVersion: version,
+        payload: {
           id: ids[i],
           nodeId: n.id,
-          commitVersion: version,
-          payload: {
-            id: ids[i],
-            nodeId: n.id,
-            title:
-              i === 0
-                ? 'Calibration project'
-                : i === 3
-                  ? 'Calibration evidence'
-                  : 'Research notes',
-            summary:
-              'Calibration discussion. Details are in original evidence.',
-            keywords: ['calibration'],
-            warnings: [],
-            model: 'regression',
-            promptVersion: 'regression',
-            children,
-            segment:
-              i === 3
-                ? {
-                    revisionId: stage.id,
-                    firstUnit: 0,
-                    lastUnit: 0,
-                    unitSchemaVersion: 1,
-                    contextOnly: false,
-                  }
-                : null,
-          },
-        });
+          title:
+            i === 0
+              ? 'Calibration project'
+              : i === 3
+                ? 'Calibration evidence'
+                : 'Research notes',
+          summary: 'Calibration discussion. Details are in original evidence.',
+          keywords: ['calibration'],
+          warnings: [],
+          model: 'regression',
+          promptVersion: 'regression',
+          children,
+          segment:
+            i === 3
+              ? {
+                  revisionId: stage.id,
+                  firstUnit: 0,
+                  lastUnit: 0,
+                  unitSchemaVersion: 1,
+                  contextOnly: false,
+                }
+              : null,
+        },
+      });
     }
   });
   return { version, projectId: root, segmentId: segment };
@@ -413,4 +408,105 @@ check(
     }
   },
   20000,
+);
+check(
+  'worker redelivery recovers processing state and historical answers survive a pushed correction',
+  async () => {
+    const run = await createResearch({
+      question: 'What was the calibration error?',
+      projectId,
+      idempotencyKey: crypto.randomUUID(),
+    });
+    await db
+      .update(researchRuns)
+      .set({ state: 'processing', attempts: 1 })
+      .where(eq(researchRuns.id, run.id));
+    const fake = provider();
+    try {
+      await research(run.id, { llm: fake.llm });
+      const answered = await getResearch(run.id);
+      expect(answered.state).toBe('completed');
+      expect(answered.attempts).toBe(2);
+      const corrected = await correctStage(stage.uploadId, {
+        baseRevisionId: (await getUpload(stage.uploadId)).revisions[0].id,
+        label: stage.metadata.label,
+        sourceTime: null,
+        edits: [
+          {
+            primitiveId: stage.primitives[0].id,
+            text: 'Calibration error corrected to 0.15 mm.',
+            speaker: null,
+          },
+        ],
+      });
+      const next = await admit(corrected, projectId);
+      const historical = await loadResearchCorpus(answered.scope);
+      expect(historical.openSegment(segmentId).texts[0].text).toContain(
+        '0.2 mm',
+      );
+      const latest = await loadResearchCorpus({
+        version: next.version,
+        projectId,
+      });
+      expect(() => latest.openSegment(segmentId)).toThrow();
+      const oldVersion = historical.openSegment(segmentId).versionId;
+      const reopened = latest.openSegment(segmentId, 0, oldVersion);
+      expect(reopened.historical).toBe(true);
+      expect(reopened.texts[0].text).toContain('0.2 mm');
+      expect((await getResearch(run.id)).answer).toEqual(answered.answer);
+    } finally {
+      fake.stop();
+    }
+  },
+);
+check(
+  'retry after a queued cancellation gets a fresh delivery even if the original job already completed',
+  async () => {
+    const run = await createResearch({
+        question: 'What is the current calibration error?',
+        idempotencyKey: crypto.randomUUID(),
+      }),
+      fake = provider(),
+      boss = await startQueue();
+    let deliveries = 0;
+    try {
+      await dispatchResearch(boss);
+      await cancelResearch(run.id);
+      await boss.work<{ runId: string }>(
+        researchQueue,
+        { batchSize: 1 },
+        async (jobs) => {
+          for (const job of jobs) {
+            await research(job.data.runId, { llm: fake.llm });
+            if (job.data.runId === run.id) deliveries++;
+          }
+        },
+      );
+      for (let i = 0; i < 40 && !deliveries; i++) await Bun.sleep(200);
+      expect(deliveries).toBe(1);
+      expect((await getResearch(run.id)).attempts).toBe(0);
+      // This query targets the current corrected segment after the prior history test.
+      const latest = await loadResearchCorpus(run.scope);
+      segmentId = latest.view.segments.find(
+        (n) => latest.active.has(n.id) && n.revisionId !== stage.id,
+      )!.id;
+      await retryResearch(run.id);
+      await dispatchResearch(boss);
+      for (let i = 0; i < 50; i++) {
+        if ((await getResearch(run.id)).state === 'completed') break;
+        await Bun.sleep(200);
+      }
+      expect((await getResearch(run.id)).state).toBe('completed');
+      expect(deliveries).toBe(2);
+      const [row] = await db
+        .select()
+        .from(researchOutbox)
+        .where(eq(researchOutbox.id, run.id));
+      expect(row.generation).toBe(1);
+    } finally {
+      await boss.stop({ graceful: true, timeout: 5000 });
+      fake.stop();
+    }
+  },
+  25000,
 );

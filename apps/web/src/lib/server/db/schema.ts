@@ -294,6 +294,7 @@ export const researchOutbox = pgTable('research_outbox', {
   id: uuid('id')
     .primaryKey()
     .references(() => researchRuns.id),
+  generation: integer('generation').notNull().default(0),
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });

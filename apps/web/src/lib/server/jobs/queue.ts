@@ -101,7 +101,13 @@ export async function dispatchResearch(boss: PgBoss) {
       await boss.send(
         researchQueue,
         { runId: run.id },
-        { id: stableId(run.id, 'research', String(run.attempts)) },
+        {
+          id: stableId(
+            run.id,
+            'research',
+            String(row.research_outbox.generation),
+          ),
+        },
       );
     await db
       .update(researchOutbox)

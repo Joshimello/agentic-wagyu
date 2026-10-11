@@ -112,7 +112,10 @@ export async function retryResearch(id: string) {
       .where(eq(researchRuns.id, id));
     await tx
       .update(researchOutbox)
-      .set({ dispatchedAt: null })
+      .set({
+        dispatchedAt: null,
+        generation: sql`${researchOutbox.generation}+1`,
+      })
       .where(eq(researchOutbox.id, id));
     return { id, scope: run.scope };
   });

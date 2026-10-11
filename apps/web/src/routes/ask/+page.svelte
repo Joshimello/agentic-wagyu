@@ -58,8 +58,10 @@
     >
     <label
       >Memory snapshot<select bind:value={knownVersion}
-        ><option value="">Latest at query start ({data.version})</option
-        >{#each [...data.commits].reverse() as c}<option
+        ><option value="">Latest at query start ({data.version})</option><option
+          value="0">Before first push (0)</option
+        >
+        {#each [...data.commits].reverse() as c}<option
             value={String(c.version)}>Snapshot {c.version}</option
           >{/each}</select
       ></label

@@ -72,6 +72,7 @@ export class ResearchCorpus {
   readonly inspected = new Set<string>();
   readonly warnings = new Set<string>();
   private textCharacters = 0;
+  private evidenceKeys = new Map<string, string>();
   constructor(
     readonly data: CorpusData,
     readonly scope: ResearchScope,
@@ -150,10 +151,14 @@ export class ResearchCorpus {
       kind: n.kind,
       title: v.title,
       summary:
-        this.scope.effectiveAt && !v.segment
+        (this.scope.effectiveAt && !v.segment) ||
+        (this.scope.projectId &&
+          n.kind === 'source' &&
+          v.children.some((c) => !this.allowed.has(c.nodeId)))
           ? 'Date-filtered overview: inspect eligible child segments.'
-          : v.summary,
-      warnings: v.warnings,
+          : v.summary.slice(0, 900),
+      summaryTruncated: v.summary.length > 900,
+      warnings: v.warnings.slice(0, 5),
       recordedVersion: v.commitVersion,
       source: n.revisionId
         ? this.data.stages.get(n.revisionId)?.filename
@@ -192,10 +197,15 @@ export class ResearchCorpus {
             n.current.segment.lastUnit,
           )
         : null;
+      const masked =
+        (this.scope.effectiveAt && !content) ||
+        (this.scope.projectId &&
+          n.kind === 'source' &&
+          n.current.children.some((c) => !this.allowed.has(c.nodeId)));
       return {
         n,
         overview: normalize(
-          `${n.current.title} ${this.scope.effectiveAt && !content ? '' : n.current.summary} ${n.current.keywords.join(' ')}`,
+          `${n.revisionId ? this.data.stages.get(n.revisionId)?.filename : ''} ${n.current.title} ${masked ? '' : n.current.summary} ${masked ? '' : n.current.keywords.join(' ')}`,
         ),
         source: normalize(content?.texts.map((t) => t.text).join('\n') ?? ''),
       };
@@ -234,6 +244,14 @@ export class ResearchCorpus {
         const d = docs.find((d) => d.n.id === id)!;
         return {
           ...this.overview(d.n),
+          ...(fragmentsOnly
+            ? {
+                summary: 'Original text match; open the segment for evidence.',
+                title:
+                  this.data.stages.get(d.n.revisionId!)?.filename ??
+                  'Source segment',
+              }
+            : {}),
           score,
           sourceMatched: terms.some((t) => d.source.includes(t)),
         };
@@ -299,12 +317,14 @@ export class ResearchCorpus {
       last?: number,
       quote?: string,
     ) => {
-      const id = stableId(
+      const key = stableId(
         v.id,
         primitiveId,
         String(first ?? ''),
         String(last ?? ''),
       );
+      const id = this.evidenceKeys.get(key) ?? `E${this.evidenceKeys.size + 1}`;
+      this.evidenceKeys.set(key, id);
       const citation: Citation = {
         id,
         revisionId: stage.id,
@@ -391,7 +411,7 @@ export class ResearchCorpus {
     const ids = [...new Set(value.claims.flatMap((c) => c.citations))];
     for (const id of ids)
       if (!this.inspected.has(id) || !this.evidence.has(id))
-        throw new Error('Citation was not inspected in this query scope');
+        throw new Error(`Citation ${id} was not inspected in this query scope`);
     if (value.claims.some((c) => c.text.includes('](')))
       throw new Error('Use citation IDs, not model-generated links');
     return {

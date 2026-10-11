@@ -1,4 +1,6 @@
 import { test, expect } from 'bun:test';
+import OpenAI from 'openai';
+import { answerQuestion } from '../src/lib/server/agents/researcher/model';
 import type { Stage } from '../src/lib/server/contracts';
 import type {
   OrganizationSnapshot,
@@ -274,4 +276,97 @@ test('long original text paginates without silent loss and enforces evidence bud
   expect(total).toBeLessThanOrEqual(42000);
   expect(total).toBeGreaterThan(30000);
   expect([...corpus.warnings].join(' ')).toContain('budget exhausted');
+});
+test('project-scoped source overviews hide summaries containing other-project segments', () => {
+  const { corpus, snapshot } = fixture();
+  const sourceVersion = snapshot.versions.find((v) => v.nodeId === source)!;
+  sourceVersion.summary = 'Other project confidential detail.';
+  sourceVersion.children.push({
+    nodeId: otherSegment,
+    versionId: snapshot.versions.find((v) => v.nodeId === otherSegment)!.id,
+  });
+  const scoped = new ResearchCorpus(corpus.data, corpus.scope);
+  expect(scoped.openNode(source).summary).not.toContain('confidential');
+  expect(scoped.openNode(source).children.map((c) => c.nodeId)).toEqual([
+    segment,
+  ]);
+  expect(JSON.stringify(scoped.catalog())).not.toContain('confidential');
+  expect(scoped.search('confidential').hits).toHaveLength(0);
+});
+test('event cutoff hides future text and future aggregate prose but retains eligible dates', () => {
+  const { corpus, stage } = fixture();
+  stage.metadata.sourceTime = '2026-09-22T00:00:00.000Z';
+  stage.metadata.sourceTimeOrigin = 'file';
+  const early = new ResearchCorpus(corpus.data, {
+    ...corpus.scope,
+    effectiveAt: '2026-09-15',
+  });
+  expect(() => early.openSegment(segment)).toThrow();
+  expect(early.openNode(project).summary).toContain('filtered');
+  const included = new ResearchCorpus(corpus.data, {
+    ...corpus.scope,
+    effectiveAt: '2026-09-30',
+  });
+  expect(included.openSegment(segment).texts.length).toBeGreaterThan(0);
+  expect(included.openSegment(segment).dateOrigin).toBe('file');
+});
+
+test('context budget produces an explicit limited answer without more retrieval calls', async () => {
+  const { corpus } = fixture();
+  corpus.catalog = () => ({
+    snapshot: corpus.scope,
+    total: 0,
+    offset: 0,
+    truncated: false,
+    nodes: [],
+    warnings: ['x'.repeat(110000)],
+  });
+  let toolsEnabled = false;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = await request.json();
+      toolsEnabled = !!body.tools;
+      return Response.json({
+        id: 'budget',
+        object: 'chat.completion',
+        created: 1,
+        model: 'test',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'stop',
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                status: 'partial',
+                claims: [],
+                limitations: [
+                  'The context budget was reached before evidence could be inspected.',
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    },
+  });
+  try {
+    const result = await answerQuestion('What is known?', corpus, {
+      llm: {
+        client: new OpenAI({
+          apiKey: 'test',
+          baseURL: `http://localhost:${server.port}/v1`,
+          maxRetries: 0,
+        }),
+        model: 'test',
+      },
+    });
+    expect(toolsEnabled).toBe(false);
+    expect(result.answer.status).toBe('partial');
+    expect(result.answer.warnings.join(' ')).toContain('budget reached');
+    expect(result.usage.calls).toBe(1);
+  } finally {
+    server.stop(true);
+  }
 });

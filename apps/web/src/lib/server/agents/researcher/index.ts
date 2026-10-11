@@ -99,10 +99,24 @@ export async function research(id: string, options: ResearchModelOptions = {}) {
         .returning();
       return completed;
     } catch (error) {
+      const details = error as {
+        researchTrace?: import('../../contracts/research').ResearchTrace[];
+        researchUsage?: {
+          inputTokens: number;
+          outputTokens: number;
+          calls: number;
+          elapsedMs: number;
+        };
+        researchModel?: string;
+      };
       await db
         .update(researchRuns)
         .set({
           state: 'failed',
+          trace: details?.researchTrace ?? [],
+          usage: details?.researchUsage ?? null,
+          model: details?.researchModel ?? null,
+          promptVersion: researchPromptVersion,
           error:
             'Research could not finish a valid cited answer. Retry preserves the original memory snapshot.',
           progress: 'No answer published',

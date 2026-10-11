@@ -43,6 +43,13 @@
       "when": 1791687570689,
       "tag": "0005_brown_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791688666682,
+      "tag": "0006_blue_bulldozer",
+      "breakpoints": true
     }
   ]
 }

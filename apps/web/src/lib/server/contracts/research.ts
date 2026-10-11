@@ -20,7 +20,10 @@ export const answerProposal = z
           .object({
             text: z.string().min(1).max(2400),
             basis: z.enum(['source', 'inference', 'conflict']),
-            citations: z.array(z.string().min(1).max(180)).min(1).max(8),
+            citations: z
+              .array(z.string().regex(/^E[1-9][0-9]{0,3}$/))
+              .min(1)
+              .max(8),
           })
           .strict(),
       )
@@ -59,7 +62,7 @@ export type ResearchTrace = {
   arguments: unknown;
   result: unknown;
 };
-export const researchPromptVersion = 'researcher-1-en';
+export const researchPromptVersion = 'researcher-3-en';
 export const researchLimits = {
   rounds: 10,
   calls: 24,
