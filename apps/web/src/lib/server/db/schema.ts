@@ -12,6 +12,21 @@ import {
 import type { Stage } from '../contracts';
 const createdAt = () =>
   timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+export const modelRequests = pgTable('model_requests', {
+  id: uuid('id').primaryKey(),
+  operationKind: text('operation_kind').notNull(),
+  operationId: text('operation_id').notNull(),
+  model: text('model').notNull(),
+  requestHash: text('request_hash').notNull(),
+  state: text('state').notNull().default('reserved'),
+  estimatedInput: integer('estimated_input').notNull(),
+  reservedOutput: integer('reserved_output').notNull(),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  costUsd: text('cost_usd'),
+  elapsedMs: integer('elapsed_ms'),
+  createdAt: createdAt(),
+});
 export const assets = pgTable('assets', {
   id: uuid('id').primaryKey(),
   sha256: text('sha256').notNull().unique(),
@@ -133,6 +148,7 @@ export const chroniclerOutbox = pgTable('chronicler_outbox', {
   id: uuid('id')
     .primaryKey()
     .references(() => pushBatches.id),
+  generation: integer('generation').notNull().default(0),
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });

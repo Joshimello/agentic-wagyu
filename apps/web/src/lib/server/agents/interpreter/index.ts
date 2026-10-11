@@ -1,4 +1,5 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { currentOperation, leasedOperation } from '../../jobs/operation';
 import { db } from '../../db/client';
 import { assets, uploads, runs, revisions } from '../../db/schema';
 import { assetPath } from '../../storage';
@@ -14,12 +15,15 @@ import { buildDocument, documentFormat } from './documents';
 import { enrichDocument } from './document-review';
 
 export async function interpret(runId: string) {
+  return leasedOperation('interpret', runId, () => interpretLeased(runId));
+}
+async function interpretLeased(runId: string) {
   const [run] = await db.select().from(runs).where(eq(runs.id, runId));
   if (!run || run.revisionId || run.state === 'canceled') return;
   let state = run.state as RunState;
   if (state === 'failed') state = transition(state, 'queued');
   if (state !== 'processing') transition(state, 'processing');
-  await db
+  const [claimed] = await db
     .update(runs)
     .set({
       state: 'processing',
@@ -28,7 +32,20 @@ export async function interpret(runId: string) {
       error: null,
       updatedAt: new Date(),
     })
-    .where(eq(runs.id, runId));
+    .where(
+      and(
+        eq(runs.id, runId),
+        inArray(runs.state, ['queued', 'processing', 'failed']),
+      ),
+    )
+    .returning();
+  if (!claimed) return;
+  const currentAttempt = () =>
+    and(
+      eq(runs.id, runId),
+      eq(runs.state, 'processing'),
+      eq(runs.attempts, claimed.attempts),
+    );
   try {
     const [input] = await db
       .select()
@@ -56,10 +73,11 @@ export async function interpret(runId: string) {
       },
     };
     const progress = async (message: string) => {
+      currentOperation()?.signal?.throwIfAborted();
       await db
         .update(runs)
         .set({ progress: message, updatedAt: new Date() })
-        .where(eq(runs.id, runId));
+        .where(currentAttempt());
     };
     if (run.inputRevisionId) {
       const [base] = await db
@@ -140,17 +158,7 @@ export async function interpret(runId: string) {
         locator: { kind: 'text', start: 0, end: text.length },
       });
     } else if (/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)) {
-      stage = await buildVideo(
-        stage,
-        raw.storageKey,
-        runId,
-        async (progress) => {
-          await db
-            .update(runs)
-            .set({ progress, updatedAt: new Date() })
-            .where(eq(runs.id, runId));
-        },
-      );
+      stage = await buildVideo(stage, raw.storageKey, runId, progress);
     } else if (documentFormat(upload.filename)) {
       await buildDocument(
         stage,
@@ -162,6 +170,7 @@ export async function interpret(runId: string) {
       throw new Error(
         'This file adapter is not available yet. Your original is preserved; retry after the adapter is installed.',
       );
+    currentOperation()?.signal?.throwIfAborted();
     validateStage(stage);
     await db.transaction(async (tx) => {
       const [locked] = await tx
@@ -169,7 +178,12 @@ export async function interpret(runId: string) {
         .from(runs)
         .where(eq(runs.id, runId))
         .for('update');
-      if (locked.revisionId) return;
+      if (
+        locked.revisionId ||
+        locked.state !== 'processing' ||
+        locked.attempts !== claimed.attempts
+      )
+        return;
       const [current] = await tx
         .select()
         .from(uploads)
@@ -209,10 +223,11 @@ export async function interpret(runId: string) {
       .set({
         state: 'failed',
         progress: 'Interpretation failed',
-        error: error instanceof Error ? error.message : 'Interpretation failed',
+        error:
+          'Interpretation failed. Original files and saved progress are retained; retry processing.',
         updatedAt: new Date(),
       })
-      .where(eq(runs.id, runId));
+      .where(currentAttempt());
     throw error;
   }
 }

@@ -26,7 +26,11 @@ import {
 import { validateOrganization } from './organization/validation';
 export class StaleMemory extends Error {}
 /** Publication is the only memory writer. All evidence admissions, identities and history are one transaction. */
-export async function publishMemory(pushId: string, plan: Plan) {
+export async function publishMemory(
+  pushId: string,
+  plan: Plan,
+  expectedAttempt?: number,
+) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(736502)`);
     const [batch] = await tx
@@ -36,6 +40,11 @@ export async function publishMemory(pushId: string, plan: Plan) {
       .for('update');
     if (!batch) throw new Error('Push not found');
     if (batch.state === 'committed' || batch.state === 'canceled') return batch;
+    if (
+      expectedAttempt !== undefined &&
+      (batch.state !== 'processing' || batch.attempts !== expectedAttempt)
+    )
+      return batch;
     const [latest] = await tx
       .select({
         version: sql<number>`coalesce(max(${memoryCommits.version}),0)::int`,

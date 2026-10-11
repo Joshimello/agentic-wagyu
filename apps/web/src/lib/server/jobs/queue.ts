@@ -1,5 +1,5 @@
 import { PgBoss } from 'pg-boss';
-import { eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   outbox,
@@ -7,6 +7,7 @@ import {
   pushBatches,
   researchRuns,
   researchOutbox,
+  runs,
 } from '../db/schema';
 import { stableId } from '../contracts/memory';
 import { config } from '../config';
@@ -55,10 +56,18 @@ export async function dispatchPending(boss: PgBoss) {
   const pending = await db
     .select()
     .from(outbox)
+    .innerJoin(runs, eq(outbox.id, runs.id))
     .where(isNull(outbox.dispatchedAt))
     .limit(50);
-  for (const item of pending) {
-    await boss.send(queueName, { runId: item.id }, { id: item.id });
+  for (const row of pending) {
+    const item = row.job_outbox,
+      run = row.interpretation_runs;
+    if (run.state === 'queued')
+      await boss.send(
+        queueName,
+        { runId: item.id },
+        { id: stableId(item.id, 'interpret', String(run.attempts)) },
+      );
     await db
       .update(outbox)
       .set({ dispatchedAt: new Date() })
@@ -76,15 +85,21 @@ export async function dispatchPushes(boss: PgBoss) {
   for (const row of pending) {
     const item = row.chronicler_outbox,
       batch = row.push_batches;
-    await boss.send(
-      chroniclerQueue,
-      { pushId: item.id },
-      { id: stableId(item.id, 'queue', String(batch.attempts)) },
-    );
+    if (batch.state === 'queued')
+      await boss.send(
+        chroniclerQueue,
+        { pushId: item.id },
+        { id: stableId(item.id, 'push-delivery', String(item.generation)) },
+      );
     await db
       .update(chroniclerOutbox)
       .set({ dispatchedAt: new Date() })
-      .where(eq(chroniclerOutbox.id, item.id));
+      .where(
+        and(
+          eq(chroniclerOutbox.id, item.id),
+          eq(chroniclerOutbox.generation, item.generation),
+        ),
+      );
   }
 }
 
@@ -112,6 +127,11 @@ export async function dispatchResearch(boss: PgBoss) {
     await db
       .update(researchOutbox)
       .set({ dispatchedAt: new Date() })
-      .where(eq(researchOutbox.id, run.id));
+      .where(
+        and(
+          eq(researchOutbox.id, run.id),
+          eq(researchOutbox.generation, row.research_outbox.generation),
+        ),
+      );
   }
 }

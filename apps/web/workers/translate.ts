@@ -6,8 +6,10 @@ import {
 } from '../src/lib/server/jobs/translations';
 import { translateRevision } from '../src/lib/server/agents/translation';
 import { sqlClient } from '../src/lib/server/db/client';
+import { recoverInterrupted } from '../src/lib/server/jobs/operation';
 
 const boss = await startTranslationQueue();
+await recoverInterrupted(['translation']);
 await boss.work<{ translationId: string }>(
   translationQueue,
   { batchSize: 1 },
@@ -26,6 +28,7 @@ const pump = (async () => {
     try {
       await dispatchTranslations(boss);
       if (Date.now() >= nextReconciliation) {
+        await recoverInterrupted(['translation']);
         await reconcileTranslations(boss);
         nextReconciliation = Date.now() + 30000;
       }

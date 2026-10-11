@@ -5,6 +5,7 @@ import { assetPath } from '../../storage';
 import { getResearch, loadResearchCorpus } from '../../services/research';
 import { researchPromptVersion } from '../../contracts/research';
 import { answerQuestion, type ResearchModelOptions } from './model';
+import { withOperation } from '../../jobs/operation';
 export async function readResearchImage(assetId: string) {
   const [asset] = await db.select().from(assets).where(eq(assets.id, assetId));
   if (!asset || !['image/jpeg', 'image/png', 'image/webp'].includes(asset.mime))
@@ -71,20 +72,24 @@ export async function research(id: string, options: ResearchModelOptions = {}) {
     }, 500);
     try {
       const corpus = await loadResearchCorpus(run.scope);
-      const result = await answerQuestion(run.input.question, corpus, {
-        ...options,
-        signal: options.signal
-          ? AbortSignal.any([controller.signal, options.signal])
-          : controller.signal,
-        readImage: options.readImage ?? readResearchImage,
-        progress: async (progress) => {
-          await db
-            .update(researchRuns)
-            .set({ progress, updatedAt: new Date() })
-            .where(currentAttempt());
-          await options.progress?.(progress);
-        },
-      });
+      const result = await withOperation(
+        { kind: 'research', id, signal: controller.signal },
+        () =>
+          answerQuestion(run.input.question, corpus, {
+            ...options,
+            signal: options.signal
+              ? AbortSignal.any([controller.signal, options.signal])
+              : controller.signal,
+            readImage: options.readImage ?? readResearchImage,
+            progress: async (progress) => {
+              await db
+                .update(researchRuns)
+                .set({ progress, updatedAt: new Date() })
+                .where(currentAttempt());
+              await options.progress?.(progress);
+            },
+          }),
+      );
       controller.signal.throwIfAborted();
       const [completed] = await db
         .update(researchRuns)

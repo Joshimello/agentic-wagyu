@@ -1,4 +1,5 @@
-import { eq, sql, and, ne } from 'drizzle-orm';
+import { eq, sql, and, inArray } from 'drizzle-orm';
+import { currentOperation, leasedOperation } from '../../jobs/operation';
 import { db } from '../../db/client';
 import { pushBatches, revisions } from '../../db/schema';
 import { validateStage } from '../../contracts';
@@ -10,12 +11,20 @@ export async function chronicle(
   pushId: string,
   options: { buildPlan?: typeof buildMemoryPlan } = {},
 ) {
+  return leasedOperation('chronicle', pushId, () =>
+    chronicleLeased(pushId, options),
+  );
+}
+async function chronicleLeased(
+  pushId: string,
+  options: { buildPlan?: typeof buildMemoryPlan },
+) {
   let [batch] = await db
     .select()
     .from(pushBatches)
     .where(eq(pushBatches.id, pushId));
   if (!batch || ['committed', 'canceled'].includes(batch.state)) return batch;
-  await db
+  const [claimed] = await db
     .update(pushBatches)
     .set({
       state: 'processing',
@@ -24,18 +33,26 @@ export async function chronicle(
       error: null,
       updatedAt: new Date(),
     })
-    .where(eq(pushBatches.id, pushId));
+    .where(
+      and(
+        eq(pushBatches.id, pushId),
+        inArray(pushBatches.state, ['queued', 'processing', 'failed']),
+      ),
+    )
+    .returning();
+  if (!claimed) return;
+  const currentAttempt = () =>
+    and(
+      eq(pushBatches.id, pushId),
+      eq(pushBatches.state, 'processing'),
+      eq(pushBatches.attempts, claimed.attempts),
+    );
   const progress = async (text: string) => {
+    currentOperation()?.signal?.throwIfAborted();
     await db
       .update(pushBatches)
       .set({ progress: text, updatedAt: new Date() })
-      .where(
-        and(
-          eq(pushBatches.id, pushId),
-          ne(pushBatches.state, 'committed'),
-          ne(pushBatches.state, 'canceled'),
-        ),
-      );
+      .where(currentAttempt());
   };
   try {
     const stages = [];
@@ -62,10 +79,11 @@ export async function chronicle(
       await db
         .update(pushBatches)
         .set({ baseVersion: snapshot.version, plan, updatedAt: new Date() })
-        .where(eq(pushBatches.id, pushId));
+        .where(currentAttempt());
       await progress('Validating and publishing memory');
       try {
-        return await publishMemory(pushId, plan);
+        currentOperation()?.signal?.throwIfAborted();
+        return await publishMemory(pushId, plan, claimed.attempts);
       } catch (error) {
         if (!(error instanceof StaleMemory)) throw error;
         batch = { ...batch, plan: null };
@@ -91,13 +109,7 @@ export async function chronicle(
         progress: 'No memory changes were published',
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(pushBatches.id, pushId),
-          ne(pushBatches.state, 'committed'),
-          ne(pushBatches.state, 'canceled'),
-        ),
-      );
+      .where(currentAttempt());
     throw error;
   }
 }

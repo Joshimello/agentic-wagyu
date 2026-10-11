@@ -191,3 +191,31 @@ export async function memoryCount() {
     .from(memoryCommits);
   return row.count;
 }
+export async function cancelUpload(id: string) {
+  return db.transaction(async (tx) => {
+    const [upload] = await tx
+      .select()
+      .from(uploads)
+      .where(eq(uploads.id, id))
+      .for('update');
+    if (!upload) throw new Error('Upload not found');
+    const [run] = await tx
+      .select()
+      .from(runs)
+      .where(eq(runs.uploadId, id))
+      .orderBy(desc(runs.createdAt))
+      .limit(1)
+      .for('update');
+    if (!run || !['queued', 'processing'].includes(run.state)) return run;
+    const [canceled] = await tx
+      .update(runs)
+      .set({
+        state: 'canceled',
+        progress: 'Canceled; original and previous revisions retained',
+        updatedAt: new Date(),
+      })
+      .where(eq(runs.id, run.id))
+      .returning();
+    return canceled;
+  });
+}

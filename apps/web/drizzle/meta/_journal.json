@@ -57,6 +57,20 @@
       "when": 1791723190527,
       "tag": "0007_branch_convergence",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791725180957,
+      "tag": "0008_even_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791725609209,
+      "tag": "0009_steep_serpent_society",
+      "breakpoints": true
     }
   ]
 }

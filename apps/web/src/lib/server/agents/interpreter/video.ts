@@ -10,6 +10,7 @@ import { contextPromptVersion, enrichContext } from './context';
 import { asrSchema, applyTranscript } from './transcript';
 import { audioSections, joinAudioSections } from './audio-sections';
 import { normalizeTranscription } from '../../text-normalization';
+import { currentOperation } from '../../jobs/operation';
 
 const assetSchema = z.object({
   storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
@@ -41,7 +42,10 @@ async function mediaRequest(route: string, body: unknown) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(960000),
+    signal: AbortSignal.any([
+      AbortSignal.timeout(960000),
+      ...(currentOperation()?.signal ? [currentOperation()!.signal!] : []),
+    ]),
   });
   const result = await r.json();
   if (!r.ok)

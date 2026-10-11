@@ -12,8 +12,8 @@
     }, 2000);
     return () => clearInterval(timer);
   });
-  async function retry() {
-    const response = await fetch(`/api/pushes/${push.id}/retry`, {
+  async function retry(action = 'retry') {
+    const response = await fetch(`/api/pushes/${push.id}/${action}`, {
       method: 'POST',
     });
     if (response.ok) {
@@ -40,7 +40,11 @@
     >
       {error}
     </p>{/if}
-  {#if push.state === 'failed'}<button onclick={retry}>Retry pinned push</button
+  {#if ['failed', 'canceled'].includes(push.state)}<button
+      onclick={() => retry()}>Retry pinned push</button
+    >{/if}
+  {#if ['queued', 'processing'].includes(push.state)}<button
+      onclick={() => retry('cancel')}>Cancel push</button
     >{/if}
   <h2>Selected evidence</h2>
   {#each push.input.items as item}<p>

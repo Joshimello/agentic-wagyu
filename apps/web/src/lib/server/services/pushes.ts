@@ -146,8 +146,8 @@ export async function retryPush(id: string) {
       .for('update');
     if (!batch) throw new Error('Push not found');
     if (batch.state === 'committed') return batch;
-    if (batch.state !== 'failed')
-      throw new Error('Push must fail before retrying');
+    if (!['failed', 'canceled'].includes(batch.state))
+      throw new Error('Push must finish or be canceled before retrying');
     await tx
       .update(pushBatches)
       .set({
@@ -159,8 +159,32 @@ export async function retryPush(id: string) {
       .where(eq(pushBatches.id, id));
     await tx
       .update(chroniclerOutbox)
-      .set({ dispatchedAt: null })
+      .set({
+        dispatchedAt: null,
+        generation: sql`${chroniclerOutbox.generation}+1`,
+      })
       .where(eq(chroniclerOutbox.id, id));
     return { ...batch, state: 'queued' };
+  });
+}
+export async function cancelPush(id: string) {
+  return db.transaction(async (tx) => {
+    const [batch] = await tx
+      .select()
+      .from(pushBatches)
+      .where(eq(pushBatches.id, id))
+      .for('update');
+    if (!batch) throw new Error('Push not found');
+    if (!['queued', 'processing'].includes(batch.state)) return batch;
+    const [canceled] = await tx
+      .update(pushBatches)
+      .set({
+        state: 'canceled',
+        progress: 'Canceled; pinned selection and saved progress retained',
+        updatedAt: new Date(),
+      })
+      .where(eq(pushBatches.id, id))
+      .returning();
+    return canceled;
   });
 }

@@ -8,7 +8,8 @@
   import '../lib/styles/workspace.css';
   import Icon from '../lib/components/Icon.svelte';
 
-  let { children }: { children: Snippet } = $props();
+  let { children, data }: { children: Snippet; data: { readOnly: boolean } } =
+    $props();
   let content: HTMLElement;
   let entry: gsap.Context | undefined;
   let memoryActive = $derived(page.url.pathname.startsWith('/memory'));
@@ -82,11 +83,15 @@
     >
   </header>
   <main id="workspace-content" bind:this={content} tabindex="-1">
+    {#if data.readOnly}<p role="status">
+        Restored workspace · Inspection only. Uploads, pushes and new questions
+        are disabled until this workspace is resumed.
+      </p>{/if}
     {@render children()}
   </main>
   <footer class="workspace-footer">
     <span>Chronicler</span>
-    <span>Review sources. Build research memory.</span>
+    <a href="/operations">Operations</a>
   </footer>
 </div>
 

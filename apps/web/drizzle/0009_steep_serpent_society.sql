@@ -1,0 +1,1 @@
+ALTER TABLE "chronicler_outbox" ADD COLUMN "generation" integer DEFAULT 0 NOT NULL;

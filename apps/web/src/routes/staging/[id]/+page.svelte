@@ -194,6 +194,17 @@
       retrying = false;
     }
   }
+  async function cancel() {
+    const response = await fetch(`/api/uploads/${detail.upload.id}/cancel`, {
+      method: 'POST',
+    });
+    if (!response.ok) error = 'Could not cancel processing.';
+    else {
+      notice =
+        'Processing canceled. Original files and previous revisions are retained.';
+      await refresh(false);
+    }
+  }
   function duration(ms: number | null | undefined) {
     if (!ms) return '';
     const minutes = Math.floor(ms / 60000);
@@ -235,6 +246,7 @@
         >
       </Menu>{/if}
     <Menu label="More" icon="more">
+      {#if busy}<button onclick={cancel}>Cancel processing</button>{/if}
       <button disabled={busy || retrying} onclick={() => retry()}
         ><Icon name="refresh" />Reprocess original</button
       >
