@@ -1,3 +1,7 @@
+import {
+  spanText,
+  spanPartsFromRange,
+} from '../src/lib/server/services/evidence-spans';
 import { test, expect } from 'bun:test';
 import OpenAI from 'openai';
 import { answerQuestion } from '../src/lib/server/agents/researcher/model';
@@ -369,4 +373,65 @@ test('context budget produces an explicit limited answer without more retrieval 
   } finally {
     server.stop(true);
   }
+});
+
+test('contiguous speech turns become complete cited spans with exact source pointers and speaker context', () => {
+  const { corpus, stage, snapshot } = fixture();
+  stage.primitives = Array.from({ length: 12 }, (_, i) => ({
+    id: crypto.randomUUID(),
+    kind: 'text',
+    role: 'asr',
+    text: `Turn ${i} gives calibration context.`,
+    speaker: i % 2 ? 'S02' : 'S01',
+    locator: {
+      kind: 'media',
+      timeline: 'container',
+      startMs: i * 1000,
+      endMs: i * 1000 + 900,
+    },
+  }));
+  stage.annotations = [];
+  snapshot.versions.find((v) => v.nodeId === segment)!.segment!.lastUnit = 11;
+  const read = corpus.openSegment(segment);
+  expect(read.texts).toHaveLength(1);
+  expect(read.nextOffset).toBeNull();
+  expect(read.texts[0].text).toContain('Turn 11');
+  expect(read.texts[0].text).toContain('S02');
+  const c = corpus.evidence.get(read.texts[0].citationId)!;
+  expect(c.parts).toHaveLength(12);
+  for (const part of c.parts!) {
+    const p = stage.primitives.find((p) => p.id === part.primitiveId)!;
+    expect(
+      p.kind === 'text' &&
+        read.texts[0].text.includes(p.text.slice(part.first, part.last)),
+    ).toBe(true);
+  }
+  const reconstructed = spanPartsFromRange(
+    stage,
+    c.primitiveId,
+    c.parts!.at(-1)!.primitiveId,
+    c.first!,
+    c.last!,
+  );
+  expect(reconstructed).toEqual(c.parts!);
+  expect(spanText(stage, reconstructed)).toBe(c.quote!);
+  expect(c.locator).toEqual({
+    kind: 'media',
+    timeline: 'container',
+    startMs: 0,
+    endMs: 11900,
+  });
+  expect(c.url).toContain('&through=');
+  expect(() =>
+    spanPartsFromRange(stage, c.primitiveId, crypto.randomUUID(), 0, 1),
+  ).toThrow();
+  expect(() =>
+    spanPartsFromRange(
+      stage,
+      c.primitiveId,
+      c.parts!.at(-1)!.primitiveId,
+      0,
+      100000,
+    ),
+  ).toThrow();
 });

@@ -1,3 +1,4 @@
+import { readableTextChunks } from '../../services/evidence-spans';
 import type { Stage } from '../../contracts';
 import type {
   OrganizationSnapshot,
@@ -155,7 +156,7 @@ export class ResearchCorpus {
         (this.scope.projectId &&
           n.kind === 'source' &&
           v.children.some((c) => !this.allowed.has(c.nodeId)))
-          ? 'Date-filtered overview: inspect eligible child segments.'
+          ? 'Date/project-filtered overview: inspect eligible child segments.'
           : v.summary.slice(0, 900),
       summaryTruncated: v.summary.length > 900,
       warnings: v.warnings.slice(0, 5),
@@ -316,12 +317,14 @@ export class ResearchCorpus {
       first?: number,
       last?: number,
       quote?: string,
+      parts?: Citation['parts'],
     ) => {
       const key = stableId(
         v.id,
         primitiveId,
         String(first ?? ''),
         String(last ?? ''),
+        JSON.stringify(parts ?? []),
       );
       const id = this.evidenceKeys.get(key) ?? `E${this.evidenceKeys.size + 1}`;
       this.evidenceKeys.set(key, id);
@@ -337,20 +340,14 @@ export class ResearchCorpus {
         first,
         last,
         quote,
+        parts,
         historical: !this.active.has(nodeId),
-        url: `/evidence/${stage.id}/${primitiveId}?knownVersion=${this.scope.version}${kind === 'text' ? `&first=${first}&last=${last}` : ''}`,
+        url: `/evidence/${stage.id}/${primitiveId}?knownVersion=${this.scope.version}${kind === 'text' ? `&first=${first}&last=${last}${parts && parts.length > 1 ? `&through=${parts.at(-1)!.primitiveId}` : ''}` : ''}`,
       };
       this.evidence.set(id, citation);
       return citation;
     };
-    const chunks = content.texts.flatMap((t) =>
-      Array.from({ length: Math.ceil(t.text.length / 2400) }, (_, i) => ({
-        ...t,
-        text: t.text.slice(i * 2400, (i + 1) * 2400),
-        first: t.first + i * 2400,
-        last: Math.min(t.last, t.first + (i + 1) * 2400),
-      })),
-    );
+    const chunks = readableTextChunks(stage, content.texts);
     const texts = [];
     for (const t of chunks.slice(offset, offset + 5)) {
       if (this.textCharacters + t.text.length > researchLimits.textCharacters) {
@@ -367,6 +364,7 @@ export class ResearchCorpus {
         t.first,
         t.last,
         t.text,
+        t.parts,
       );
       this.inspected.add(c.id);
       texts.push({

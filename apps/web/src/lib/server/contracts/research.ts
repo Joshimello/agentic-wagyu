@@ -47,6 +47,7 @@ export type Citation = {
   locator: z.infer<typeof locator>;
   kind: 'text' | 'image';
   quote?: string;
+  parts?: { primitiveId: string; first: number; last: number }[];
   first?: number;
   last?: number;
   url: string;
@@ -62,7 +63,7 @@ export type ResearchTrace = {
   arguments: unknown;
   result: unknown;
 };
-export const researchPromptVersion = 'researcher-3-en';
+export const researchPromptVersion = 'researcher-4-en';
 export const researchLimits = {
   rounds: 10,
   calls: 24,

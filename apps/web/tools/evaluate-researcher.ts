@@ -1,3 +1,4 @@
+import { spanText } from '../src/lib/server/services/evidence-spans';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -63,6 +64,7 @@ for (const path of [
   '../src/lib/server/agents/researcher/model.ts',
   '../src/lib/server/agents/researcher/retrieval.ts',
   '../src/lib/server/contracts/research.ts',
+  '../src/lib/server/services/evidence-spans.ts',
 ])
   implementationHasher.update(
     await Bun.file(new URL(path, import.meta.url)).text(),
@@ -110,7 +112,7 @@ async function judgeAnswer(
   const images = await Promise.all(
     row.answer.citations
       .filter((c: any) => c.kind === 'image')
-      .slice(0, 4)
+      .slice(0, 6)
       .map(async (c: any) => {
         const p = corpus.data.stages
           .get(c.revisionId)
@@ -172,6 +174,8 @@ async function judgeAnswer(
       )
         throw new Error('Invalid judge claim indexes');
       row.judgeAttempts = attempt + 1;
+      row.judgeEvidenceImageCount = images.length;
+      row.judgeVersion = 'source-support-2-all-images';
       return judged;
     } catch (error) {
       failure = error;
@@ -206,11 +210,15 @@ async function worker() {
       if (
         args.includes('--repair-judge') &&
         cached.answer &&
-        !cached.judge &&
+        (!cached.judge ||
+          (cached.answer.citations.filter((c: any) => c.kind === 'image')
+            .length > 4 &&
+            cached.judgeVersion !== 'source-support-2-all-images')) &&
         mode !== 'retrieval'
       ) {
         const corpus = await loadResearchCorpus({ version: cached.snapshot });
         cached.previousJudgeError = cached.error;
+        if (cached.judge) cached.previousJudge = cached.judge;
         try {
           cached.judge = await judgeAnswer(cached, q, corpus, cached.gold);
           delete cached.error;
@@ -278,6 +286,12 @@ async function worker() {
           : null;
         row.validCitations = result.answer.citations.every(
           (c) =>
+            (!c.parts ||
+              c.quote ===
+                spanText(
+                  corpus.data.stages.get(c.revisionId)!.stage,
+                  c.parts,
+                )) &&
             corpus.inspected.has(c.id) &&
             corpus.data.snapshot.admissions.some(
               (a) => a.revisionId === c.revisionId,
