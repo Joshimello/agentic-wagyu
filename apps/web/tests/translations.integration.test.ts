@@ -23,7 +23,7 @@ import {
 } from '../src/lib/server/jobs/translations';
 import { stableId } from '../src/lib/server/contracts/memory';
 
-const enabled = process.env.TRANSLATION_TEST_DATABASE === '1';
+const enabled = process.env.TEST_SUITE === 'translations';
 if (
   enabled &&
   !/^chronicler_translation_test_/.test(

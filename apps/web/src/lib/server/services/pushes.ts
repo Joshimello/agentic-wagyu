@@ -192,7 +192,10 @@ export async function retryPush(id: string) {
       .returning();
     await tx
       .update(chroniclerOutbox)
-      .set({ dispatchedAt: null })
+      .set({
+        dispatchedAt: null,
+        generation: sql`${chroniclerOutbox.generation}+1`,
+      })
       .where(eq(chroniclerOutbox.id, id));
     return retried;
   });

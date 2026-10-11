@@ -1,6 +1,6 @@
 # Researcher worker
 
-Updated: 2026-10-05. Part of the [SvelteKit application plan](../../plan.md). Milestones: M6–M7, with cleanup in M8.
+Updated: 2026-10-11. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Responsibility and trigger
 
@@ -8,17 +8,17 @@ Answer questions using committed research memory and its admitted source evidenc
 
 Researcher is under `apps/web/src/lib/server/agents/researcher`. Its tools are read-only application services using the shared Drizzle/retrieval/storage layer. It can trace sources without running media ingestion or changing research memory. Persisting messages, citations, usage, and run status is application bookkeeping, not agent memory write access.
 
-Run through Bun in the Podman worker container with reserved query capacity. Commit checked retrieval/answer changes in small coherent increments. M8 removes temporary QA/demo harnesses and generated reports while retaining lasting staging-isolation, snapshot, citation, and read-only-access tests; keep maintained quality evaluations separate from release images.
+Run through Bun in the Podman worker container with reserved query capacity. Commit checked retrieval/answer changes in small coherent increments. Retain lasting staging-isolation, snapshot, citation and read-only-access tests; keep maintained quality evaluations outside release images.
 
-Use `pro6000/qwen38-flash-next` through the environment-configured OpenAI-compatible gateway for development answers. Basic tool/result round trips and streaming passed; full agent SDK behavior and answer quality remain integration/evaluation work.
+Use `pro6000/qwen38-flash-next` through the environment-configured OpenAI-compatible gateway for development answers. The bounded Chat Completions tool loop is implemented with the pinned SDK. The UI polls durable run progress; token streaming is not required for this version. Semantic quality is evaluated separately from citation and scope validity.
 
 ## Summary-first retrieval direction (2026-10-07)
 
 Start with continuing project/topic or source summaries, then open relevant segment summaries and the exact transcript/page/slide evidence only as needed. Search must include underlying admitted text so omitted summary details remain discoverable. Shared segment identities connect topic and source views without duplicating evidence. Pin one memory snapshot for the entire research run, and follow the exact child-version references from each overview; newer pushes must not change earlier reads.
 
-Available read-only application endpoints are `/api/memory/organized`, `/api/memory/organized/search?q=...&projectId=...&knownVersion=...`, and `/api/memory/nodes/:id?knownVersion=...&versionId=...`. The node response exposes pinned children, summary history and original evidence for a segment. Future Researcher tools wrap these services with application-injected snapshot/project scope and bounded evidence access. Typed assertion/history tools below may supplement retrieval when old accepted assertions are relevant; they are no longer the mandatory entry point.
+Available read-only application endpoints are `/api/memory/organized`, `/api/memory/organized/search?q=...&projectId=...&knownVersion=...`, and `/api/memory/nodes/:id?knownVersion=...&versionId=...`. The node response exposes pinned children, summary history and original evidence for a segment. Researcher loads one frozen corpus from these application services, with application-selected snapshot/project/date scope. Model arguments cannot widen it. Typed assertion/entity tools may supplement this later; summary-first source evidence is the implemented entry point.
 
-Summaries guide discovery. Answer citations must point to exact admitted source evidence rather than citing generated overview prose as independent support. Keep disagreements/unknown dates visible, and distinguish source-reported results from the Researcher's inference. Answer generation, conversations and quality evaluation remain future work.
+Summaries guide discovery. Answer citations must point to exact admitted source evidence rather than citing generated overview prose as independent support. Keep disagreements/unknown dates visible, and distinguish source-reported results from the Researcher's inference. Independent questions, saved cited answers, and a maintained corpus evaluation are implemented. Historical summary snapshots are supported; legacy typed-only snapshots before summary organization remain in the assertion comparison viewer and do not yet have a Researcher fallback adapter. Multi-turn conversation context is not an evidence source.
 
 ## Query contract and scope
 
@@ -31,22 +31,22 @@ Unpushed staging is excluded even though its records share the database. New unp
 ## Tools
 
 ```text
-searchMemory(query, filters, limit)
-getProjectState(projectId, effectiveAt?)
-getEntityContext(entityId, effectiveAt?)
-getChanges(projectId, from, to, timeAxis)
-getStatementHistory(statementId)
-getEvidence(primitiveIds)
-openSourceContext(evidenceId, boundedRangeOrRegion?)
+searchMemory(query, limit)
+openNode(nodeId, offset, versionId?)
+openSegment(nodeId, offset, versionId?)
+inspectImage(citationId)
+getHistory(nodeId)
+getChanges(fromVersion, toVersion)
+listSources(offset)
 ```
 
 Snapshot/project/known-time access constraints are injected by application context and cannot be widened by model arguments. Validate requested IDs and bounds against completed push membership.
 
-Use structured queries for assignments/decisions/open questions, temporal events for changes, lexical/vector retrieval for similar problems, and bounded relations for rationale. Begin with exact pgvector search plus PostgreSQL full-text retrieval and rank fusion; approximate indexes can follow measured need. [pgvector documentation](https://github.com/pgvector/pgvector).
+Use project/topic/source relationships for structured navigation, exact child-version pins for history, and lexical ranking for discovery. Two channels rank summaries/title/keywords and full original text, using IDF-weighted matching and reciprocal rank fusion. Traditional/Simplified Chinese query normalization and Han bigrams support transcripts without whitespace. The configured model gateway's embeddings endpoint returned 404, so pgvector indexing is deferred rather than silently substituting an untested embedding service. The existing database extension remains available for a future measured adapter. Tool outputs disclose incomplete/paginated coverage.
 
 For visual evidence, search source-linked text/metadata/annotations and then load actual frame/slide/page primitives. A text embedding model does not itself provide image embeddings. Fetch readable regions for numeric/diagram claims; abstain if evidence is unreadable.
 
-Suggested initial budgets: 20 candidates per retrieval channel, up to 12 text evidence units plus a separate image budget, two relationship hops, and a bounded total tool-call/token count. These are tuning values. Structured enumerations must paginate or disclose truncation. Test lexical segmentation on actual corpus languages.
+Implemented limits: 20 search candidates, 20 child overviews per page, five original text chunks per read, 42,000 original text characters, six images / 12 MB image bytes, 24 tool calls, ten retrieval rounds and a 12-minute run deadline. Overview snippets are capped at 900 characters. A 100,000-character context threshold requests a final limited answer, rather than failing from navigation growth. These are tuning values. Structured enumerations must paginate or disclose truncation. Test lexical segmentation on actual corpus languages.
 
 ## Reasoning and answer contract
 
@@ -69,3 +69,16 @@ Use approximately 40 questions spanning project goals, decisions, assignments, o
 Strict gates: 100% valid in-scope citation IDs; zero unpushed-source leakage; no memory mutation; all critical temporal/conflict questions correct. Proposed quality goals: evidence recall@10 ≥90%, fully correct answers ≥85%, and ≥95% of factual claims supported by cited evidence. Human review is the final semantic-support gate; a model judge may assist.
 
 Reserve at least two sources/ten questions as holdout where feasible. Report counts and three-run model variability, query latency, and usage. Compare against fragment-only retrieval using the same generation model. Recovery tests cover cancellation, duplicate delivery, server/worker restart, and source/index unavailability without publishing unsupported answers.
+
+
+## Saved runs and operations
+
+`POST /api/research` accepts `question`, `idempotencyKey`, optional `projectId`, `knownVersion` or `knownAt`, and `effectiveAt` (date). The application captures the actual snapshot at creation, before queuing. `GET /api/research/:id` returns saved progress/answer; POST with `action: retry` or `cancel` controls that run. Retry preserves the original question/scope and increments a durable delivery generation. This prevents canceled-before-claim jobs from stranding a retry behind an already completed queue ID. Session locks serialize duplicate deliveries and release after a process exit. Attempt-conditional updates prevent canceled/replaced work from publishing an answer.
+
+Consecutive speech turns form readable spans (up to 60 utterances / roughly 2,400 characters), preserving the original per-utterance text offsets, speaker labels and start/end times. Five spans per read give the model meaningful context; document chunks retain their original primitive ranges. Citation viewers reconstruct the exact saved span from the admitted revision.
+
+Original evidence gets short run-local citation labels (`E1`, `E2`, ...). Stored citations retain the full revision ID, primitive ID, node/version IDs, exact text range or image locator, historical flag and snapshot-bound URL. The model may cite only evidence actually read; listing an image alone does not count as visual inspection. Invalid answer JSON/citations receive bounded repair with an explicit inspected-evidence inventory. Invalid final answers are withheld. After two discovery calls with segment candidates, the next tool selection is restricted to original segment reading so repeated summary searches cannot consume the entire context before source inspection. Requested files absent from the complete scoped catalog are reported as unavailable, without substituting similar files. Failed runs retain bounded tool traces, usage and model/prompt provenance for diagnosis.
+
+A source containing multiple project discussions exposes only authorized segment children and masks aggregate source prose/keywords when project scoped. Date-filtered queries also mask aggregate prose and exclude unknown/future source dates. Direct node/history/image calls obey the same frozen scope as search. The Researcher never follows the current staging revision pointer.
+
+Run `./infra/test.sh integration` against disposable database/storage for the durable queue/SDK/history/cancellation/isolation checks; unit checks live in `research.test.ts`, browser workflow in `research.spec.ts`, and real questions in `evals/researcher/questions.json`. The release image excludes tests, tools, evaluation data and reports.

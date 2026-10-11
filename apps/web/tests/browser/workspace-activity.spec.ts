@@ -243,6 +243,15 @@ test('workspace header stays fixed while content scrolls below it across navigat
   await nav.getByRole('link', { name: 'Memory', exact: true }).click();
   await expect(page).toHaveURL(/\/memory$/);
   expect(await nav.boundingBox()).toEqual(before);
+  await nav.getByRole('link', { name: 'Ask', exact: true }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Ask your research memory',
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(await nav.boundingBox()).toEqual(before);
+  await nav.getByRole('link', { name: 'Memory', exact: true }).click();
   const geometry = await page.evaluate(() => {
     const header = document
       .querySelector('.workspace-header')!

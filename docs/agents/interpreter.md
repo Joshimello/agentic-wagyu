@@ -1,6 +1,6 @@
 # Interpreter worker
 
-Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md). Milestones: M0–M3, recovery in M7, and cleanup in M8.
+Updated: 2026-10-11. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Responsibility and boundary
 
@@ -8,7 +8,7 @@ Automatically process uploaded files into reviewable staging revisions. Own sour
 
 Input: upload ID, immutable asset identity, interpretation configuration, and requested processing version. Output: a validated staging revision with primitives, metadata, relationships, coverage, and provenance. There is no automatic Chronicler dispatch on completion.
 
-Run the TypeScript worker with Bun in its Podman container. Keep MOSS, Python, FFmpeg, renderers, and GPU dependencies in the media container, with selected-GPU CDI access and persistent caches. Execute relevant checks in containers and commit coherent implementation increments. M8 removes temporary extraction demos/harnesses and generated reports while retaining source-fidelity/timing regression coverage and required provenance.
+Run the TypeScript worker with Bun in its Podman container. Keep MOSS, Python, FFmpeg, renderers, and GPU dependencies in the media container, with selected-GPU CDI access and persistent caches. Execute relevant checks in containers and commit coherent implementation increments. Keep source-fidelity/timing regression coverage and required provenance; development evaluations remain outside runtime images.
 
 Use the environment-configured OpenAI-compatible endpoint and `pro6000/qwen38-flash-next` for development visual interpretation. The basic image-input check passed; contact-sheet readability and diagram accuracy still need the representative evaluations below.
 
@@ -74,7 +74,7 @@ Each unit records one-based source number, text IDs, render ID, dimensions, hidd
 
 `document-review-2-en` sends every slide/PDF page to Qwen in batches of four, with at most two concurrent model requests. PDF interpretation uses page images rather than native text; PPTX native text/notes supplement its slide images. Embedded media is reviewed separately; exact decoded-image repeats share one model decision with separate artifact/evidence links. Standalone logos, classification stamps and decoration receive a structured skip reason rather than prose, are excluded from summary media observations, and appear in a collapsed source list. Substantive or uncertain images and all videos remain eligible for descriptions; figures containing a stamp/logo are not boilerplate. Raw assets and exported files remain intact. Short English labels/descriptions feed a plain whole-document summary that cites reviewed unit evidence. Generated descriptions are `document.review` observations, never native text or accepted memory. Chinese quotations/names receive one OpenCC pass. Coverage records actual successful unit descriptions and media decisions (content labels or explicit boilerplate exclusions); invalid/missing responses receive two attempts, then visible warnings. Checkpoints key on raw source, model/prompt, stable refs, text context and image hashes; replay remaps validated results to the current evidence IDs. Source-text corrections clear outdated review; description-only revisits preserve corrections, raw media and immutable history. Markdown/JSON/ZIP expose the hierarchy, sources and provenance; ZIP includes extracted embedded originals and a standalone plain summary.
 
-Docling native backends were compared on all eight supplied documents in a separate frozen environment. They preserve the same unit/note counts and provide richer picture/table structure. Retain the smaller adapters for this milestone; revisit Docling when structured tables/crops are needed. Keep private formats behind the app's staging contract. [Docling document model](https://docling-project.github.io/docling/concepts/docling_document/), [LibreOffice conversion](https://help.libreoffice.org/latest/en-US/text/shared/guide/convertfilters.html).
+Docling native backends were compared on all eight supplied documents in a separate frozen environment. They preserve the same unit/note counts and provide richer picture/table structure. Use the smaller adapters; revisit Docling when structured tables/crops are needed. Keep private formats behind the app's staging contract. [Docling document model](https://docling-project.github.io/docling/concepts/docling_document/), [LibreOffice conversion](https://help.libreoffice.org/latest/en-US/text/shared/guide/convertfilters.html).
 
 ## Review, failure, and evaluation
 
@@ -82,4 +82,4 @@ The common SvelteKit staging viewer presents source, transcript/text, visual pri
 
 Checkpoints isolate ASR, frames, VLM work, and export. A crash/retry cannot duplicate publication. Source edits/reprocessing never alter an in-flight push's pinned revision. Media byte/duration/disk limits are independent from text/PDF limits.
 
-Freeze corpus-appropriate CER/WER and speaker-error thresholds in M0. Proposed timing target: 95% of reviewed ASR boundaries within 1 second. Validate frame decoding separately against a synthetic timestamped video. Proposed visual-link targets: ≥90% precision and ≥80% relevant-reference recall on at least 20 labeled examples, including negative cases. Numeric chart claims require readable evidence. Record coverage, runtime, VRAM, and cost rather than inferring quality from successful completion.
+Freeze corpus-appropriate CER/WER and speaker-error thresholds before scoring human annotations. Proposed timing target: 95% of reviewed ASR boundaries within 1 second. Validate frame decoding separately using temporary transforms of real footage with known presentation times. Proposed visual-link targets: ≥90% precision and ≥80% relevant-reference recall on at least 20 labeled examples, including negative cases. Numeric chart claims require readable evidence. Record coverage, runtime, VRAM, and cost rather than inferring quality from successful completion.

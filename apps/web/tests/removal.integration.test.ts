@@ -47,13 +47,19 @@ import { assetPath } from '../src/lib/server/storage';
 import type { Stage } from '../src/lib/server/contracts';
 import type { llmClient } from '../src/lib/server/llm/client';
 
-const enabled = process.env.REMOVAL_TEST_DATABASE === '1';
+const enabled =
+  process.env.REMOVAL_TEST_DATABASE === '1' ||
+  process.env.TEST_SUITE === 'removal';
 if (
   enabled &&
   (!/^chronicler_removal_test_/.test(
     new URL(process.env.DATABASE_URL!).pathname.slice(1),
   ) ||
-    !process.env.DATA_ROOT?.startsWith('/tmp/chronicler-removal'))
+    !(
+      process.env.DATA_ROOT?.startsWith('/tmp/chronicler-removal') ||
+      (process.env.TEST_SUITE === 'removal' &&
+        process.env.DATA_ROOT?.startsWith('/data/tests/'))
+    ))
 )
   throw new Error(
     'Removal tests require their isolated database and temporary storage',

@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../../db/client';
 import { revisions, summaryJobs, uploads } from '../../db/schema';
 import { watchJob } from '../../jobs/control';
+import { currentOperation, withOperation } from '../../jobs/operation';
 import { llmClient } from '../../llm/client';
 import { traditionalChinese } from '../../text-normalization';
 import {
@@ -28,6 +29,16 @@ export async function summarizeMeeting(
   summaryId: string,
   options: Options = {},
 ) {
+  return withOperation(
+    { kind: 'summary', id: summaryId, signal: options.signal },
+    () =>
+      summarizeLeased(summaryId, {
+        ...options,
+        signal: currentOperation()?.signal,
+      }),
+  );
+}
+async function summarizeLeased(summaryId: string, options: Options) {
   const connection = await sqlClient.reserve();
   let locked = false;
   let control: ReturnType<typeof watchJob> | undefined;

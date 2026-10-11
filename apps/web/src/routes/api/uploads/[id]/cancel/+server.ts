@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { id } from '../../../../../lib/server/contracts';
-import { cancelUploadRun } from '../../../../../lib/server/services/uploads';
+import {
+  cancelUpload,
+  cancelUploadRun,
+} from '../../../../../lib/server/services/uploads';
 
 export async function POST({
   params,
@@ -10,10 +13,10 @@ export async function POST({
   request: Request;
 }) {
   try {
-    const { runId } = z
-      .object({ runId: id })
-      .strict()
-      .parse(await request.json());
+    const text = await request.text();
+    if (!text.trim())
+      return Response.json({ run: await cancelUpload(id.parse(params.id)) });
+    const { runId } = z.object({ runId: id }).strict().parse(JSON.parse(text));
     return Response.json({
       run: await cancelUploadRun(id.parse(params.id), runId),
     });

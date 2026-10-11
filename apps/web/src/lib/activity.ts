@@ -1,6 +1,12 @@
 export type ActivityTask = {
   id: string;
-  kind: 'upload' | 'interpretation' | 'push' | 'translation' | 'summary';
+  kind:
+    | 'upload'
+    | 'interpretation'
+    | 'push'
+    | 'translation'
+    | 'summary'
+    | 'research';
   generation: number;
   uploadId?: string;
   title: string;

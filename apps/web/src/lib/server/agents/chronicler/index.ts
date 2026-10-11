@@ -1,5 +1,6 @@
 import { eq, sql, and, ne } from 'drizzle-orm';
 import { db, sqlClient } from '../../db/client';
+import { currentOperation, withOperation } from '../../jobs/operation';
 import { pushBatches, revisions } from '../../db/schema';
 import {
   watchJob,
@@ -18,6 +19,23 @@ export async function chronicle(
     signal?: AbortSignal;
     generation?: number;
   } = {},
+) {
+  return withOperation(
+    { kind: 'chronicle', id: pushId, signal: options.signal },
+    () =>
+      chronicleLeased(pushId, {
+        ...options,
+        signal: currentOperation()?.signal,
+      }),
+  );
+}
+async function chronicleLeased(
+  pushId: string,
+  options: {
+    buildPlan?: typeof buildMemoryPlan;
+    signal?: AbortSignal;
+    generation?: number;
+  },
 ) {
   const connection = await sqlClient.reserve();
   let locked = false;

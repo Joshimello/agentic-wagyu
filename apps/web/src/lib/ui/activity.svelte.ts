@@ -1,9 +1,5 @@
 import { getContext } from 'svelte';
-import {
-  activeTask,
-  taskKey,
-  type ActivityTask,
-} from '../activity';
+import { activeTask, taskKey, type ActivityTask } from '../activity';
 export const activityContext = Symbol('workspace-activity');
 export type ActivityState = ReturnType<typeof createActivity>;
 export const useActivity = () => getContext<ActivityState>(activityContext);
@@ -66,19 +62,23 @@ export function createActivity() {
     actionError = '';
     if (task.kind === 'upload') aborters.get(task.id)?.();
     const endpoint =
-      task.kind === 'push'
-        ? `/api/pushes/${task.id}/cancel`
-        : task.kind === 'upload'
-          ? `/api/upload-sessions/${task.id}/cancel`
-          : `/api/uploads/${task.uploadId}/${task.kind === 'interpretation' ? 'cancel' : task.kind === 'translation' ? 'translations/cancel' : 'summary/cancel'}`;
+      task.kind === 'research'
+        ? `/api/research/${task.id}`
+        : task.kind === 'push'
+          ? `/api/pushes/${task.id}/cancel`
+          : task.kind === 'upload'
+            ? `/api/upload-sessions/${task.id}/cancel`
+            : `/api/uploads/${task.uploadId}/${task.kind === 'interpretation' ? 'cancel' : task.kind === 'translation' ? 'translations/cancel' : 'summary/cancel'}`;
     const body =
-      task.kind === 'interpretation'
-        ? { runId: task.id }
-        : task.kind === 'translation'
-          ? { translationId: task.id }
-          : task.kind === 'summary'
-            ? { summaryId: task.id, generation: task.generation }
-            : undefined;
+      task.kind === 'research'
+        ? { action: 'cancel', generation: task.generation }
+        : task.kind === 'interpretation'
+          ? { runId: task.id }
+          : task.kind === 'translation'
+            ? { translationId: task.id }
+            : task.kind === 'summary'
+              ? { summaryId: task.id, generation: task.generation }
+              : undefined;
     try {
       const response = await fetch(endpoint, {
         method: 'POST',

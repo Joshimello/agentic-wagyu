@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     sveltekit({
       adapter: adapter(),
-      paths: { origin: 'http://localhost:5173' },
+      paths: { origin: process.env.APP_ORIGIN ?? 'http://localhost:5173' },
     }),
   ],
   server: { host: '0.0.0.0', port: 5173, strictPort: true },

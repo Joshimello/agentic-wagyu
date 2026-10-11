@@ -12,6 +12,21 @@ import {
 import type { Stage } from '../contracts';
 const createdAt = () =>
   timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+export const modelRequests = pgTable('model_requests', {
+  id: uuid('id').primaryKey(),
+  operationKind: text('operation_kind').notNull(),
+  operationId: text('operation_id').notNull(),
+  model: text('model').notNull(),
+  requestHash: text('request_hash').notNull(),
+  state: text('state').notNull().default('reserved'),
+  estimatedInput: integer('estimated_input').notNull(),
+  reservedOutput: integer('reserved_output').notNull(),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  costUsd: text('cost_usd'),
+  elapsedMs: integer('elapsed_ms'),
+  createdAt: createdAt(),
+});
 export const assets = pgTable('assets', {
   id: uuid('id').primaryKey(),
   sha256: text('sha256').notNull().unique(),
@@ -137,6 +152,7 @@ export const chroniclerOutbox = pgTable('chronicler_outbox', {
   id: uuid('id')
     .primaryKey()
     .references(() => pushBatches.id),
+  generation: integer('generation').notNull().default(0),
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
@@ -260,6 +276,47 @@ export const memoryNodeVersions = pgTable('memory_node_versions', {
       Omit<import('../contracts/organization').NodeVersion, 'commitVersion'>
     >()
     .notNull(),
+});
+
+export const researchRuns = pgTable('research_runs', {
+  id: uuid('id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  input: jsonb('input')
+    .$type<import('../contracts/research').ResearchInput>()
+    .notNull(),
+  scope: jsonb('scope')
+    .$type<import('../contracts/research').ResearchScope>()
+    .notNull(),
+  state: text('state').notNull().default('queued'),
+  progress: text('progress').notNull().default('Waiting for Researcher'),
+  attempts: integer('attempts').notNull().default(0),
+  error: text('error'),
+  answer:
+    jsonb('answer').$type<import('../contracts/research').ResearchAnswer>(),
+  trace: jsonb('trace')
+    .$type<import('../contracts/research').ResearchTrace[]>()
+    .notNull()
+    .default([]),
+  usage: jsonb('usage').$type<{
+    inputTokens: number;
+    outputTokens: number;
+    calls: number;
+    elapsedMs: number;
+  }>(),
+  model: text('model'),
+  promptVersion: text('prompt_version'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+export const researchOutbox = pgTable('research_outbox', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => researchRuns.id),
+  generation: integer('generation').notNull().default(0),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  createdAt: createdAt(),
 });
 
 // Translations are derivative caches of immutable evidence, never corrections.

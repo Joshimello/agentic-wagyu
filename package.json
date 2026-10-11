@@ -7,25 +7,27 @@
     "apps/web"
   ],
   "scripts": {
-    "test:contracts": "bun test apps/web/tests/contracts.test.ts",
     "check": "bun run --cwd apps/web check",
     "build": "bun run --cwd apps/web build",
-    "test": "bun test apps/web/tests/*.test.ts",
-    "test:foundation": "bun test apps/web/tests/persistence.test.ts",
-    "test:llm:live": "bun apps/web/tests/llm-live.ts",
-    "eval:interpreter:video": "bun apps/web/tests/video-live.ts",
-    "import:recordings": "bun apps/web/tools/import-recordings.ts",
-    "format": "bunx --bun prettier --write apps/web/src apps/web/workers apps/web/tests",
-    "import:documents": "bun apps/web/tools/import-documents.ts",
-    "eval:interpreter:documents": "bun apps/web/tests/documents-live.ts",
-    "eval:chronicler:weekly": "bun apps/web/tools/push-weekly.ts",
+    "test": "bun apps/web/tests/run.ts unit",
+    "test:integration": "bun apps/web/tests/run.ts integration",
+    "test:e2e": "bun run --cwd apps/web test:browser",
+    "test:workflow": "bun evals/lifecycle/run.ts",
+    "eval:interpreter:video": "bun evals/interpreter/video.ts",
+    "eval:interpreter:documents": "bun evals/interpreter/documents.ts",
+    "eval:organization": "bun evals/organization/run.ts",
     "eval:memory:integrity": "bun apps/web/tools/check-memory.ts",
-    "eval:chronicler:organized": "bun apps/web/tools/organize-weekly.ts"
+    "eval:researcher": "bun evals/researcher/run.ts",
+    "import:recordings": "bun evals/interpreter/import-recordings.ts",
+    "import:documents": "bun evals/interpreter/import-documents.ts",
+    "format": "prettier --write apps/web/src apps/web/workers apps/web/tests apps/web/tools evals --ignore-path .gitignore"
   },
   "dependencies": {
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "drizzle-orm": "0.45.3",
+    "fflate": "0.8.2",
     "prettier": "3.9.9",
     "prettier-plugin-svelte": "4.1.1"
   }

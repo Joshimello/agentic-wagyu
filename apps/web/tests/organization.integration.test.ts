@@ -29,7 +29,7 @@ import {
   StaleMemory,
 } from '../src/lib/server/agents/chronicler/publication';
 import type { Stage } from '../src/lib/server/contracts';
-const enabled = process.env.ORGANIZATION_TEST === 'true',
+const enabled = process.env.TEST_SUITE === 'organization',
   check = test.skipIf(!enabled);
 afterAll(async () => {
   if (enabled) await sqlClient.end();

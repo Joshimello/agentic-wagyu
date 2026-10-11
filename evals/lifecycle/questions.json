@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "referenceStatus": "Frozen before the M7 live run. These two documents were used in Interpreter development, but were not admitted to Chronicler/Researcher memory before this pilot. Whole-source relevance groups are a coarse retrieval proxy; semantic answers require independent human scoring. The same gateway model provides automated judgments. This is not a completely unseen corpus.",
+  "questions": [
+    {
+      "id": "l01",
+      "question": "According to ITRI_VLM_Midterm_Report.pdf, what is the research goal and proposed technical approach? Cite the report.",
+      "gold": [{ "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }],
+      "holdout": true
+    },
+    {
+      "id": "l02",
+      "question": "What progress and remaining work are documented in ITRI_VLM_Midterm_Report.pdf? Separate completed results from future work.",
+      "gold": [{ "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }],
+      "holdout": true
+    },
+    {
+      "id": "l03",
+      "question": "Which models, systems, or baselines are compared in ITRI_VLM_Midterm_Report.pdf, and what conclusions are actually supported?",
+      "gold": [{ "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }],
+      "holdout": true
+    },
+    {
+      "id": "l04",
+      "question": "What evaluation method or experimental setup does ITRI_VLM_Midterm_Report.pdf specify? If details are missing, say so.",
+      "gold": [{ "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }],
+      "holdout": true
+    },
+    {
+      "id": "l05",
+      "question": "What is the project scope and intended deliverable in 115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx?",
+      "gold": [
+        {
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "title": ".*"
+        }
+      ],
+      "holdout": true
+    },
+    {
+      "id": "l06",
+      "question": "What technical pipeline is proposed for VLM-based target selection and semantic annotation in the subcontract presentation? Cite original slides.",
+      "gold": [
+        {
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "title": ".*"
+        }
+      ],
+      "holdout": true
+    },
+    {
+      "id": "l07",
+      "question": "Which applications or target scenarios are described in the subcontract presentation, and what constraints are stated?",
+      "gold": [
+        {
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "title": ".*"
+        }
+      ],
+      "holdout": true
+    },
+    {
+      "id": "l08",
+      "question": "Compare the subcontract presentation's proposed work with progress reported in the midterm PDF. Distinguish a proposed capability from demonstrated evidence.",
+      "gold": [
+        {
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "title": ".*"
+        },
+        { "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }
+      ],
+      "holdout": true,
+      "critical": true
+    },
+    {
+      "id": "l09",
+      "question": "What is the confirmed production deployment date and signed customer acceptance result for this VLM project?",
+      "absent": true,
+      "holdout": true,
+      "critical": true
+    },
+    {
+      "id": "l10",
+      "question": "What was the final actual GPU electricity bill for this project's production deployment?",
+      "absent": true,
+      "holdout": true,
+      "critical": true
+    }
+  ]
+}

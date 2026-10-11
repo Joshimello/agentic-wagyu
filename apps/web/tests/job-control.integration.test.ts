@@ -35,7 +35,9 @@ import { outbox, translationOutbox } from '../src/lib/server/db/schema';
 import type { PgBoss } from 'pg-boss';
 import type { llmClient } from '../src/lib/server/llm/client';
 
-const enabled = process.env.CONTROL_TEST_DATABASE === '1';
+const enabled =
+  process.env.CONTROL_TEST_DATABASE === '1' ||
+  process.env.TEST_SUITE === 'job-control';
 if (
   enabled &&
   !/^chronicler_control_test_/.test(

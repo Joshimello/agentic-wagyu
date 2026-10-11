@@ -8,12 +8,14 @@ import {
   translationJobs,
   summaryJobs,
   uploadSessions,
+  researchRuns,
+  researchOutbox,
 } from '../db/schema';
 import type { ActivityTask } from '../../activity';
 
 export async function listActivity(): Promise<ActivityTask[]> {
   const since = new Date(Date.now() - 15 * 60 * 1000);
-  const [sourceRows, pushes, translations, summaries, transfers] =
+  const [sourceRows, pushes, translations, summaries, transfers, research] =
     await Promise.all([
       db
         .select({
@@ -135,6 +137,17 @@ export async function listActivity(): Promise<ActivityTask[]> {
           ),
         )
         .orderBy(desc(uploadSessions.updatedAt)),
+      db
+        .select({ run: researchRuns, generation: researchOutbox.generation })
+        .from(researchRuns)
+        .innerJoin(researchOutbox, eq(researchRuns.id, researchOutbox.id))
+        .where(
+          or(
+            inArray(researchRuns.state, ['queued', 'processing']),
+            gte(researchRuns.updatedAt, since),
+          ),
+        )
+        .orderBy(desc(researchRuns.updatedAt)),
     ]);
   const pushUploadIds = [
     ...new Set(
@@ -151,6 +164,18 @@ export async function listActivity(): Promise<ActivityTask[]> {
     pushSources.map((source) => [source.id, source.filename]),
   );
   const tasks: ActivityTask[] = [];
+  for (const { run, generation } of research)
+    tasks.push({
+      id: run.id,
+      kind: 'research',
+      generation,
+      title: run.input.question,
+      operation: 'Research question',
+      state: run.state,
+      percent: run.state === 'completed' ? 100 : null,
+      phase: run.progress,
+      href: `/ask/${run.id}`,
+    });
   for (const row of sourceRows) {
     const run = row.interpretation_runs,
       source = row.uploads;

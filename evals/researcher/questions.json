@@ -1,0 +1,450 @@
+{
+  "version": 1,
+  "referenceStatus": "Developer-authored source/segment relevance checks; semantic answers require human scoring. Holdout is for this Researcher implementation only; all sources were used in earlier ingestion development.",
+  "questions": [
+    {
+      "id": "p01",
+      "question": "According to 260629_VLM.pptx, what is the input and output of Prompt-to-Path Planning?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Task Definition"
+        }
+      ]
+    },
+    {
+      "id": "p02",
+      "question": "In 260629_VLM.pptx, what roles do GPT, Molmo, TSP, and A* play in the related UAV-VLPA* pipeline?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "UAV-VLPA"
+        }
+      ]
+    },
+    {
+      "id": "p03",
+      "question": "According to 260629_VLM.pptx, what are the three components of the OVerSeeC costmap generation system?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "OVerSeeC"
+        }
+      ]
+    },
+    {
+      "id": "p04",
+      "question": "Which three experimental environments appear in 260629_VLM.pptx?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Experimental Environments"
+        }
+      ]
+    },
+    {
+      "id": "p05",
+      "question": "How do OVerSeeC-oriented and UAV-VLPA-oriented prompts differ in 260629_VLM.pptx?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Prompt Comparison"
+        }
+      ]
+    },
+    {
+      "id": "p06",
+      "question": "What does Molmo identify for the UAV-VLPA* system in 260629_VLM.pptx?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Molmo"
+        }
+      ]
+    },
+    {
+      "id": "p07",
+      "question": "In 260720_VLM.pptx, what are the three failure categories for prompt-to-path planning?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Failure Case"
+        }
+      ]
+    },
+    {
+      "id": "p08",
+      "question": "According to 260720_VLM.pptx, what were the four preliminary experiment capabilities, and which was weakest?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Point Localization|Preliminary"
+        }
+      ]
+    },
+    {
+      "id": "p09",
+      "question": "In 260720_VLM.pptx, what was the experimental setup: scenes, prompts per scene, repeats, and tested model?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Preliminary Experiment Setup"
+        }
+      ]
+    },
+    {
+      "id": "p10",
+      "question": "How did 260720_VLM.pptx frame an agentic VLM system differently from a single prediction?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Research Hypothesis: Agentic"
+        }
+      ]
+    },
+    {
+      "id": "p11",
+      "question": "In 260720_VLM.pptx, why can a weighted costmap fail to express a mission like circling or visiting in order?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Failure Case"
+        }
+      ]
+    },
+    {
+      "id": "p12",
+      "question": "What example exposed a route-verification failure in 260720_VLM.pptx?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Route Verification"
+        }
+      ]
+    },
+    {
+      "id": "m01",
+      "question": "In the recording labeled 2026-09-08, what problems and criticisms were reported for MoGe V3 fine-tuning?",
+      "gold": [
+        {
+          "source": "2026-09-08.mp4",
+          "title": "MoGe"
+        }
+      ]
+    },
+    {
+      "id": "m02",
+      "question": "What did the recording labeled 2026-09-08 say about an EXE and web demo deliverable?",
+      "gold": [
+        {
+          "source": "2026-09-08.mp4",
+          "title": "Company Deliverable"
+        }
+      ]
+    },
+    {
+      "id": "m03",
+      "question": "In the recording labeled 2026-09-08, what was the proposed reasoning for novel-view sampling and uncertainty estimation?",
+      "gold": [
+        {
+          "source": "2026-09-08.mp4",
+          "title": "Novel View Sampling"
+        }
+      ]
+    },
+    {
+      "id": "m04",
+      "question": "What was discussed about sky masking in the recording labeled 2026-09-08?",
+      "gold": [
+        {
+          "source": "2026-09-08.mp4",
+          "title": "Sky Masking"
+        }
+      ]
+    },
+    {
+      "id": "m05",
+      "question": "In the recording labeled 2026-09-15, what data format and pipeline were requested for scene repair?",
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Scene Repair Data Format"
+        }
+      ]
+    },
+    {
+      "id": "m06",
+      "question": "What reference selection strategy and experimental results were discussed in the recording labeled 2026-09-15?",
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Reference Strategy|Reference Selection"
+        }
+      ]
+    },
+    {
+      "id": "m07",
+      "question": "Why was temporal consistency difficult for Defix in the recording labeled 2026-09-15?",
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Inconsistency|Distortion|Consistency"
+        }
+      ]
+    },
+    {
+      "id": "m08",
+      "question": "In the recording labeled 2026-09-15, what trade-offs were discussed between TTT and KV cache?",
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "TTT vs KV Cache|TTTLR|Integrating TTT"
+        }
+      ]
+    },
+    {
+      "id": "m09",
+      "question": "What concerns were raised about RoMa warping and source attribution in the recording labeled 2026-09-15?",
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Critique of RoMa|RoMa Warping"
+        }
+      ]
+    },
+    {
+      "id": "x01",
+      "question": "Compare the research focus of the VLM planning decks with the September reconstruction meetings. Are these the same research effort?",
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Research Hypothesis|Task Definition"
+        },
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Pipeline|Scene Repair"
+        }
+      ]
+    },
+    {
+      "id": "x02",
+      "question": "How did the planning work move from related-work pipelines in 260629_VLM.pptx to an agentic hypothesis in 260720_VLM.pptx?",
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Pipeline|Related Work"
+        },
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Research Hypothesis: Agentic"
+        }
+      ]
+    },
+    {
+      "id": "x03",
+      "question": "Compare sky masking concerns in the recordings labeled 2026-09-08 and 2026-09-15. Preserve uncertainty rather than claiming every problem was solved.",
+      "gold": [
+        {
+          "source": "2026-09-08.mp4",
+          "title": "Sky Masking"
+        },
+        {
+          "source": "2026-09-15.mp4",
+          "title": "Sky Masking|RoMa Warping|Background Leakage"
+        }
+      ]
+    },
+    {
+      "id": "a01",
+      "question": "What was the project's exact approved commercial contract budget, in Taiwanese dollars?",
+      "absent": true,
+      "critical": true
+    },
+    {
+      "id": "a02",
+      "question": "What is the confirmed full legal name and employee ID of every speaker in the September meetings?",
+      "absent": true,
+      "critical": true
+    },
+    {
+      "id": "a03",
+      "question": "What exact production deployment date was formally approved for the finished planning system?",
+      "absent": true,
+      "critical": true
+    },
+    {
+      "id": "a04",
+      "question": "Summarize the contents of ITRI_VLM_Midterm_Report.pdf as accepted memory evidence.",
+      "absent": true,
+      "critical": true
+    },
+    {
+      "id": "h01",
+      "question": "At memory snapshot 8, what does the accepted VLM deck evidence say about the path-planning task? Do not use later meeting evidence.",
+      "knownVersion": 8,
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Task Definition"
+        }
+      ],
+      "critical": true
+    },
+    {
+      "id": "h02",
+      "question": "At memory snapshot 0, what results are known about MoGe?",
+      "knownVersion": 0,
+      "absent": true,
+      "critical": true
+    },
+    {
+      "id": "v01",
+      "question": "Inspect the actual OVerSeeC segmentation/costmap slide in 260629_VLM.pptx. What weights are shown for road, water, grass and trees? Cite visual evidence.",
+      "visual": true,
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Segmentation Results|Mission Prompt"
+        }
+      ]
+    },
+    {
+      "id": "v02",
+      "question": "Inspect the actual point-localization results slide in 260720_VLM.pptx. What happens to Acc@50px across the iterative passes? Cite the slide image.",
+      "visual": true,
+      "gold": [
+        {
+          "source": "260720_VLM.pptx",
+          "title": "Point Localization"
+        }
+      ]
+    },
+    {
+      "id": "p13",
+      "question": "In 260804_VLM.pptx, what is the bounded agentic loop supposed to do?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "260804_VLM.pptx",
+          "title": "Bounded Agentic Loop|Agentic Planning Overview"
+        }
+      ]
+    },
+    {
+      "id": "p14",
+      "question": "How does 260804_VLM.pptx use semantic segmentation and SAM 3?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "260804_VLM.pptx",
+          "title": "Semantic Segmentation"
+        }
+      ]
+    },
+    {
+      "id": "p15",
+      "question": "What improvements and limitations are shown by iterative costmap refinement in 260804_VLM.pptx?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "260804_VLM.pptx",
+          "title": "Iterative Refinement|Costmap Experiments"
+        }
+      ]
+    },
+    {
+      "id": "p16",
+      "question": "What tool interfaces or commands are documented in 260804_VLM.pptx?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "260804_VLM.pptx",
+          "title": "System Interface"
+        }
+      ]
+    },
+    {
+      "id": "m10",
+      "question": "In the recording labeled 2026-09-22, why was the base Gaussian Splatting model better than before?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "2026-09-22.mp4",
+          "title": "Base Model Update"
+        }
+      ]
+    },
+    {
+      "id": "m11",
+      "question": "What did the recording labeled 2026-09-22 clarify about source-attribution maps versus actually pasting reference images?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "2026-09-22.mp4",
+          "title": "Clarification of Source Attribution"
+        }
+      ]
+    },
+    {
+      "id": "m12",
+      "question": "In the recording labeled 2026-09-22, why were meeting notes requested and what follow-up was agreed?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "2026-09-22.mp4",
+          "title": "Meeting Notes"
+        }
+      ]
+    },
+    {
+      "id": "m13",
+      "question": "What disagreements remained about Defix versus Artificer consistency and architectural explanations in the recording labeled 2026-09-22?",
+      "holdout": true,
+      "critical": true,
+      "gold": [
+        {
+          "source": "2026-09-22.mp4",
+          "title": "Defix vs. Artificer|Strategic Debate"
+        }
+      ]
+    },
+    {
+      "id": "m14",
+      "question": "What changes to depth datasets and model testing were reported in the recording labeled 2026-09-22?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "2026-09-22.mp4",
+          "title": "Depth Prediction"
+        }
+      ]
+    },
+    {
+      "id": "x04",
+      "question": "Compare the TTT versus KV-cache discussion in recordings labeled 2026-09-15 and 2026-09-22. What direction was favored and what uncertainty remained?",
+      "holdout": true,
+      "gold": [
+        {
+          "source": "2026-09-15.mp4",
+          "title": "TTT|Consistency"
+        },
+        {
+          "source": "2026-09-22.mp4",
+          "title": "TTT|Inconsistency|Consistency"
+        }
+      ]
+    },
+    {
+      "id": "v03",
+      "question": "Inspect the actual example Global Plan on slide 2 of 260629_VLM.pptx. What marker shapes indicate the start and destination? This detail must come from the image, not a generated summary.",
+      "visual": true,
+      "gold": [
+        {
+          "source": "260629_VLM.pptx",
+          "title": "Task Definition"
+        }
+      ],
+      "referenceNote": "Manually inspected source render: start is a black concentric-circle/bullseye marker; destination is a black star. Native slide text does not describe the marker shapes."
+    }
+  ]
+}

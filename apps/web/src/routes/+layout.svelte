@@ -10,19 +10,26 @@
   import ActivityStatus from '../lib/components/ActivityStatus.svelte';
   import { activityContext, createActivity } from '../lib/ui/activity.svelte';
 
-  let { children }: { children: Snippet } = $props();
+  let { children, data }: { children: Snippet; data: { readOnly: boolean } } =
+    $props();
   let content: HTMLElement;
   let scroller: HTMLDivElement;
   let entry: gsap.Context | undefined;
   let memoryActive = $derived(page.url.pathname.startsWith('/memory'));
+  let askActive = $derived(page.url.pathname.startsWith('/ask'));
   setContext(activityContext, createActivity());
   let nav = $state<HTMLElement>();
   let indicator = $state<HTMLSpanElement>();
   let stagingLink = $state<HTMLAnchorElement>();
   let memoryLink = $state<HTMLAnchorElement>();
+  let askLink = $state<HTMLAnchorElement>();
   let indicatorReady = $state(false);
   function positionIndicator(animate = true) {
-    const target = memoryActive ? memoryLink : stagingLink;
+    const target = askActive
+      ? askLink
+      : memoryActive
+        ? memoryLink
+        : stagingLink;
     if (!nav || !indicator || !target) return;
     const bounds = target.getBoundingClientRect(),
       parent = nav.getBoundingClientRect();
@@ -49,6 +56,7 @@
   }
   $effect(() => {
     memoryActive;
+    askActive;
     if (typeof window !== 'undefined')
       void tick().then(() => positionIndicator());
   });
@@ -117,8 +125,8 @@
       <a
         bind:this={stagingLink}
         href="/"
-        class:current={!memoryActive}
-        aria-current={!memoryActive ? 'page' : undefined}
+        class:current={!memoryActive && !askActive}
+        aria-current={!memoryActive && !askActive ? 'page' : undefined}
       >
         <Icon name="folder" size={17} /><span>Staging</span>
       </a>
@@ -130,17 +138,29 @@
       >
         <Icon name="grid" size={17} /><span>Memory</span>
       </a>
+      <a
+        bind:this={askLink}
+        href="/ask"
+        class:current={askActive}
+        aria-current={askActive ? 'page' : undefined}
+      >
+        <Icon name="help" size={17} /><span>Ask</span>
+      </a>
     </nav>
     <ActivityStatus />
   </header>
   <div class="workspace-scroll" bind:this={scroller}>
     <div class="workspace-body">
       <main id="workspace-content" bind:this={content} tabindex="-1">
+        {#if data.readOnly}<p role="status">
+            Restored workspace - inspection only. Uploads, pushes and new
+            questions are disabled until this workspace is resumed.
+          </p>{/if}
         {@render children()}
       </main>
       <footer class="workspace-footer">
         <span>Chronicler</span>
-        <span>Review sources. Build research memory.</span>
+        <a href="/operations">Operations</a>
       </footer>
     </div>
   </div>

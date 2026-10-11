@@ -33,17 +33,97 @@ import { removeUploads } from '../src/lib/server/services/removal';
 import { correctStage } from '../src/lib/server/services/staging';
 import { listActivity } from '../src/lib/server/services/activity';
 import { dispatchSummaries } from '../src/lib/server/jobs/summaries';
+import {
+  createResearch,
+  cancelResearch,
+  retryResearch,
+} from '../src/lib/server/services/research';
+import { recoverInterrupted } from '../src/lib/server/jobs/operation';
 
-const enabled = process.env.ACTIVITY_TEST_DATABASE === '1';
+const enabled =
+  process.env.ACTIVITY_TEST_DATABASE === '1' ||
+  process.env.TEST_SUITE === 'activity';
 if (
   enabled &&
   (!/^chronicler_activity_test_/.test(
     new URL(process.env.DATABASE_URL!).pathname.slice(1),
   ) ||
-    !process.env.DATA_ROOT?.startsWith('/tmp/chronicler-activity'))
+    !(
+      process.env.DATA_ROOT?.startsWith('/tmp/chronicler-activity') ||
+      (process.env.TEST_SUITE === 'activity' &&
+        process.env.DATA_ROOT?.startsWith('/data/tests/'))
+    ))
 )
   throw new Error('Activity tests require isolated database and storage');
 const check = test.skipIf(!enabled);
+
+check(
+  'Researcher questions remain visible in activity across cancel and retry generations',
+  async () => {
+    const run = await createResearch({
+      question: 'What evidence is available?',
+      idempotencyKey: crypto.randomUUID(),
+    });
+    const queued = (await listActivity()).find(
+      (task) => task.kind === 'research' && task.id === run.id,
+    );
+    expect(queued).toMatchObject({
+      title: 'What evidence is available?',
+      state: 'queued',
+      generation: 0,
+      href: `/ask/${run.id}`,
+    });
+    expect(Object.keys(queued!)).not.toContain('trace');
+    await cancelResearch(run.id, 0);
+    expect(
+      (await listActivity()).find((task) => task.id === run.id)?.state,
+    ).toBe('canceled');
+    await retryResearch(run.id);
+    await expect(cancelResearch(run.id, 0)).rejects.toThrow('Question changed');
+    expect(
+      (await listActivity()).find((task) => task.id === run.id),
+    ).toMatchObject({ state: 'queued', generation: 1 });
+  },
+);
+
+check(
+  'interrupted meeting summaries recover with a new generation and retain their checkpoint',
+  async () => {
+    const stage = await fixture();
+    const job = await requestSummary(stage.uploadId, { revisionId: stage.id });
+    const saved = result(
+      new Set(
+        stage.primitives
+          .filter((part) => part.kind === 'text')
+          .map((part) => part.id),
+      ),
+    );
+    await db
+      .update(summaryJobs)
+      .set({ state: 'processing', checkpoint: [saved] })
+      .where(eq(summaryJobs.id, job.id!));
+    await db
+      .update(summaryOutbox)
+      .set({ dispatchedAt: new Date() })
+      .where(eq(summaryOutbox.id, job.id!));
+    await recoverInterrupted(['summary']);
+    const [recovered] = await db
+      .select()
+      .from(summaryJobs)
+      .where(eq(summaryJobs.id, job.id!));
+    expect(recovered.state).toBe('queued');
+    expect(recovered.generation).toBe(job.generation + 1);
+    expect(recovered.checkpoint).toEqual([saved]);
+    expect(
+      (
+        await db
+          .select()
+          .from(summaryOutbox)
+          .where(eq(summaryOutbox.id, job.id!))
+      )[0].dispatchedAt,
+    ).toBeNull();
+  },
+);
 afterAll(async () => {
   if (enabled) await sqlClient.end();
 });
@@ -90,24 +170,20 @@ async function fixture(long = false) {
       promptVersion: null,
     },
   };
-  await db
-    .insert(assets)
-    .values({
-      id: assetId,
-      sha256: crypto.randomUUID(),
-      storageKey: `tests/${assetId}`,
-      mime: 'video/mp4',
-      bytes: 1,
-    });
-  await db
-    .insert(uploads)
-    .values({
-      id: uploadId,
-      assetId,
-      filename: 'research-meeting.mp4',
-      metadata: stage.metadata,
-      currentRevisionId: revisionId,
-    });
+  await db.insert(assets).values({
+    id: assetId,
+    sha256: crypto.randomUUID(),
+    storageKey: `tests/${assetId}`,
+    mime: 'video/mp4',
+    bytes: 1,
+  });
+  await db.insert(uploads).values({
+    id: uploadId,
+    assetId,
+    filename: 'research-meeting.mp4',
+    metadata: stage.metadata,
+    currentRevisionId: revisionId,
+  });
   await db
     .insert(revisions)
     .values({ id: revisionId, uploadId, manifest: stage });

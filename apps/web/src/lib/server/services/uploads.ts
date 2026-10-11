@@ -266,3 +266,14 @@ export async function cancelUploadRun(uploadId: string, runId: string) {
   }
   return run;
 }
+
+export async function cancelUpload(uploadId: string) {
+  const [run] = await db
+    .select()
+    .from(runs)
+    .where(eq(runs.uploadId, uploadId))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  if (!run) throw new Error('Upload has no interpretation run');
+  return cancelUploadRun(uploadId, run.id);
+}

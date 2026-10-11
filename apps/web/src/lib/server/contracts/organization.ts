@@ -110,11 +110,14 @@ export function validatePartition(
       range.lastUnit > last
     )
       throw new Error(
-        'Segments must cover every supplied unit in order without gaps or overlaps',
+        `Segments must cover every supplied unit in order without gaps or overlaps. Expected next firstUnit=${cursor}; received firstUnit=${range.firstUnit}, lastUnit=${range.lastUnit}; allowed final lastUnit=${last}. Use units[].index, not printed page or slide numbers.`,
       );
     cursor = range.lastUnit + 1;
   }
-  if (cursor !== last + 1) throw new Error('Source coverage is incomplete');
+  if (cursor !== last + 1)
+    throw new Error(
+      `Source coverage is incomplete: next required unit is ${cursor}, final required unit is ${last}.`,
+    );
 }
 
 export const scopeResponse = z

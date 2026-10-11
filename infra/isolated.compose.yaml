@@ -1,0 +1,66 @@
+services:
+  database:
+    image: docker.io/pgvector/pgvector:0.8.2-pg17
+    environment: {POSTGRES_USER: chronicler, POSTGRES_PASSWORD: local-only, POSTGRES_DB: chronicler}
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chronicler -d chronicler"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  web:
+    image: "${CHRONICLER_WEB_IMAGE}"
+    command: ["sh", "-c", "bun apps/web/src/lib/server/db/migrate.ts && exec bun apps/web/build"]
+    environment:
+      DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
+      DATA_ROOT: /data
+      MEDIA_URL: http://media:8000
+      PORT: 5173
+      HOST: 0.0.0.0
+      BODY_SIZE_LIMIT: 536870912
+      READ_ONLY_MODE: "${CHRONICLER_READ_ONLY:-0}"
+      LLM_MAX_CALLS_PER_OPERATION: "${LLM_MAX_CALLS_PER_OPERATION:-300}"
+      LLM_MAX_INPUT_TOKENS_PER_OPERATION: "${LLM_MAX_INPUT_TOKENS_PER_OPERATION:-2000000}"
+      LLM_MAX_OUTPUT_TOKENS_PER_OPERATION: "${LLM_MAX_OUTPUT_TOKENS_PER_OPERATION:-200000}"
+      LLM_DAILY_TOKEN_LIMIT: "${LLM_DAILY_TOKEN_LIMIT:-0}"
+    ports: ["127.0.0.1:${CHRONICLER_PORT:-5174}:5173"]
+    volumes: ["evidence:/data"]
+    depends_on: {database: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:5173/api/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  media:
+    image: localhost/chronicler-media:local
+    devices: ["${NVIDIA_CDI_DEVICE:-nvidia.com/gpu=0}"]
+    volumes: ["evidence:/data", "${CHRONICLER_CACHE_MOUNT:-../data/cache}:/cache"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8000/health',timeout=3))['ok']"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  worker:
+    image: "${CHRONICLER_WEB_IMAGE}"
+    command: ["bun", "apps/web/workers/run.ts"]
+    env_file: ["../.env"]
+    environment:
+      DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
+      DATA_ROOT: /data
+      MEDIA_URL: http://media:8000
+    volumes: ["evidence:/data"]
+    stop_grace_period: 45s
+    depends_on: {web: {condition: service_healthy}, media: {condition: service_healthy}}
+  translator:
+    image: "${CHRONICLER_WEB_IMAGE}"
+    command: ["bun", "apps/web/workers/translate.ts"]
+    env_file: ["../.env"]
+    environment:
+      DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
+      DATA_ROOT: /data
+    volumes: ["evidence:/data"]
+    stop_grace_period: 45s
+    depends_on: {web: {condition: service_healthy}}
+volumes:
+  database: {name: "${CHRONICLER_PROJECT}_database"}
+  evidence: {name: "${CHRONICLER_PROJECT}_data"}

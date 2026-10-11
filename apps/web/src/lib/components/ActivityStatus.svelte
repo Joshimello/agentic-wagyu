@@ -1,11 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { useActivity } from '../ui/activity.svelte';
-  import {
-    activeTask,
-    taskKey,
-    type ActivityTask,
-  } from '../activity';
+  import { activeTask, taskKey, type ActivityTask } from '../activity';
   import { popover } from '../ui/motion';
   import Icon from './Icon.svelte';
   import ProgressBar from './ProgressBar.svelte';
@@ -44,6 +40,7 @@
     push: 'folder',
     translation: 'translate',
     summary: 'file',
+    research: 'help',
   };
 </script>
 

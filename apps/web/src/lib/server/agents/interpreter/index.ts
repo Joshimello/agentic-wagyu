@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../../db/client';
+import { currentOperation, withOperation } from '../../jobs/operation';
 import { assets, uploads, runs, revisions } from '../../db/schema';
 import {
   boundedProgress,
@@ -23,6 +24,19 @@ import { enqueueSummary } from '../../services/summaries';
 export async function interpret(
   runId: string,
   options: { signal?: AbortSignal; buildVideo?: typeof buildVideo } = {},
+) {
+  return withOperation(
+    { kind: 'interpret', id: runId, signal: options.signal },
+    () =>
+      interpretLeased(runId, {
+        ...options,
+        signal: currentOperation()?.signal,
+      }),
+  );
+}
+async function interpretLeased(
+  runId: string,
+  options: { signal?: AbortSignal; buildVideo?: typeof buildVideo },
 ) {
   const connection = await sqlClient.reserve();
   let locked = false;
@@ -250,7 +264,8 @@ export async function interpret(
           current.deletedAt ||
           !locked ||
           locked.revisionId ||
-          locked.state !== 'processing'
+          locked.state !== 'processing' ||
+          locked.attempts !== claimed[0].attempts
         )
           return;
         if (current.currentRevisionId === stage.parentRevisionId)
@@ -300,10 +315,16 @@ export async function interpret(
           state: 'failed',
           progress: 'Interpretation failed',
           error:
-            error instanceof Error ? error.message : 'Interpretation failed',
+            'Interpretation failed. Original files and saved progress are retained; retry processing.',
           updatedAt: new Date(),
         })
-        .where(and(eq(runs.id, runId), eq(runs.state, 'processing')));
+        .where(
+          and(
+            eq(runs.id, runId),
+            eq(runs.state, 'processing'),
+            eq(runs.attempts, claimed[0].attempts),
+          ),
+        );
       if (
         (await db.select().from(runs).where(eq(runs.id, runId)))[0]?.state ===
         'canceled'

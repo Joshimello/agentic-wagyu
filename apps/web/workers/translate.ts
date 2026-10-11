@@ -13,9 +13,11 @@ import {
   summaryQueue,
 } from '../src/lib/server/jobs/summaries';
 import { summarizeMeeting } from '../src/lib/server/agents/summary';
+import { recoverInterrupted } from '../src/lib/server/jobs/operation';
 
 const boss = await startTranslationQueue();
 await setupSummaryQueue(boss);
+await recoverInterrupted(['translation', 'summary']);
 await boss.work<{ summaryId: string; generation?: number }>(
   summaryQueue,
   { batchSize: 1 },
@@ -48,6 +50,7 @@ const pump = (async () => {
       await dispatchTranslations(boss);
       await dispatchSummaries(boss);
       if (Date.now() >= nextReconciliation) {
+        await recoverInterrupted(['translation', 'summary']);
         await reconcileTranslations(boss);
         await reconcileSummaries(boss);
         nextReconciliation = Date.now() + 30000;

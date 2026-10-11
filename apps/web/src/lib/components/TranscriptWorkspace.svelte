@@ -27,6 +27,10 @@
   let texts = $derived(
     stage.primitives.filter((p): p is Text => p.kind === 'text'),
   );
+  // Documents also expose canonical text anchors in DocumentViewer. The
+  // reading-copy dialog must not duplicate those IDs or steal source focus.
+  const rowId = (id: string) =>
+    `${stage.document ? 'reader-text' : 'text'}-${id}`;
   let dialog = $state<HTMLDialogElement>();
   let opened = $state(false);
   let editing = $state(false);
@@ -183,7 +187,7 @@
     }
     if (primitiveId) {
       await tick();
-      const row = document.getElementById(`text-${primitiveId}`);
+      const row = document.getElementById(rowId(primitiveId));
       row?.scrollIntoView({ block: 'center', behavior: 'instant' });
       row?.focus({ preventScroll: true });
     }
@@ -611,7 +615,7 @@
           <article
             class="reader-turn"
             class:highlighted={highlight === text.id}
-            id={`text-${text.id}`}
+            id={rowId(text.id)}
             tabindex="-1"
           >
             <div class="reader-turn-meta">

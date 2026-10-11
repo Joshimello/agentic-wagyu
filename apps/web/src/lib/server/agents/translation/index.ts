@@ -17,6 +17,7 @@ import {
   translationParts,
 } from './batches';
 import { translateBatch } from './model';
+import { withOperation } from '../../jobs/operation';
 
 type Options = {
   llm?: ReturnType<typeof llmClient>;
@@ -61,6 +62,12 @@ export async function translateRevision(
   translationId: string,
   options: Options = {},
 ) {
+  return withOperation(
+    { kind: 'translation', id: translationId, signal: options.signal },
+    () => translateLeased(translationId, options),
+  );
+}
+async function translateLeased(translationId: string, options: Options) {
   const connection = await sqlClient.reserve();
   let locked = false;
   let control: ReturnType<typeof watchJob> | undefined;
