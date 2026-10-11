@@ -1,8 +1,28 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
+  import Icon from '../../lib/components/Icon.svelte';
+  import Select from '../../lib/components/Select.svelte';
+  import Disclosure from '../../lib/components/Disclosure.svelte';
   let { data } = $props();
+  let knownVersion = $state(
+    untrack(() => page.url.searchParams.get('knownVersion') ?? ''),
+  );
+  let observedUrl = '';
+  $effect(() => {
+    if (observedUrl === page.url.href) return;
+    observedUrl = page.url.href;
+    knownVersion = page.url.searchParams.get('knownVersion') ?? '';
+  });
+  let versions = $derived([
+    { value: '', label: 'Latest' },
+    ...data.memory.commits.map((c) => ({
+      value: String(c.version),
+      label: `Version ${c.version}`,
+    })),
+    { value: '0', label: 'Before any pushes' },
+  ]);
   const link = (id: string, versionId?: string) =>
     `/memory/nodes/${id}?knownVersion=${data.memory.version}${versionId ? `&versionId=${versionId}` : ''}`;
   onMount(() => {
@@ -20,27 +40,24 @@
     .memory.segments.length} segments
 </p>
 <p>
-  Start with a summary, then open the discussion and its original evidence. <a
-    href="/memory/assertions">Compare earlier assertion memory</a
+  Explore a summary, then follow its evidence. <a href="/memory/assertions"
+    >Compare earlier assertion memory</a
   >
 </p>
 <form class="card filters" method="GET">
-  <label
-    >Recorded knowledge<select
-      name="knownVersion"
-      value={page.url.searchParams.get('knownVersion') ?? ''}
-      ><option value="">Latest</option>{#each data.memory.commits as c}<option
-          value={c.version}>Version {c.version}</option
-        >{/each}<option value="0">Before any pushes</option></select
-    ></label
-  >
+  <Select
+    label="Recorded knowledge"
+    options={versions}
+    bind:value={knownVersion}
+    name="knownVersion"
+  />
   <label
     >Search summaries and source text<input
       name="q"
       placeholder="Topic, method, number or original wording"
       value={page.url.searchParams.get('q') ?? ''}
     /></label
-  ><button>Apply</button>
+  ><button><Icon name="search" />Search</button>
 </form>
 {#if data.search}<section class="card">
     <h2>Search results</h2>
@@ -103,8 +120,7 @@
         <h3><a href={link(source.id)}>{source.current.title}</a></h3>
         <p class="preview">{source.current.summary}</p>
         <a href={link(source.id)}>Read source summary</a>
-        <details>
-          <summary>Discussion outline</summary>
+        <Disclosure title="Discussion outline" icon="list">
           <ol>
             {#each source.children as child}{@const segment =
                 data.memory.segments.find(
@@ -115,7 +131,7 @@
                   >{segment.current.segment?.contextOnly ? ' · Context' : ''}
                 </li>{/if}{/each}
           </ol>
-        </details>
+        </Disclosure>
       </article>{/each}
   </div>
 </section>
@@ -148,18 +164,13 @@
   }
   .projects {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+    grid-auto-flow: dense;
     gap: 18px;
   }
   .sources {
     display: grid;
     gap: 16px;
-  }
-  select {
-    font: inherit;
-    padding: 10px;
-    border: 1px solid #ccd6e2;
-    border-radius: 6px;
   }
   .preview {
     display: -webkit-box;
@@ -180,8 +191,5 @@
     padding-left: 16px;
     max-height: 160px;
     overflow: auto;
-  }
-  details {
-    margin-top: 14px;
   }
 </style>

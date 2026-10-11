@@ -85,6 +85,12 @@ podman run --rm -e UV_PROJECT_ENVIRONMENT=/tmp/docling -e UV_CACHE_DIR=/data/cac
 
 Results and the adapter decision are recorded in [acceptance evidence](docs/development/acceptance.md). Private parser outputs and screenshots stay in `data/evaluations/`, outside Git and release images.
 
+## Reviewing transcripts
+
+The review workspace pairs original evidence with a short transcript preview. **Show full transcript** opens a searchable reader where you can correct original text and speaker labels. **Original / EN / 繁中** switches between source speech and revision-pinned translations. Translations are separate reading copies: they do not replace evidence or enter memory. Corrections create a new revision with its own translations; earlier revisions and translations remain available.
+
+The `translator` service uses the configured Qwen API independently of local MOSS processing. Translation progress and checkpoints are stored in PostgreSQL, and repeated requests reuse completed results. First-time translation runs when you choose a language. Visual notes share frame galleries, with every captured timestamp and original model observation available in the review details.
+
 ## Pushes and research memory
 
 Select exact revisions on Staging, choose automatic project matching or an explicit existing/new project, then click **Push selected files to memory**. The push page shows progress, per-file outcomes and warnings. Retry a failed batch with its original inputs; editing staging does not change an in-flight push or accepted memory. Repeating an incorporated revision has no duplicate knowledge effect.

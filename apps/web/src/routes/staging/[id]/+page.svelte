@@ -1,26 +1,29 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
-  import DocumentViewer from '../../../lib/components/DocumentViewer.svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
-  import type { Stage } from '../../../lib/server/contracts';
+  import DocumentViewer from '../../../lib/components/DocumentViewer.svelte';
+  import TranscriptWorkspace from '../../../lib/components/TranscriptWorkspace.svelte';
+  import VisualContext from '../../../lib/components/VisualContext.svelte';
+  import Icon from '../../../lib/components/Icon.svelte';
+  import LineSidebar from '../../../lib/components/LineSidebar.svelte';
+  import Disclosure from '../../../lib/components/Disclosure.svelte';
+  import Select from '../../../lib/components/Select.svelte';
+  import Menu from '../../../lib/components/Menu.svelte';
+  import Tooltip from '../../../lib/components/Tooltip.svelte';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
-  let error = $state(''),
-    notice = $state(''),
-    selection = $state(page.url.searchParams.get('revision') || 'current'),
-    editing = $state(false),
-    saving = $state(false);
+  let selection = $state(page.url.searchParams.get('revision') || 'current');
+  let error = $state('');
+  let notice = $state('');
+  let retrying = $state(false);
+  let activeSection = $state('original-evidence');
   let player = $state<HTMLVideoElement>();
-  let draftLabel = $state(''),
-    draftTime = $state('');
-  let edits = $state<{ primitiveId: string; text: string; speaker: string }[]>(
-    [],
-  );
+  let transcript = $state<{ openTranscript: (id?: string) => Promise<void> }>();
+  let refreshVersion = 0;
   $effect(() => {
     detail = data;
     selection = page.url.searchParams.get('revision') || 'current';
-    editing = false;
   });
   let stage = $derived(
     detail.revisions.find(
@@ -29,609 +32,714 @@
         (selection === 'current' ? detail.upload.currentRevisionId : selection),
     )?.manifest,
   );
+  let isVideo = $derived(
+    /\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(detail.upload.filename),
+  );
+  let current = $derived(stage?.id === detail.upload.currentRevisionId);
+  let busy = $derived(['queued', 'processing'].includes(detail.run.state));
   let speakerSuggestions = $derived(
     stage?.speakerSuggestions?.filter((s) =>
       isUsableCandidateName(s.candidateName),
     ) ?? [],
   );
-  let isVideo = $derived(
-    /\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(detail.upload.filename),
-  );
-  let current = $derived(stage?.id === detail.upload.currentRevisionId);
+  let sections = $derived([
+    {
+      id: 'original-evidence',
+      label: 'Original evidence',
+      icon: isVideo ? 'video' : 'file',
+    },
+    {
+      id: 'spoken-transcript',
+      label: isVideo ? 'Spoken transcript' : 'Extracted text',
+      icon: 'transcript',
+    },
+    ...(stage?.document
+      ? [{ id: 'document-review', label: 'Document review', icon: 'image' }]
+      : [{ id: 'visual-context', label: 'Visual context', icon: 'image' }]),
+  ]);
+  let revisions = $derived([
+    { value: 'current', label: 'Current revision' },
+    ...detail.revisions.map((r) => ({
+      value: r.id,
+      label: `${new Date(r.createdAt).toLocaleString()} / ${r.id.slice(0, 8)}`,
+    })),
+  ]);
   onMount(() => {
-    const t = setInterval(async () => {
+    let fetching = false;
+    const timer = setInterval(async () => {
+      if (fetching || !['queued', 'processing'].includes(detail.run.state))
+        return;
+      fetching = true;
       try {
-        const r = await fetch(`/api/uploads/${detail.upload.id}`);
-        if (r.ok) detail = await r.json();
-      } catch {}
+        await refresh(false);
+      } catch {
+      } finally {
+        fetching = false;
+      }
     }, 2000);
-    return () => clearInterval(t);
+    window.addEventListener('hashchange', revealTranscriptAnchor);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('hashchange', revealTranscriptAnchor);
+    };
   });
-  async function retry(contextOnly = false) {
-    error = '';
-    const r = await fetch(`/api/uploads/${detail.upload.id}/retry`, {
-      method: 'POST',
-      ...(contextOnly && stage
-        ? {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inputRevisionId: stage.id }),
-          }
-        : {}),
+  $effect(() => {
+    stage?.id;
+    if (typeof window !== 'undefined')
+      untrack(() => void revealTranscriptAnchor());
+  });
+  $effect(() => {
+    const ids = stage ? sections.map((s) => s.id) : [];
+    if (typeof window === 'undefined') return;
+    let disposed = false;
+    let observer: IntersectionObserver | undefined;
+    const intersecting = new Map<string, Element>();
+    void tick().then(() => {
+      if (disposed) return;
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting)
+              intersecting.set(entry.target.id, entry.target);
+            else intersecting.delete(entry.target.id);
+          });
+          const visible = [...intersecting.values()].sort(
+            (a, b) =>
+              a.getBoundingClientRect().top - b.getBoundingClientRect().top,
+          );
+          const active = intersecting.get(activeSection);
+          if (
+            visible[0] &&
+            (!active ||
+              Math.abs(
+                active.getBoundingClientRect().top -
+                  visible[0].getBoundingClientRect().top,
+              ) > 2)
+          )
+            activeSection = visible[0].id;
+        },
+        { rootMargin: '-90px 0px -45% 0px', threshold: 0 },
+      );
+      ids.forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) observer?.observe(element);
+      });
     });
-    if (!r.ok) error = (await r.json()).error;
-    else
-      notice = contextOnly
-        ? stage?.document
-          ? 'Document descriptions queued. Extracted source evidence will be preserved.'
-          : 'Visual context review queued. Existing speech will be preserved.'
-        : 'Reprocessing queued. Your current revision remains available.';
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+    };
+  });
+  function navigate(id: string) {
+    activeSection = id;
+    document.getElementById(id)?.scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+      block: 'start',
+    });
   }
   function seek(ms: number) {
     if (player) {
       player.currentTime = ms / 1000;
-      player.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      navigate('original-evidence');
     }
   }
-  function startEdit(value: Stage) {
-    editing = true;
-    draftLabel = value.metadata.label;
-    draftTime = value.metadata.sourceTime ?? '';
-    edits = value.primitives
-      .filter((p) => p.kind === 'text')
-      .map((p) => ({
-        primitiveId: p.id,
-        text: p.kind === 'text' ? p.text : '',
-        speaker: p.kind === 'text' ? (p.speaker ?? '') : '',
-      }));
+  async function revealTranscriptAnchor() {
+    const id = window.location.hash.replace(/^#text-/, '');
+    const revision = stage?.id;
+    if (
+      !window.location.hash.startsWith('#text-') ||
+      stage?.document ||
+      !stage?.primitives.some((p) => p.kind === 'text' && p.id === id)
+    )
+      return;
+    await tick();
+    if (stage?.id === revision) await transcript?.openTranscript(id);
   }
-  async function save() {
-    if (!stage) return;
-    saving = true;
+  async function refresh(selectCurrent = true) {
+    const uploadId = detail.upload.id;
+    const version = ++refreshVersion;
+    const response = await fetch(`/api/uploads/${uploadId}`);
+    if (!response.ok) throw new Error('Could not refresh this file.');
+    const result = await response.json();
+    if (uploadId !== data.upload.id || version !== refreshVersion) return;
+    detail = result;
+    if (selectCurrent) selection = 'current';
+  }
+  async function retry(contextOnly = false) {
+    if (retrying) return;
+    retrying = true;
     error = '';
     try {
-      const r = await fetch(`/api/uploads/${detail.upload.id}/corrections`, {
+      const response = await fetch(`/api/uploads/${detail.upload.id}/retry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          baseRevisionId: stage.id,
-          label: draftLabel,
-          sourceTime: draftTime ? new Date(draftTime).toISOString() : null,
-          edits: edits.map((e) => ({ ...e, speaker: e.speaker || null })),
-        }),
+        ...(contextOnly && stage
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ inputRevisionId: stage.id }),
+            }
+          : {}),
       });
-      const result = await r.json();
-      if (!r.ok) throw new Error(result.error);
-      detail = await (await fetch(`/api/uploads/${detail.upload.id}`)).json();
-      selection = page.url.searchParams.get('revision') || 'current';
-      editing = false;
-      notice =
-        'Correction saved as a new staging revision. Memory is unchanged.';
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Could not start processing.');
+      notice = contextOnly
+        ? 'Visual review queued. Your reviewed source is preserved.'
+        : 'Processing queued. Your previous revision remains available.';
+      await refresh(false);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Correction failed';
+      error = e instanceof Error ? e.message : 'Could not start processing.';
     } finally {
-      saving = false;
+      retrying = false;
     }
+  }
+  function duration(ms: number | null | undefined) {
+    if (!ms) return '';
+    const minutes = Math.floor(ms / 60000);
+    return minutes >= 60
+      ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+      : `${minutes} min`;
   }
 </script>
 
-<a href="/">← Staging files</a>
+<svelte:head
+  ><title
+    >{stage?.metadata.label || detail.upload.metadata.label} | Chronicler</title
+  ></svelte:head
+>
+<div class="review-header">
+  <a class="button-link secondary" href="/" aria-label="Back to staging"
+    ><Icon name="arrow-left" />Back</a
+  >
+  <div class="header-actions">
+    <Tooltip text="Open the uploaded file"
+      ><a
+        class="button-link secondary"
+        href={`/api/assets/${detail.asset.id}`}
+        target="_blank"
+        rel="noreferrer"><Icon name="external" />Original</a
+      ></Tooltip
+    >
+    {#if stage}<Menu label="Export" icon="download">
+        <a href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}`}
+          ><Icon name="file" />Markdown</a
+        >
+        <a
+          href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}&format=json`}
+          ><Icon name="file" />JSON</a
+        >
+        <a
+          href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}&format=zip`}
+          ><Icon name="folder" />Offline bundle</a
+        >
+      </Menu>{/if}
+    <Menu label="More" icon="more">
+      <button disabled={busy || retrying} onclick={() => retry()}
+        ><Icon name="refresh" />Reprocess original</button
+      >
+      {#if stage && (isVideo || stage.document) && current}<button
+          disabled={busy || retrying}
+          onclick={() => retry(true)}
+          ><Icon name="image" />{stage.document
+            ? 'Revisit document descriptions'
+            : 'Revisit visual context'}</button
+        >{/if}
+    </Menu>
+  </div>
+</div>
 <div class="heading">
   <div>
     <h1>{stage?.metadata.label || detail.upload.metadata.label}</h1>
-    <p class="muted">
-      {detail.upload.filename} · uploaded by {detail.upload.metadata.uploader}
+    <p class="file-subtitle">
+      {isVideo
+        ? 'Meeting recording'
+        : stage?.document
+          ? 'Document'
+          : 'Source file'}{stage?.coverage.durationMs
+        ? ` / ${duration(stage.coverage.durationMs)}`
+        : ''} / Added {new Date(
+        detail.upload.metadata.uploadedAt,
+      ).toLocaleDateString()}
     </p>
   </div>
-  <span class="badge"
-    >{detail.memory.state === 'never_pushed'
-      ? 'Not pushed to memory'
-      : detail.memory.state.replaceAll('_', ' ')}{detail.memory
-      .commitVersion !== null
-      ? ` · Memory ${detail.memory.commitVersion}`
-      : ''}</span
+  <span class="memory-status"
+    ><Icon name="folder" size={15} />{detail.memory.state === 'never_pushed'
+      ? 'Not in memory'
+      : detail.memory.state.replaceAll('_', ' ')}</span
   >
 </div>
-<div class="run">
-  <span class="badge">{detail.run.state.replaceAll('_', ' ')}</span><span
-    >{detail.run.progress}</span
-  >{#if ['failed', 'ready', 'ready_with_warnings'].includes(detail.run.state)}<button
-      class="secondary"
-      onclick={() => retry()}>Reprocess original</button
-    >{#if (isVideo || stage?.document) && current}<button
-        class="secondary"
-        onclick={() => retry(true)}
-        >{stage?.document
-          ? 'Revisit document descriptions'
-          : 'Revisit visual context'}</button
-      >{/if}{/if}<a
-    href={`/api/assets/${detail.asset.id}`}
-    target="_blank"
-    rel="noreferrer">Open original source ↗</a
+<div class="status-row" role="status">
+  <span
+    class="status-dot"
+    class:working={busy}
+    class:failed={detail.run.state === 'failed'}
+  ></span>
+  <strong
+    >{busy
+      ? 'Processing'
+      : detail.run.state === 'failed'
+        ? 'Processing paused'
+        : 'Ready to review'}</strong
   >
-</div>
-{#if detail.run.error}<p class="error">{detail.run.error}</p>{/if}{#if error}<p
-    class="error"
-  >
-    {error}
-  </p>{/if}{#if notice}<p class="notice" role="status">{notice}</p>{/if}
-{#if stage}
-  <div class="toolbar">
-    <label
-      >Staging revision<select
+  {#if busy}<span class="muted">{detail.run.progress}</span
+    >{:else if stage && !stage.coverage.complete}<span class="review-needed"
+      ><Icon name="warning" size={14} />Partial extraction</span
+    >{/if}
+  {#if stage}<div class="revision-picker">
+      <Icon name="history" size={16} /><Select
+        label="Revision"
+        options={revisions}
         bind:value={selection}
-        onchange={() => (editing = false)}
-        ><option value="current">Current revision</option
-        >{#each detail.revisions as revision}<option value={revision.id}
-            >{new Date(revision.createdAt).toLocaleString()} · {revision.id.slice(
-              0,
-              8,
-            )}</option
-          >{/each}</select
-      ></label
-    ><span class="muted"
-      >{stage.id.slice(0, 8)} · {stage.provenance.adapter}</span
-    >
-    <div class="exports">
-      <a href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}`}
-        >Export Markdown</a
-      ><a
-        href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}&format=json`}
-        >JSON</a
-      ><a
-        href={`/api/uploads/${detail.upload.id}/export?revision=${stage.id}&format=zip`}
-        >Offline bundle</a
-      >
+      />
+    </div>{/if}
+</div>
+{#if detail.run.error}<p class="error" role="alert">{detail.run.error}</p>{/if}
+{#if error}<p class="error" role="alert">{error}</p>{/if}
+{#if notice}<p class="notice" role="status">{notice}</p>{/if}
+{#if stage}
+  <div class="review-layout">
+    <aside class="review-sidebar">
+      <LineSidebar
+        items={sections}
+        bind:active={activeSection}
+        onselect={navigate}
+      />
+      <div class="sidebar-note">
+        <Icon name="info" size={15} /><span
+          >Review here. Publish from Staging.</span
+        >
+      </div>
+    </aside>
+    <div class="review-content">
+      {#if stage.coverage.warnings.length}<div class="review-notes">
+          <Disclosure
+            title={`Review notes (${stage.coverage.warnings.length})`}
+            icon="warning"
+            ><ul>
+              {#each stage.coverage.warnings as warning}<li>
+                  {warning}
+                </li>{/each}
+            </ul></Disclosure
+          >
+        </div>{/if}
+      <div class="workspace">
+        <section
+          class="source card"
+          id="original-evidence"
+          aria-labelledby="source-heading"
+        >
+          <div class="panel-heading">
+            <div class="panel-title">
+              <Icon name={isVideo ? 'video' : 'file'} />
+              <h2 id="source-heading">Original evidence</h2>
+            </div>
+            <span class="source-format"
+              >{isVideo
+                ? 'VIDEO'
+                : stage.document?.format.toUpperCase() || 'FILE'}</span
+            >
+          </div>
+          {#if isVideo}<video controls preload="metadata" bind:this={player}
+              ><source src={`/api/assets/${detail.asset.id}`} /><track
+                kind="captions"
+                src={`/api/uploads/${detail.upload.id}/captions?revision=${stage.id}`}
+                label="Original transcript"
+              /></video
+            >
+          {:else if /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(detail.upload.filename)}<a
+              class="source-preview"
+              href={`/api/assets/${detail.asset.id}`}
+              target="_blank"
+              rel="noreferrer"
+              ><img
+                src={`/api/assets/${detail.asset.id}`}
+                alt="Original source"
+              /></a
+            >
+          {:else}<a
+              class="source-file-preview"
+              href={`/api/assets/${detail.asset.id}`}
+              target="_blank"
+              rel="noreferrer"
+              ><Icon name="file" size={42} /><strong
+                >{detail.upload.filename}</strong
+              ><span><Icon name="external" size={15} />Open original file</span
+              ></a
+            >{/if}
+          <div class="source-footer">
+            <span
+              ><Icon name="clock" size={14} />{stage.metadata.sourceTime
+                ? new Date(stage.metadata.sourceTime).toLocaleString()
+                : isVideo
+                  ? 'Meeting date not set'
+                  : 'Source date not set'}</span
+            ><span>{(detail.asset.bytes / 1024 / 1024).toFixed(1)} MB</span>
+          </div>
+          <Disclosure title="Source details" icon="info"
+            ><dl>
+              <dt>Uploaded by</dt>
+              <dd>{stage.metadata.uploader}</dd>
+              <dt>Source model</dt>
+              <dd>{stage.provenance.model ?? 'Native text'}</dd>
+              <dt>Revision</dt>
+              <dd>{stage.id}</dd>
+              <dt>Processing</dt>
+              <dd>{stage.provenance.adapter}</dd>
+            </dl></Disclosure
+          >
+        </section>
+        <TranscriptWorkspace
+          bind:this={transcript}
+          {stage}
+          uploadId={detail.upload.id}
+          {isVideo}
+          canEdit={current}
+          onseek={seek}
+          onupdated={() => refresh()}
+        />
+      </div>
+      {#if stage.document}<section id="document-review">
+          <DocumentViewer {stage} />
+        </section>{:else}<VisualContext
+          {stage}
+          onseek={seek}
+          ontranscript={(id) => transcript?.openTranscript(id)}
+        />{/if}
+      {#if speakerSuggestions.length}<section class="speaker-notes">
+          <Disclosure
+            title={`Speaker suggestions (${speakerSuggestions.length})`}
+            icon="info"
+            ><p class="muted">
+              Suggested names are unverified. Original speaker labels stay
+              separate.
+            </p>
+            {#each speakerSuggestions as suggestion}<article>
+                <div class="suggestion-heading">
+                  <strong>{suggestion.speaker}</strong><span
+                    >Possibly {suggestion.candidateName}</span
+                  ><span class="badge">{suggestion.confidence}</span>
+                </div>
+                <p>{suggestion.reason}</p>
+                <div class="actions">
+                  {#each suggestion.transcriptIds as ref}<button
+                      class="secondary small"
+                      onclick={() => transcript?.openTranscript(ref)}
+                      ><Icon name="transcript" size={14} />Name evidence</button
+                    >{/each}
+                </div>
+              </article>{/each}</Disclosure
+          >
+        </section>{/if}
     </div>
   </div>
-  {#if stage.coverage.warnings.length}<details class="warning" open>
-      <summary
-        >Coverage and warnings ({stage.coverage.warnings.length}){stage.coverage
-          .complete
-          ? ''
-          : ' · Partial extraction'}</summary
-      >
-      <ul>
-        {#each stage.coverage.warnings as warning}<li>{warning}</li>{/each}
-      </ul>
-    </details>{/if}
-  {#if stage.context}<section class="card context-review">
-      <h2>Transcript questions and frame searches</h2>
-      <p class="muted small">
-        Read {stage.context.readSegments}/{stage.context.totalSegments} speech segments.
-        Searches follow missing context in the transcript.
-      </p>
-      <details>
-        <summary
-          >Review {stage.context.questions.length} questions and searches</summary
-        >
-        {#each stage.context.questions as question}<details
-            class="context-question"
-          >
-            <summary
-              >{question.question}
-              <span class="badge">{question.status}</span></summary
-            >
-            <p class="small">
-              {question.purpose.replaceAll(
-                '_',
-                ' ',
-              )}{#each question.transcriptIds as ref}
-                · <a href={`#text-${ref}`}>Related speech</a>{/each}
-            </p>
-            {#if question.explanation}<p>{question.explanation}</p>{/if}
-            {#each question.searches as search}<p class="small">
-                {search.reason}{#each search.timesMs as ms}
-                  · <button class="timestamp" onclick={() => seek(ms)}
-                    >{(ms / 1000).toFixed(2)}s</button
-                  >{/each}
-              </p>
-              <div class="frames">
-                {#each search.frameIds as ref}{@const frame =
-                    stage.primitives.find(
-                      (p) => p.id === ref,
-                    )}{#if frame?.kind === 'image'}<a
-                      href={`/api/assets/${frame.assetId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      ><img
-                        class="search-frame"
-                        src={`/api/assets/${frame.assetId}`}
-                        alt={`Searched frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
-                      /></a
-                    >{/if}{/each}
-              </div>
-            {/each}
-          </details>{/each}
-      </details>
-    </section>{/if}
-  {#if speakerSuggestions.length}<section class="card context-review">
-      <h2>Tentative speaker names <span class="badge">Unverified</span></h2>
-      <p class="muted small">
-        Original speaker codes are preserved. These guesses can be wrong;
-        confidence is the model's assessment.
-      </p>
-      <details>
-        <summary
-          >Review {speakerSuggestions.length} tentative name suggestions</summary
-        >
-        {#each speakerSuggestions as suggestion}<article class="turn">
-            <strong
-              >{suggestion.speaker} → possibly {suggestion.candidateName}</strong
-            >
-            <span class="badge">{suggestion.confidence}</span>
-            <p>{suggestion.reason}</p>
-            <p class="small muted">
-              {suggestion.basis.replaceAll(
-                '_',
-                ' ',
-              )}{#each suggestion.transcriptIds as ref}
-                · <a href={`#text-${ref}`}>Name evidence</a
-                >{/each}{#each suggestion.frameIds as ref}{@const frame =
-                  stage.primitives.find(
-                    (p) => p.id === ref,
-                  )}{#if frame?.kind === 'image'}
-                  · <a
-                    href={`/api/assets/${frame.assetId}`}
-                    target="_blank"
-                    rel="noreferrer">Frame evidence</a
-                  >{/if}{/each}
-            </p>
-          </article>{/each}
-      </details>
-    </section>{/if}
-  {#if stage.document && !editing}<div class="toolbar">
-      <a
-        href={`/api/assets/${detail.asset.id}`}
-        target="_blank"
-        rel="noreferrer">Open original document ↗</a
-      >{#if current}<button class="secondary" onclick={() => startEdit(stage!)}
-          >Correct text / labels</button
-        >{/if}
-    </div>
-    <DocumentViewer {stage} />{/if}
-  {#if !stage.document || editing}<div class="workspace">
-      <section class="source card">
-        <h2>Original evidence</h2>
-        {#if isVideo}<video controls preload="metadata" bind:this={player}
-            ><source src={`/api/assets/${detail.asset.id}`} /><track
-              kind="captions"
-              src={`/api/uploads/${detail.upload.id}/captions?revision=${stage.id}`}
-              label="Transcript"
-              srclang="en"
-            /></video
-          >
-          <p class="muted small">
-            Click a transcript timestamp or frame to seek the original video.
-          </p>{:else}<a href={`/api/assets/${detail.asset.id}`}
-            >Open the original file</a
-          >{/if}
-        <dl>
-          <dt>Source time</dt>
-          <dd>{stage.metadata.sourceTime ?? 'Unknown'}</dd>
-          <dt>Uploaded</dt>
-          <dd>{new Date(stage.metadata.uploadedAt).toLocaleString()}</dd>
-          <dt>Model</dt>
-          <dd>{stage.provenance.model ?? 'Native text'}</dd>
-        </dl>
-      </section>
-      <section class="card transcript">
-        <div class="section-head">
-          <h2>{isVideo ? 'Spoken transcript' : 'Extracted text'}</h2>
-          {#if current && !editing}<button
-              class="secondary"
-              onclick={() => startEdit(stage!)}>Correct text / labels</button
-            >{/if}
-        </div>
-        {#if editing}<form
-            onsubmit={(e) => {
-              e.preventDefault();
-              save();
-            }}
-          >
-            <div class="edit-meta">
-              <label>File label<input bind:value={draftLabel} /></label><label
-                >Source time (ISO, optional)<input
-                  bind:value={draftTime}
-                  placeholder="2026-10-05T09:00:00Z"
-                /></label
-              >
-            </div>
-            {#each edits as edit}<div class="edit-turn">
-                {#if isVideo}<label
-                    >Speaker label<input
-                      bind:value={edit.speaker}
-                      placeholder="Unknown"
-                    /></label
-                  >{/if}<label
-                  >Extracted text<textarea rows="3" bind:value={edit.text}
-                  ></textarea></label
-                >
-              </div>{/each}
-            <div class="actions">
-              <button disabled={saving}
-                >{saving ? 'Saving…' : 'Save correction'}</button
-              ><button
-                type="button"
-                class="secondary"
-                onclick={() => (editing = false)}>Cancel</button
-              >
-            </div>
-          </form>
-        {:else}{#each stage.primitives as primitive}{#if primitive.kind === 'text'}<article
-                id={`text-${primitive.id}`}
-                class="turn"
-              >
-                <div class="turn-head">
-                  <strong>{primitive.speaker ?? primitive.role}</strong
-                  >{#if primitive.locator.kind === 'media'}<button
-                      class="timestamp"
-                      onclick={() =>
-                        seek(
-                          primitive.locator.kind === 'media'
-                            ? primitive.locator.startMs
-                            : 0,
-                        )}
-                      >{(primitive.locator.startMs / 1000).toFixed(2)}–{(
-                        primitive.locator.endMs / 1000
-                      ).toFixed(2)}s</button
-                    >{/if}
-                </div>
-                <p>{primitive.text}</p>
-                {#each stage.annotations.filter( (a) => a.transcriptIds.includes(primitive.id) ) as annotation}<a
-                    class="visual-ref"
-                    href={`#annotation-${annotation.id}`}>↳ Visual context</a
-                  >{/each}
-              </article>{/if}{/each}{/if}
-      </section>
-    </div>
-  {/if}
-  {#if !stage.document}<section class="visuals">
-      <h2>Visual context <span class="badge">Model observations</span></h2>
-      {#if !stage.annotations.length}<p class="muted">
-          No validated visual observations are available for this revision.
-        </p>{/if}{#each stage.annotations as annotation}<article
-          class="card annotation"
-          id={`annotation-${annotation.id}`}
-        >
-          <p>{annotation.text}</p>
-          <div class="frames">
-            {#each annotation.frameIds as ref}{@const frame =
-                stage.primitives.find(
-                  (p) => p.id === ref,
-                )}{#if frame?.kind === 'image'}<figure id={`frame-${frame.id}`}>
-                  <button
-                    class="frame"
-                    onclick={() => seek(frame.actualMs ?? 0)}
-                    ><img
-                      src={`/api/assets/${frame.assetId}`}
-                      alt={`Evidence frame at ${((frame.actualMs ?? 0) / 1000).toFixed(2)} seconds`}
-                    /></button
-                  >
-                  <figcaption>
-                    Actual {((frame.actualMs ?? 0) / 1000).toFixed(2)}s ·
-                    requested {((frame.requestedMs ?? 0) / 1000).toFixed(2)}s ·
-                    <a
-                      href={`/api/assets/${frame.assetId}`}
-                      target="_blank"
-                      rel="noreferrer">Open frame</a
-                    >
-                  </figcaption>
-                </figure>{/if}{/each}
-          </div>
-          <p class="small muted">
-            {annotation.model} · {annotation.promptVersion}{#each annotation.transcriptIds as ref}
-              · <a href={`#text-${ref}`}>Related speech</a>{/each}
-          </p>
-        </article>{/each}
-    </section>{/if}
-{:else}<div class="card waiting">
-    <h2>Preparing staging</h2>
+{:else}<section class="card waiting">
+    <span class="waiting-icon"
+      ><Icon
+        name={detail.run.state === 'failed' ? 'warning' : 'transcript'}
+        size={32}
+      /></span
+    >
+    <h2>
+      {detail.run.state === 'failed'
+        ? 'Your original is safe'
+        : 'Preparing your review'}
+    </h2>
     <p class="muted">
-      You can leave this page while Interpreter works. Progress is saved.
+      {detail.run.state === 'failed'
+        ? 'Use More to retry processing.'
+        : 'You can leave this page. Progress is saved.'}
     </p>
-  </div>{/if}
+    {#if detail.run.state === 'failed'}<button
+        class="secondary"
+        disabled={retrying}
+        onclick={() => retry()}><Icon name="refresh" />Retry processing</button
+      >{/if}
+  </section>{/if}
 
 <style>
-  .context-review {
-    margin: 20px 0;
+  .review-header,
+  .header-actions,
+  .heading,
+  .status-row,
+  .panel-heading,
+  .panel-title,
+  .source-footer,
+  .suggestion-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
   }
-  .context-question {
-    border-top: 1px solid #edf0f4;
-    padding: 12px 0;
+  .review-header {
+    justify-content: space-between;
+    margin-bottom: 1.75rem;
   }
-  .search-frame {
-    width: 240px;
-    max-width: 100%;
-    border-radius: 6px;
-  }
-  h1 {
-    margin-top: 20px;
+  .review-header :global(.button-link),
+  .review-header :global(button) {
+    font-size: 0.8rem;
   }
   .heading {
-    display: flex;
     justify-content: space-between;
-    gap: 20px;
-    align-items: center;
+    align-items: flex-start;
+    gap: 2rem;
   }
-  .run {
-    display: flex;
+  h1 {
+    max-width: 68rem;
+    font-size: clamp(1.9rem, 3.2vw, 3.25rem);
+    line-height: 1.13;
+    letter-spacing: -0.045em;
+    overflow-wrap: anywhere;
+  }
+  .file-subtitle {
+    font-size: 0.82rem;
+    color: #787774;
+    margin: 0.7rem 0 0;
+  }
+  .memory-status {
+    display: inline-flex;
+    gap: 0.45rem;
     align-items: center;
-    gap: 15px;
+    font-size: 0.75rem;
+    color: #787774;
+    white-space: nowrap;
+    padding-top: 0.6rem;
+  }
+  .status-row {
+    margin: 1.5rem 0 2rem;
+    padding: 0.9rem 0;
+    border-block: 1px solid #eaeaea;
     flex-wrap: wrap;
-    margin: 18px 0;
+    font-size: 0.78rem;
   }
-  .run a {
-    margin-left: auto;
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #648468;
   }
-  .toolbar {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
+  .status-dot.working {
+    background: #9b8050;
+  }
+  .status-dot.failed {
+    background: #9f2f2d;
+  }
+  .review-needed {
+    display: inline-flex;
     align-items: center;
-    margin: 26px 0 16px;
+    gap: 0.35rem;
+    color: #956400;
   }
-  select {
-    font: inherit;
-    padding: 8px;
-    border: 1px solid #ccd6e2;
-    border-radius: 7px;
-    background: white;
-  }
-  .toolbar label {
+  .revision-picker {
     display: flex;
     align-items: center;
-    gap: 10px;
-  }
-  .exports {
+    gap: 0.5rem;
     margin-left: auto;
+    min-width: 12rem;
+  }
+  .review-layout {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+  .review-sidebar {
+    min-width: 0;
+    position: sticky;
+    top: 7rem;
+    padding-top: 0.5rem;
+  }
+  .sidebar-note {
     display: flex;
-    gap: 15px;
+    gap: 0.5rem;
+    align-items: flex-start;
+    margin: 2.2rem 0.3rem 0;
+    font-size: 0.71rem;
+    color: #96938c;
+    max-width: 9rem;
+    line-height: 1.6;
+  }
+  .sidebar-note :global(svg) {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .review-content {
+    min-width: 0;
+  }
+  .review-notes {
+    margin-bottom: 1.25rem;
+    background: #fbf3db;
+    border-radius: 8px;
+    padding: 0.2rem 1rem;
+  }
+  .review-notes li {
+    margin: 0.45rem 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
   }
   .workspace {
     display: grid;
-    grid-template-columns: minmax(280px, 1fr) minmax(350px, 1.2fr);
-    gap: 24px;
-    margin-top: 24px;
-    align-items: start;
-  }
-  video {
-    width: 100%;
-    border-radius: 8px;
-    background: #101b2a;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: dense;
+    gap: 1rem;
+    align-items: stretch;
+    margin-bottom: 2rem;
   }
   .source {
-    position: sticky;
-    top: 20px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .small {
-    font-size: 12px;
+  .panel-heading {
+    justify-content: space-between;
+    margin-bottom: 1.1rem;
+  }
+  .panel-title h2 {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .source-format {
+    color: #96938c;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+  }
+  video,
+  .source-preview {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    border-radius: 8px;
+    background: #242421;
+  }
+  .source-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .source-file-preview {
+    display: flex;
+    flex: 1;
+    min-height: 14rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 1rem;
+    background: #f7f6f3;
+    color: #65635e;
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-wrap: anywhere;
+  }
+  .source-file-preview span {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+  }
+  .source-footer {
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: #787774;
+    margin: 1rem 0;
+  }
+  .source-footer span:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .source :global(.disclosure) {
+    margin-top: auto;
   }
   dl {
-    font-size: 12px;
     display: grid;
-    grid-template-columns: 90px 1fr;
-    gap: 9px;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0.65rem;
+    font-size: 0.75rem;
   }
   dt {
-    color: #66768b;
+    color: #787774;
   }
   dd {
     margin: 0;
     overflow-wrap: anywhere;
   }
-  .section-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 15px;
-    align-items: center;
-    margin-bottom: 16px;
+  #original-evidence,
+  #document-review {
+    scroll-margin-top: 7rem;
   }
-  .section-head h2 {
-    margin: 0;
+  .speaker-notes {
+    margin-top: 1.5rem;
   }
-  .section-head button {
-    font-size: 12px;
+  .speaker-notes article {
+    padding: 1rem 0;
+    border-top: 1px solid #eaeaea;
   }
-  .turn {
-    border-top: 1px solid #edf0f4;
-    padding: 16px 0;
+  .speaker-notes p {
+    font-size: 0.85rem;
   }
-  .turn-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: 12px;
-  }
-  .timestamp {
-    background: none;
-    color: #235dba;
-    font-size: 12px;
-    padding: 0;
-  }
-  .turn p {
-    white-space: pre-wrap;
-    margin: 8px 0;
-  }
-  .visual-ref {
-    font-size: 12px;
-  }
-  .visuals {
-    margin: 28px 0;
-  }
-  .annotation {
-    margin-bottom: 18px;
-  }
-  .frames {
-    display: flex;
-    gap: 18px;
+  .suggestion-heading {
     flex-wrap: wrap;
+    font-size: 0.85rem;
   }
-  figure {
-    margin: 0;
-    max-width: 440px;
-    flex: 1;
-    min-width: 220px;
-  }
-  .frame {
-    padding: 0;
-    background: none;
-    width: 100%;
-    display: block;
-  }
-  .frame img {
-    width: 100%;
-    border-radius: 6px;
-    display: block;
-  }
-  figcaption {
-    font-size: 11px;
-    color: #66768b;
-    margin-top: 7px;
-  }
-  .notice {
-    background: #e9f4ed;
-    color: #2f6545;
-    padding: 12px;
-    border-radius: 7px;
-  }
-  .edit-meta,
-  .edit-turn {
-    display: grid;
-    gap: 12px;
-    margin-bottom: 18px;
-  }
-  .edit-turn {
-    border-top: 1px solid #edf0f4;
-    padding-top: 16px;
-  }
-  .actions {
-    display: flex;
-    gap: 12px;
+  .small {
+    font-size: 0.75rem;
   }
   .waiting {
-    margin-top: 24px;
+    min-height: 24rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 2rem 0;
+    text-align: center;
   }
-  summary {
-    cursor: pointer;
+  .waiting-icon {
+    display: grid;
+    place-items: center;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 12px;
+    color: #65635e;
+    background: #f7f6f3;
+    margin-bottom: 1.4rem;
   }
-  ul {
-    margin-bottom: 0;
+  @media (max-width: 1100px) {
+    .review-layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+    }
+    .review-sidebar {
+      position: static;
+    }
+    .sidebar-note {
+      display: none;
+    }
   }
-  @media (max-width: 900px) {
+  @media (max-width: 760px) {
     .workspace {
       grid-template-columns: 1fr;
     }
-    .source {
-      position: static;
-    }
     .heading {
-      display: block;
+      flex-direction: column;
+      gap: 0.5rem;
     }
-    .run a {
-      margin-left: 0;
+    .memory-status {
+      padding: 0;
     }
-    .exports {
+    .review-header {
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .header-actions {
+      gap: 0.4rem;
+    }
+    .revision-picker {
       margin-left: 0;
+      width: 100%;
+    }
+    .status-row {
+      margin-bottom: 1rem;
     }
   }
 </style>

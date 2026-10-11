@@ -1,156 +1,238 @@
 <script lang="ts">
-  let { children } = $props();
+  import { afterNavigate } from '$app/navigation';
+  import { page } from '$app/state';
+  import { onDestroy, tick, type Snippet } from 'svelte';
+  import { gsap } from 'gsap';
+  import '@fontsource-variable/outfit';
+  import '@fontsource-variable/newsreader';
+  import '../lib/styles/workspace.css';
+  import Icon from '../lib/components/Icon.svelte';
+
+  let { children }: { children: Snippet } = $props();
+  let content: HTMLElement;
+  let entry: gsap.Context | undefined;
+  let memoryActive = $derived(page.url.pathname.startsWith('/memory'));
+
+  afterNavigate(async () => {
+    await tick();
+    entry?.revert();
+    if (
+      !content ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+      return;
+    entry = gsap.context(() => {
+      const sections = Array.from(content.children).filter(
+        (element) =>
+          element instanceof HTMLElement &&
+          !['STYLE', 'SCRIPT'].includes(element.tagName),
+      );
+      gsap.fromTo(
+        sections.slice(0, 8),
+        { opacity: 1, y: 6 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.38,
+          stagger: 0.035,
+          ease: 'power3.out',
+          clearProps: 'opacity,transform',
+        },
+      );
+    }, content);
+  });
+
+  onDestroy(() => entry?.revert());
 </script>
 
-<svelte:head><title>Chronicler · Research workspace</title></svelte:head>
+<svelte:head><title>Chronicler | Research workspace</title></svelte:head>
+<a class="skip-link" href="#workspace-content">Skip to content</a>
 <div class="shell">
-  <header>
-    <a class="brand" href="/">◈ <strong>Chronicler</strong></a><span
-      class="local"
-      ><a href="/">Staging</a> · <a href="/memory">Memory</a> · LOCAL WORKSPACE</span
+  <header class="workspace-header">
+    <a class="brand" href="/" aria-label="Chronicler staging">
+      <span class="brand-mark"><Icon name="books" size={23} /></span>
+      <span>Chronicler<small>Research workspace</small></span>
+    </a>
+    <nav class="workspace-nav" aria-label="Workspace">
+      <a
+        href="/"
+        class:current={!memoryActive}
+        aria-current={!memoryActive ? 'page' : undefined}
+      >
+        <Icon name="folder" size={17} /><span>Staging</span>
+      </a>
+      <a
+        href="/memory"
+        class:current={memoryActive}
+        aria-current={memoryActive ? 'page' : undefined}
+      >
+        <Icon name="grid" size={17} /><span>Memory</span>
+      </a>
+    </nav>
+    <span class="workspace-location"
+      ><span class="status-dot"></span>Local workspace</span
     >
   </header>
-  <main>{@render children()}</main>
-  <footer>Raw evidence → Interpreter → Staging → Memory</footer>
+  <main id="workspace-content" bind:this={content} tabindex="-1">
+    {@render children()}
+  </main>
+  <footer class="workspace-footer">
+    <span>Chronicler</span>
+    <span>Review sources. Build research memory.</span>
+  </footer>
 </div>
 
 <style>
-  :global(*) {
-    box-sizing: border-box;
-  }
-  :global(body) {
-    margin: 0;
-    background: #f7f8fa;
-    color: #172536;
-    font-family: Inter, system-ui, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-  }
-  :global(a) {
-    color: #235dba;
-    text-decoration: none;
-  }
-  :global(a:hover) {
-    text-decoration: underline;
-  }
   .shell {
-    max-width: 1240px;
+    max-width: 1540px;
     margin: auto;
-    padding: 0 32px;
+    padding: 0 clamp(1rem, 3.5vw, 3.5rem);
   }
-  header {
-    height: 88px;
+  .workspace-header {
+    min-height: 90px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid #dfe5ec;
+    gap: 2rem;
+    border-bottom: 1px solid var(--border);
   }
   .brand {
-    color: #172536;
-    font-size: 23px;
-    display: flex;
-    gap: 12px;
+    display: inline-flex;
     align-items: center;
+    gap: 0.7rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.035em;
   }
-  .local {
-    font-size: 11px;
-    letter-spacing: 2px;
-    color: #7a8796;
+  .brand:hover {
+    text-decoration: none;
+  }
+  .brand small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 400;
+    letter-spacing: 0.015em;
+    margin-top: -0.15rem;
+  }
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  .workspace-nav {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-left: auto;
+    background: var(--canvas);
+  }
+  .workspace-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.45rem 1rem;
+    border-radius: 5px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    transition:
+      background 180ms,
+      color 180ms,
+      transform 120ms;
+  }
+  .workspace-nav a:hover {
+    color: var(--ink);
+    text-decoration: none;
+    background: var(--surface);
+  }
+  .workspace-nav a.current {
+    background: var(--ink);
+    color: white;
+  }
+  .workspace-nav a:active {
+    transform: scale(0.97);
+  }
+  .workspace-location {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    background: #69816b;
+    border-radius: 50%;
   }
   main {
-    padding: 38px 0;
+    min-height: calc(100svh - 170px);
+    padding: 2.4rem 0 4rem;
+    outline: none;
   }
-  footer {
-    color: #7a8796;
-    font-size: 12px;
-    padding: 28px 0;
-    border-top: 1px solid #dfe5ec;
+  .workspace-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--muted);
+    font-size: 0.73rem;
+    padding: 1.5rem 0;
+    border-top: 1px solid var(--border);
   }
-  :global(h1) {
-    font-size: 32px;
-    letter-spacing: -1px;
-    margin: 0 0 8px;
-  }
-  :global(h2) {
-    font-size: 18px;
-    margin: 0 0 16px;
-  }
-  :global(p) {
-    margin: 8px 0 16px;
-  }
-  :global(button) {
-    cursor: pointer;
-    background: #235dba;
+  .skip-link {
+    position: fixed;
+    left: 1rem;
+    top: -5rem;
+    z-index: 100;
+    background: var(--ink);
     color: white;
-    border: 0;
-    border-radius: 7px;
-    padding: 10px 17px;
-    font: inherit;
-    font-weight: 600;
-  }
-  :global(button:disabled) {
-    opacity: 0.5;
-    cursor: default;
-  }
-  :global(input),
-  :global(textarea) {
-    font: inherit;
-    padding: 10px;
-    border: 1px solid #ccd6e2;
+    padding: 0.7rem 1rem;
     border-radius: 6px;
-    background: white;
-    max-width: 100%;
   }
-  :global(label) {
-    display: grid;
-    gap: 6px;
-    font-size: 13px;
-    color: #465972;
+  .skip-link:focus {
+    top: 1rem;
   }
-  :global(.card) {
-    background: white;
-    border: 1px solid #dfe5ec;
-    border-radius: 12px;
-    padding: 24px;
-  }
-  :global(.muted) {
-    color: #66768b;
-  }
-  :global(.error) {
-    color: #a93434;
-    background: #fff1f1;
-    padding: 12px;
-    border-radius: 7px;
-  }
-  :global(.badge) {
-    font-size: 12px;
-    background: #edf2f9;
-    border-radius: 20px;
-    padding: 4px 10px;
-    display: inline-block;
-  }
-  :global(.warning) {
-    color: #79591b;
-    background: #fff6d9;
-    padding: 12px;
-    border-radius: 7px;
-  }
-  :global(.secondary) {
-    background: #eaf0f8;
-    color: #235dba;
-  }
-  @media (max-width: 700px) {
-    .shell {
-      padding: 0 16px;
+  @media (max-width: 800px) {
+    .workspace-header {
+      gap: 1rem;
+      min-height: 78px;
     }
-    header {
-      height: 70px;
-    }
-    .local {
+    .workspace-location {
       display: none;
     }
     main {
-      padding: 24px 0;
+      padding: 1.5rem 0 3rem;
+    }
+  }
+  @media (max-width: 420px) {
+    .brand small {
+      display: none;
+    }
+    .brand {
+      font-size: 1.05rem;
+      gap: 0.45rem;
+    }
+    .brand-mark {
+      width: 2rem;
+      height: 2rem;
+    }
+    .workspace-nav a {
+      padding: 0.45rem 0.65rem;
+    }
+    .workspace-nav a :global(.ui-icon) {
+      display: none;
+    }
+    .workspace-footer span:first-child {
+      display: none;
     }
   }
 </style>

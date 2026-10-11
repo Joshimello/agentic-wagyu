@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import Icon from '../../../lib/components/Icon.svelte';
+  import Disclosure from '../../../lib/components/Disclosure.svelte';
   let { data } = $props();
   let push = $state(untrack(() => data.push));
   let error = $state('');
@@ -21,7 +23,7 @@
   }
 </script>
 
-<a href="/">← Staging</a>
+<a class="button-link" href="/"><Icon name="arrow-left" size={16} />Staging</a>
 <h1>Push to memory</h1>
 <section class="card">
   <span class="badge">{push.state}</span>
@@ -54,13 +56,14 @@
         · {outcome.disposition.replaceAll('_', ' ')} · {outcome.segments !==
         undefined
           ? `${outcome.segments} segments`
-          : `${outcome.assertions} assertions`}{#if outcome.warnings.length}<details
+          : `${outcome.assertions} assertions`}{#if outcome.warnings.length}<Disclosure
+            title={`${outcome.warnings.length} processing notes`}
+            icon="warning"
           >
-            <summary>{outcome.warnings.length} processing notes</summary>
             <ul>
               {#each outcome.warnings as warning}<li>{warning}</li>{/each}
             </ul>
-          </details>{/if}
+          </Disclosure>{/if}
       </article>{/each}{/if}
 </section>
 
