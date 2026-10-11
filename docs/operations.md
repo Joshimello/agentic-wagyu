@@ -66,10 +66,12 @@ CHRONICLER_PROJECT=chronicler_restored CHRONICLER_DATA_MOUNT=chronicler_restored
 ## Maintained verification
 
 ```sh
-./infra/test-operations.sh
-CHRONICLER_PROJECT=chronicler_pilot CHRONICLER_PORT=5174 ./infra/verify-mvp.sh
+./infra/test.sh integration
+CHRONICLER_PROJECT=chronicler_pilot CHRONICLER_PORT=5174 ./infra/verify-workflow.sh
 ```
 
-The live pilot requires the supplied recordings/documents in ignored `data/recordings` and `data/documents`. It creates a fresh database/evidence volume and runs `bun run verify:mvp` inside Podman. It uploads a real five-minute meeting excerpt and full PPTX, reviews staging, pushes, asks, follows citations, corrects speech punctuation, proves memory unchanged, repushes and checks historical answers. It then admits two documents held out from memory development. Results remain private under `data/evaluations/lifecycle/<workspace>/reports`; the pilot workspace remains available on its selected port. It does not modify the main workspace's accepted memory. Holdout question definitions live under `evals/lifecycle`, outside release images; independent human quality review remains distinct from same-model scoring.
+The live workflow requires the supplied recordings/documents in ignored `data/recordings` and `data/documents`. It creates a fresh database/evidence volume and runs `bun run test:workflow` inside Podman. It uploads a real five-minute meeting excerpt and full PPTX, reviews staging, pushes, asks, follows citations, corrects speech punctuation, proves memory unchanged, repushes and checks historical answers. It then admits two documents held out from memory development. Results remain private under `data/evaluations/lifecycle/<workspace>/reports`; the pilot workspace remains available on its selected port. It does not modify the main workspace's accepted memory. Holdout question definitions live under `evals/lifecycle`, outside release images; independent human quality review remains distinct from same-model scoring.
 
-Add `--evaluate` to run all ten held-out questions three times and export `heldout-summary.json`. A failed pilot preserves its workspace and partial report for inspection. To continue the runner, mount the same corpus/reports and pass `--resume` to `bun run verify:mvp`; it reuses accepted uploads and saved corrections. Terminal failures are reported after allowing the queue's automatic retry to start, rather than mistaking the brief failed state between attempts for data loss.
+Add `--evaluate` to run all ten held-out questions three times and export `heldout-summary.json`. A failed pilot preserves its workspace and partial report for inspection. To continue the runner, mount the same corpus/reports and pass `--resume` to `bun run test:workflow`; it reuses accepted uploads and saved corrections. Terminal failures are reported after allowing the queue's automatic retry to start, rather than mistaking the brief failed state between attempts for data loss.
+
+Operational commands build a separate frozen tooling image, so backup, restore and doctor work from a clean checkout without host JavaScript dependencies. The tooling image is not the production web/worker image. See [maintained checks](development/testing.md) for isolated regression and release workflow commands.

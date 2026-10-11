@@ -4,5 +4,5 @@ export default defineConfig({
   use: { baseURL: process.env.WEB_URL ?? 'http://localhost:5173' },
   reporter: 'list',
   timeout: 60000,
-  outputDir: '/data/browser-results',
+  outputDir: process.env.BROWSER_RESULTS ?? '/data/browser-results',
 });

@@ -1,16 +1,16 @@
-import { spanText } from '../src/lib/server/services/evidence-spans';
+import { spanText } from '../../apps/web/src/lib/server/services/evidence-spans';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { sqlClient } from '../src/lib/server/db/client';
-import { config } from '../src/lib/server/config';
-import { memorySnapshot } from '../src/lib/server/services/memory';
-import { loadResearchCorpus } from '../src/lib/server/services/research';
-import { answerQuestion } from '../src/lib/server/agents/researcher/model';
-import { readResearchImage } from '../src/lib/server/agents/researcher';
-import { llmClient } from '../src/lib/server/llm/client';
-import { researchPromptVersion } from '../src/lib/server/contracts/research';
-import { segmentContent } from '../src/lib/server/agents/chronicler/organization/source';
+import { sqlClient } from '../../apps/web/src/lib/server/db/client';
+import { config } from '../../apps/web/src/lib/server/config';
+import { memorySnapshot } from '../../apps/web/src/lib/server/services/memory';
+import { loadResearchCorpus } from '../../apps/web/src/lib/server/services/research';
+import { answerQuestion } from '../../apps/web/src/lib/server/agents/researcher/model';
+import { readResearchImage } from '../../apps/web/src/lib/server/agents/researcher';
+import { llmClient } from '../../apps/web/src/lib/server/llm/client';
+import { researchPromptVersion } from '../../apps/web/src/lib/server/contracts/research';
+import { segmentContent } from '../../apps/web/src/lib/server/agents/chronicler/organization/source';
 type Question = {
   id: string;
   question: string;
@@ -31,8 +31,7 @@ const args = process.argv.slice(2),
 const manifest = await Bun.file(
   arg(
     '--manifest',
-    new URL('../../../evals/researcher/questions.json', import.meta.url)
-      .pathname,
+    new URL('../researcher/questions.json', import.meta.url).pathname,
   ),
 ).json();
 const mode = arg('--mode', 'summary'),
@@ -65,10 +64,10 @@ const before = await memorySnapshot(),
   { client, model } = llmClient();
 const implementationHasher = new Bun.CryptoHasher('sha256');
 for (const path of [
-  '../src/lib/server/agents/researcher/model.ts',
-  '../src/lib/server/agents/researcher/retrieval.ts',
-  '../src/lib/server/contracts/research.ts',
-  '../src/lib/server/services/evidence-spans.ts',
+  '../../apps/web/src/lib/server/agents/researcher/model.ts',
+  '../../apps/web/src/lib/server/agents/researcher/retrieval.ts',
+  '../../apps/web/src/lib/server/contracts/research.ts',
+  '../../apps/web/src/lib/server/services/evidence-spans.ts',
 ])
   implementationHasher.update(
     await Bun.file(new URL(path, import.meta.url)).text(),

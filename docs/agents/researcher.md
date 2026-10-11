@@ -1,6 +1,6 @@
 # Researcher worker
 
-Updated: 2026-10-11. Part of the [SvelteKit application plan](../../plan.md). Milestones: M6–M7, with cleanup in M8.
+Updated: 2026-10-11. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Responsibility and trigger
 
@@ -81,4 +81,4 @@ Original evidence gets short run-local citation labels (`E1`, `E2`, ...). Stored
 
 A source containing multiple project discussions exposes only authorized segment children and masks aggregate source prose/keywords when project scoped. Date-filtered queries also mask aggregate prose and exclude unknown/future source dates. Direct node/history/image calls obey the same frozen scope as search. The Researcher never follows the current staging revision pointer.
 
-Run `./infra/test-research.sh` against disposable database/storage for the durable queue/SDK/history/cancellation/isolation checks; unit checks live in `research.test.ts`, browser workflow in `research.spec.ts`, and real questions in `evals/researcher/questions.json`. The release image excludes tests, tools, evaluation data and reports.
+Run `./infra/test.sh integration` against disposable database/storage for the durable queue/SDK/history/cancellation/isolation checks; unit checks live in `research.test.ts`, browser workflow in `research.spec.ts`, and real questions in `evals/researcher/questions.json`. The release image excludes tests, tools, evaluation data and reports.

@@ -1,10 +1,10 @@
 /** Import the maintained real-meeting corpus once through the normal upload service. */
-import corpus from '../../../evals/meetings.json';
-import { acceptUpload } from '../src/lib/server/services/uploads';
-import { db, sqlClient } from '../src/lib/server/db/client';
-import { assets, uploads } from '../src/lib/server/db/schema';
+import corpus from '../meetings.json';
+import { acceptUpload } from '../../apps/web/src/lib/server/services/uploads';
+import { db, sqlClient } from '../../apps/web/src/lib/server/db/client';
+import { assets, uploads } from '../../apps/web/src/lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { config } from '../src/lib/server/config';
+import { config } from '../../apps/web/src/lib/server/config';
 const report = [];
 try {
   for (const recording of corpus.recordings) {

@@ -1,10 +1,10 @@
 /** Hash-checked import through the ordinary staging service, preserving raw bytes. */
-import corpus from '../../../evals/documents.json';
-import { acceptUpload } from '../src/lib/server/services/uploads';
-import { db, sqlClient } from '../src/lib/server/db/client';
-import { assets, uploads } from '../src/lib/server/db/schema';
+import corpus from '../documents.json';
+import { acceptUpload } from '../../apps/web/src/lib/server/services/uploads';
+import { db, sqlClient } from '../../apps/web/src/lib/server/db/client';
+import { assets, uploads } from '../../apps/web/src/lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { config } from '../src/lib/server/config';
+import { config } from '../../apps/web/src/lib/server/config';
 const groups = new Map<string, string>();
 const report = [];
 try {

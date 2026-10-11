@@ -1,6 +1,6 @@
 # Chronicler worker
 
-Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md). Milestones: M4–M5, recovery in M7, and cleanup in M8.
+Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Primary summary workflow (2026-10-07)
 
@@ -12,7 +12,7 @@ Rebuild affected topic summaries from all active segment summaries, then project
 
 `organization-2-en` produces English summaries, with Chinese names normalized once using OpenCC. Native text and exact quotes remain unchanged. Warnings preserve partial extraction and attribution/technical uncertainty. Summaries are retrieval/navigation aids rather than independent confirmation. Read-only summary AND source-text search can find details omitted from the prose. User-visible results live at `/memory`; `/memory/nodes/:id` progressively opens children or exact evidence. Model-generated prose still needs human accuracy review.
 
-Run `./infra/test-organization.sh` for isolated PostgreSQL/SDK coverage, retry caching, snapshot/source correction, raw-text search and stale publication. `bun run eval:chronicler:organized` deliberately processes the six real weekly sources and checks exact text coverage, project continuity/separation, child-version pins, unpushed PDF controls and unchanged replay. Podman contains all execution, and private output stays under ignored `data/evaluations/`.
+Run `./infra/test.sh integration` for isolated PostgreSQL/SDK coverage, retry caching, snapshot/source correction, raw-text search and stale publication. `./infra/evaluate.sh organization` deliberately processes the six real weekly sources and checks exact text coverage, project continuity/separation, child-version pins, unpushed PDF controls and unchanged replay. Podman contains all execution, and private output stays under ignored `data/evaluations/`.
 
 An explicit `organizationMode: "scope"` push fills missing project/topic links for existing non-context segments. It reads their summaries and exact source text, keeps source/segment identities and versions immutable, and only publishes new project/topic versions. It does not remap already assigned discussions or re-admit evidence. This mode has a distinct idempotency fingerprint and rejects unorganized/obsolete sources.
 
@@ -93,6 +93,6 @@ Corrected revisions replace that upload's active support in the reducer only aft
 
 ## Maintained acceptance commands
 
-Run `./infra/test-memory.sh` for disposable PostgreSQL regressions covering pinned batches, retries, rollback during publication, concurrent stale work, dated A/B updates in both orders, disputes, corrected sources, no-assertion admissions and history. Standard Bun regressions include the pure temporal reducer and strict evidence/schema guards. Chromium checks exercise the graph, historical view and source viewer.
+Run `./infra/test.sh integration` for disposable PostgreSQL regressions covering pinned batches, retries, rollback during publication, concurrent stale work, dated A/B updates in both orders, disputes, corrected sources, no-assertion admissions and history. Standard Bun regressions include the pure temporal reducer and strict evidence/schema guards. Chromium checks exercise the graph, historical view and source viewer.
 
-`bun run eval:chronicler:weekly` inside the development Podman network deliberately pushes the supplied real decks/recordings one by one and checks project continuity/separation and unpushed PDF controls. `bun run eval:memory:integrity` is read-only: it pins a committed version, resolves every historical citation, validates quotations and checks project-scoped relations and unchanged pinned snapshots. Private reports stay under ignored `data/evaluations/`. Precision/recall and project-classification accuracy remain human-unscored; these structural checks do not satisfy the proposed human-adjudicated quality targets.
+`./infra/evaluate.sh memory:integrity` is read-only: it pins a committed version, resolves every historical citation, validates quotations and checks project-scoped relations and unchanged pinned snapshots. Private reports stay under ignored `data/evaluations/`. Precision/recall and project-classification accuracy remain human-unscored; these structural checks do not satisfy the proposed human-adjudicated quality targets.

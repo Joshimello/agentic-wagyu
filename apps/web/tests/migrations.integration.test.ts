@@ -13,7 +13,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 
-const enabled = process.env.MIGRATION_TEST_DATABASE === '1';
+const enabled = process.env.TEST_SUITE === 'migrations';
 if (
   enabled &&
   !new URL(process.env.DATABASE_URL!).pathname.startsWith(

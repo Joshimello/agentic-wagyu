@@ -10,7 +10,8 @@ for volume in "${CHRONICLER_PROJECT}_database" "${CHRONICLER_PROJECT}_data"; do
   if podman volume exists "$volume"; then echo "Restore requires new volumes: $volume" >&2; exit 1; fi
 done
 if podman container exists "${CHRONICLER_PROJECT}_database_1"; then echo 'Workspace already exists' >&2; exit 1; fi
-podman run --rm -v "$PWD:/app:ro" -v "$restore_source:/backup:ro" -w /app docker.io/oven/bun:1.4.2 bun apps/web/tools/backup.ts verify /backup
+podman build --target tooling -t localhost/chronicler-tools:local -f infra/web.Containerfile . >/dev/null
+podman run --rm -v "$restore_source:/backup:ro" localhost/chronicler-tools:local bun apps/web/tools/backup.ts verify /backup
 # Reject archive links and paths outside the evidence/checkpoint roots.
 podman run --rm -v "$restore_source:/backup:ro" docker.io/oven/bun:1.4.2 bash -c 'set -euo pipefail; tar -tf /backup/evidence.tar | awk '\''/^\// || /(^|\/)\.\.(\/|$)/ || !/^(assets|runs|transcripts|document-reviews)\// {bad=1} END {exit bad}'\''; tar -tvf /backup/evidence.tar | awk '\''substr($0,1,1)!="-" && substr($0,1,1)!="d" {bad=1} END {exit bad}'\'''
 ./infra/isolated.sh up -d database
@@ -19,7 +20,7 @@ restore_database="${CHRONICLER_PROJECT}_database_1"
 for attempt in {1..30}; do if podman exec "$restore_database" pg_isready -U chronicler >/dev/null; then break; fi; sleep 1; done
 podman exec -i "$restore_database" pg_restore -U chronicler -d chronicler --exit-on-error --no-owner --no-privileges < "$restore_source/database.dump"
 podman run --rm -v "${CHRONICLER_PROJECT}_data:/data" -v "$restore_source:/backup:ro" docker.io/oven/bun:1.4.2 tar --no-same-owner --no-same-permissions -C /data -xf /backup/evidence.tar
-podman run --rm --network "${CHRONICLER_PROJECT}_default" -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "$PWD:/app:ro" -v "${CHRONICLER_PROJECT}_data:/data:ro" -v "$restore_source:/backup:ro" -w /app docker.io/oven/bun:1.4.2 bun apps/web/tools/backup.ts verify-database /backup
+podman run --rm --network "${CHRONICLER_PROJECT}_default" -e DATABASE_URL=postgres://chronicler:local-only@database:5432/chronicler -v "${CHRONICLER_PROJECT}_data:/data:ro" -v "$restore_source:/backup:ro" localhost/chronicler-tools:local bun apps/web/tools/backup.ts verify-database /backup
 if [[ "${4:-}" == --resume ]]; then
   export CHRONICLER_READ_ONLY=0
   ./infra/isolated.sh up -d

@@ -11,7 +11,7 @@ import { sqlClient } from '../src/lib/server/db/client';
 import { exportBundle } from '../src/lib/server/services/bundle';
 import { unzipSync } from 'fflate';
 import { correctStage } from '../src/lib/server/services/staging';
-const enabled = !!process.env.DOCUMENT_FIXTURES;
+const enabled = process.env.TEST_SUITE === 'documents';
 const check = test.skipIf(!enabled);
 afterAll(async () => {
   if (enabled) await sqlClient.end();

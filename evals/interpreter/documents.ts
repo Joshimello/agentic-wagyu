@@ -1,10 +1,10 @@
 /** Read-only document acceptance on the supplied corpus. */
-import corpus from '../../../evals/documents.json';
-import { validateStage } from '../src/lib/server/contracts';
+import corpus from '../documents.json';
+import { validateStage } from '../../apps/web/src/lib/server/contracts';
 import { unzipSync, strFromU8 } from 'fflate';
-import { config } from '../src/lib/server/config';
-import { memoryCount } from '../src/lib/server/services/uploads';
-import { sqlClient } from '../src/lib/server/db/client';
+import { config } from '../../apps/web/src/lib/server/config';
+import { memoryCount } from '../../apps/web/src/lib/server/services/uploads';
+import { sqlClient } from '../../apps/web/src/lib/server/db/client';
 const url = process.env.WEB_URL ?? 'http://web:5173';
 const requireReview = process.env.DOCUMENT_REQUIRE_REVIEW !== 'false';
 const assert = (condition: unknown, message: string) => {

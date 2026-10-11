@@ -27,7 +27,7 @@ import {
 } from '../src/lib/server/jobs/queue';
 import { llmClient } from '../src/lib/server/llm/client';
 import type { Plan } from '../src/lib/server/contracts/memory';
-const enabled = process.env.OPERATIONS_TEST === 'true',
+const enabled = process.env.TEST_SUITE === 'operations',
   check = test.skipIf(!enabled);
 afterAll(async () => {
   if (enabled) await sqlClient.end();

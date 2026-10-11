@@ -1,8 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sqlClient } from '../src/lib/server/db/client';
-import { memorySnapshot } from '../src/lib/server/services/memory';
-import { type Stage } from '../src/lib/server/contracts';
+import { sqlClient } from '../../apps/web/src/lib/server/db/client';
+import { memorySnapshot } from '../../apps/web/src/lib/server/services/memory';
+import { type Stage } from '../../apps/web/src/lib/server/contracts';
 const base = process.env.APP_URL ?? 'http://web:5173';
 const corpus = process.env.PILOT_CORPUS_ROOT ?? '/corpus';
 const reportRoot = process.env.PILOT_REPORT_ROOT ?? '/reports';
@@ -244,6 +244,25 @@ try {
   const initialAnswer = await ask(
     'What VLM research progress and outstanding issues are described in the July 20 presentation? Cite original slides.',
   );
+  if (process.argv.includes('--verify-restart')) {
+    const beforeRestart = await memoryFingerprint();
+    await Bun.write(join(reportRoot, 'restart-requested'), 'ready');
+    const deadline = Date.now() + 120000;
+    while (!(await Bun.file(join(reportRoot, 'restart-complete')).exists())) {
+      if (Date.now() > deadline)
+        throw new Error('Release restart was not acknowledged');
+      await Bun.sleep(1000);
+    }
+    assert(
+      (await memoryFingerprint()) === beforeRestart,
+      'Restart preserves accepted memory',
+    );
+    const restored = await api(`/api/research/${initialAnswer.id}`);
+    assert(
+      JSON.stringify(restored.answer) === JSON.stringify(initialAnswer.answer),
+      'Restart preserves saved answer and citations',
+    );
+  }
   const beforeHash = await memoryFingerprint();
   const primitive = video.primitives.find(
     (p) => p.kind === 'text' && p.role === 'asr',

@@ -14,8 +14,8 @@ services:
       retries: 30
     restart: unless-stopped
   media:
-    image: localhost/chronicler-media:dev
-    build: {context: .., dockerfile: infra/media.Containerfile}
+    image: localhost/chronicler-media:local
+    build: {context: .., dockerfile: infra/media.Containerfile, target: runtime}
     devices: ["${NVIDIA_CDI_DEVICE:-nvidia.com/gpu=0}"]
     volumes: ["../data:/data", "../data/cache:/cache"]
     healthcheck:
@@ -25,9 +25,9 @@ services:
       retries: 30
     restart: unless-stopped
   web:
-    image: localhost/chronicler-web:dev
-    build: {context: .., dockerfile: infra/web.Containerfile, target: development, args: {APP_ORIGIN: "${CHRONICLER_ORIGIN:-http://localhost:5173}"}}
-    command: ["sh", "-c", "bun run --cwd apps/web db:migrate && exec bun apps/web/build"]
+    image: localhost/chronicler-web:local
+    build: {context: .., dockerfile: infra/web.Containerfile, target: runtime, args: {APP_ORIGIN: "${CHRONICLER_ORIGIN:-http://localhost:5173}"}}
+    command: ["sh", "-c", "bun apps/web/src/lib/server/db/migrate.ts && exec bun apps/web/build"]
     environment:
       DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler
       DATA_ROOT: /data
@@ -49,7 +49,7 @@ services:
       retries: 30
     restart: unless-stopped
   worker:
-    image: localhost/chronicler-web:dev
+    image: localhost/chronicler-web:local
     stop_grace_period: 45s
     command: ["bun", "apps/web/workers/run.ts"]
     env_file: ["../.env"]
@@ -61,7 +61,7 @@ services:
     depends_on: {web: {condition: service_healthy}, media: {condition: service_healthy}}
     restart: unless-stopped
   translator:
-    image: localhost/chronicler-web:dev
+    image: localhost/chronicler-web:local
     stop_grace_period: 45s
     command: ["bun", "apps/web/workers/translate.ts"]
     env_file: ["../.env"]

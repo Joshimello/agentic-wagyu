@@ -32,7 +32,7 @@ services:
       timeout: 3s
       retries: 30
   media:
-    image: localhost/chronicler-media:dev
+    image: localhost/chronicler-media:local
     devices: ["${NVIDIA_CDI_DEVICE:-nvidia.com/gpu=0}"]
     volumes: ["evidence:/data", "${CHRONICLER_CACHE_MOUNT:-../data/cache}:/cache"]
     healthcheck:

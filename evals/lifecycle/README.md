@@ -9,7 +9,7 @@ Each `gold` entry matches an entire source (`title: ".*"`). Initial coverage at 
 With the supplied files in ignored `data/recordings` and `data/documents`, use a new workspace name and free port:
 
 ```sh
-CHRONICLER_PROJECT=chronicler_pilot_example CHRONICLER_PORT=5174 ./infra/verify-mvp.sh --evaluate
+CHRONICLER_PROJECT=chronicler_pilot_example CHRONICLER_PORT=5174 ./infra/verify-workflow.sh --evaluate
 ```
 
 The script runs all application work in Podman, creates fresh database/evidence volumes, uploads a real five-minute meeting excerpt plus the July deck, exercises review/push/question/correction/history, admits the two documents, and runs these ten questions three times. It preserves the pilot and private reports for inspection. It does not modify main accepted memory. Gateway credentials stay in ignored `.env`.

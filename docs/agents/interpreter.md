@@ -1,6 +1,6 @@
 # Interpreter worker
 
-Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md). Milestones: M0–M3, recovery in M7, and cleanup in M8.
+Updated: 2026-10-06. Part of the [SvelteKit application plan](../../plan.md).
 
 ## Responsibility and boundary
 
@@ -8,7 +8,7 @@ Automatically process uploaded files into reviewable staging revisions. Own sour
 
 Input: upload ID, immutable asset identity, interpretation configuration, and requested processing version. Output: a validated staging revision with primitives, metadata, relationships, coverage, and provenance. There is no automatic Chronicler dispatch on completion.
 
-Run the TypeScript worker with Bun in its Podman container. Keep MOSS, Python, FFmpeg, renderers, and GPU dependencies in the media container, with selected-GPU CDI access and persistent caches. Execute relevant checks in containers and commit coherent implementation increments. M8 removes temporary extraction demos/harnesses and generated reports while retaining source-fidelity/timing regression coverage and required provenance.
+Run the TypeScript worker with Bun in its Podman container. Keep MOSS, Python, FFmpeg, renderers, and GPU dependencies in the media container, with selected-GPU CDI access and persistent caches. Execute relevant checks in containers and commit coherent implementation increments. Keep source-fidelity/timing regression coverage and required provenance; development evaluations remain outside runtime images.
 
 Use the environment-configured OpenAI-compatible endpoint and `pro6000/qwen38-flash-next` for development visual interpretation. The basic image-input check passed; contact-sheet readability and diagram accuracy still need the representative evaluations below.
 

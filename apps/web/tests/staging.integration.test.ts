@@ -22,7 +22,7 @@ import {
   queueName,
 } from '../src/lib/server/jobs/queue';
 import { assetPath } from '../src/lib/server/storage';
-const enabled = !!process.env.DATABASE_URL;
+const enabled = process.env.TEST_SUITE === 'staging';
 const check = test.skipIf(!enabled);
 const created: string[] = [];
 afterAll(async () => {
@@ -42,7 +42,7 @@ check(
 check(
   'same immutable bytes keep distinct submission context and preserve source',
   async () => {
-    const source = `Foundation regression ${crypto.randomUUID()}\nFriday launch.`;
+    const source = `Staging regression ${crypto.randomUUID()}\nFriday launch.`;
     const a = await acceptUpload(
       new File([source], 'notes.txt', { type: 'text/plain' }),
       { uploader: 'Alice', label: 'Meeting A' },

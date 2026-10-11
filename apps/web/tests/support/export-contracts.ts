@@ -4,7 +4,7 @@ import {
   pushSchema,
   memorySchema,
   querySchema,
-} from '../src/lib/server/contracts';
+} from '../../src/lib/server/contracts';
 import { mkdir } from 'node:fs/promises';
 const out = process.argv[2] ?? '/data/contracts';
 await mkdir(out, { recursive: true });

@@ -32,7 +32,7 @@ import {
 } from '../src/lib/server/contracts/memory';
 import type { Stage } from '../src/lib/server/contracts';
 import { pushBatches, knowledgeEvents } from '../src/lib/server/db/schema';
-const enabled = process.env.MEMORY_TEST === 'true',
+const enabled = process.env.TEST_SUITE === 'memory',
   check = test.skipIf(!enabled);
 afterAll(async () => {
   if (enabled) await sqlClient.end();

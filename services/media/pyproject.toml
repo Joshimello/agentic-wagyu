@@ -6,8 +6,11 @@ dependencies = [
   "moss-transcribe-diarize @ git+https://github.com/OpenMOSS/MOSS-Transcribe-Diarize.git@61bc29cd4120be7b5d3b761b64cd5dff57263642",
   "torch==2.9.0", "torchaudio==2.9.0", "transformers==5.6.0",
   "fastapi==0.135.1", "uvicorn==0.41.0", "pillow==12.1.1",
-  "python-pptx==1.0.2", "jsonschema==4.26.0"
+  "python-pptx==1.0.2"
 ]
+
+[dependency-groups]
+dev = ["jsonschema==4.26.0"]
 
 [[tool.uv.index]]
 name = "pytorch"

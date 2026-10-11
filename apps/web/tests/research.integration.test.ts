@@ -29,7 +29,7 @@ import {
   queueName,
 } from '../src/lib/server/jobs/queue';
 import type { Stage } from '../src/lib/server/contracts';
-const enabled = process.env.RESEARCH_TEST === 'true',
+const enabled = process.env.TEST_SUITE === 'research',
   check = test.skipIf(!enabled);
 afterAll(async () => {
   if (enabled) await sqlClient.end();

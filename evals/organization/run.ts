@@ -1,5 +1,5 @@
 /** Explicit, resumable operator evaluation using the user's actual staged sources. No generated live fixtures. */
-import corpus from '../../../evals/weekly-progress.json';
+import corpus from '../weekly-progress.json';
 const base = process.env.WEB_URL ?? 'http://web:5173';
 const report: {
   filename: string;
@@ -9,10 +9,11 @@ const report: {
   pushId: string;
   memoryVersion: number;
   projects: number;
-  assertions: number;
+  segments: number;
   elapsedMs: number;
   acceptPartial: boolean;
   outcomes: unknown;
+  organizationMode: 'full' | 'scope';
 }[] = [];
 async function request(path: string, options?: RequestInit) {
   // The web app may be replaced while the durable worker continues processing.
@@ -37,6 +38,7 @@ async function request(path: string, options?: RequestInit) {
   }
   throw new Error('Application reconnect timed out');
 }
+const staged = new Map<string, any>();
 const uploads = await request('/api/uploads');
 for (const source of corpus.sources) {
   const upload = uploads.find((u: any) => u.filename === source.filename);
@@ -45,12 +47,36 @@ for (const source of corpus.sources) {
   const stage = detail.revisions.find(
     (r: any) => r.id === detail.upload.currentRevisionId,
   ).manifest;
+  staged.set(stage.id, stage);
+  const before = await request('/api/memory/organized');
+  const assigned = new Set(
+    before.topics.flatMap((t: any) => t.children.map((c: any) => c.nodeId)),
+  );
+  const past = (await request('/api/pushes')).find(
+    (p: any) =>
+      p.state === 'committed' &&
+      p.outcomes.some((o: any) => o.revisionId === stage.id),
+  );
+  const pastMode = past
+    ? (await request(`/api/pushes/${past.id}`)).input.organizationMode
+    : undefined;
+  const organizationMode = before.segments.some(
+    (n: any) =>
+      n.revisionId === stage.id &&
+      !n.current.segment.contextOnly &&
+      !assigned.has(n.id),
+  )
+    ? 'scope'
+    : pastMode === 'scope'
+      ? 'scope'
+      : 'full';
   const batch = await request('/api/pushes', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      workflow: 'assertions',
-      idempotencyKey: `weekly-progress:${stage.id}`,
+      workflow: 'summary',
+      organizationMode,
+      idempotencyKey: `organized-weekly:${stage.id}:organization-2-en:${organizationMode}`,
       items: [
         {
           uploadId: upload.id,
@@ -105,7 +131,7 @@ for (const source of corpus.sources) {
   if (current.state !== 'committed')
     throw new Error('Timed out waiting for weekly push');
   const memory = await request(
-    `/api/memory?knownVersion=${current.commitVersion}`,
+    `/api/memory/organized?knownVersion=${current.commitVersion}`,
   );
   report.push({
     filename: source.filename,
@@ -115,29 +141,35 @@ for (const source of corpus.sources) {
     pushId: batch.id,
     memoryVersion: current.commitVersion,
     projects: memory.projects.length,
-    assertions: memory.statements.length,
+    segments: memory.segments.length,
     // Durable timing survives an interrupted evaluation or unchanged replay.
     elapsedMs: Date.parse(current.updatedAt) - Date.parse(current.createdAt),
     acceptPartial: !stage.coverage.complete,
     outcomes: current.outcomes,
+    organizationMode,
   });
   await Bun.write(
-    '/data/evaluations/weekly-pushes.json',
+    '/data/evaluations/organized-weekly.json',
     JSON.stringify(report, null, 2),
   );
   console.log(JSON.stringify({ event: 'push_committed', ...report.at(-1) }));
 }
-const memory = await request('/api/memory');
+const memory = await request('/api/memory/organized');
 const bySource = new Map<string, Set<string>>();
 for (const source of report) {
   const projects = new Set<string>();
-  for (const claim of memory.statements)
+  const leaves = new Set(
+    memory.segments
+      .filter((n: any) => n.revisionId === source.revisionId)
+      .map((n: any) => n.id),
+  );
+  for (const project of memory.projects) {
+    const topics = memory.topics.filter((t: any) => t.scopeId === project.id);
     if (
-      claim.history.some((v: any) =>
-        v.evidence.some((e: any) => e.revisionId === source.revisionId),
-      )
+      topics.some((t: any) => t.children.some((c: any) => leaves.has(c.nodeId)))
     )
-      projects.add(claim.projectId);
+      projects.add(project.id);
+  }
   bySource.set(source.filename, projects);
 }
 for (const family of [...new Set(report.map((r) => r.family))]) {
@@ -172,20 +204,113 @@ for (const filename of corpus.unpushedControls) {
   if (detail.memory.state !== 'never_pushed')
     throw new Error(`Control was unexpectedly pushed: ${filename}`);
   for (const revision of detail.revisions)
-    if (
-      memory.statements.some((s: any) =>
-        s.history.some((v: any) =>
-          v.evidence.some((e: any) => e.revisionId === revision.id),
-        ),
-      )
-    )
+    if (memory.nodes.some((n: any) => n.revisionId === revision.id))
       throw new Error('Unpushed evidence entered memory');
 }
+// Independent completeness check: concatenate exact text from segment drilldowns,
+// and compare it with pinned source primitives in their original document/turn order.
+const versions = new Map(
+  memory.nodes.flatMap((n: any) =>
+    n.history.map((v: any) => [v.id, { node: n.id, version: v.commitVersion }]),
+  ),
+);
+for (const n of memory.nodes)
+  for (const v of n.history)
+    for (const c of v.children) {
+      let child: any = versions.get(c.versionId);
+      if (!child) {
+        const historical = await request(
+          `/api/memory/nodes/${c.nodeId}?versionId=${c.versionId}&knownVersion=${memory.version}`,
+        );
+        child = {
+          node: historical.node.id,
+          version: historical.node.current.commitVersion,
+        };
+        versions.set(c.versionId, child);
+      }
+      if (!child || child.node !== c.nodeId || child.version > v.commitVersion)
+        throw new Error('Broken historical child pin');
+    }
+let exactCharacters = 0;
+for (const source of memory.sources) {
+  const stage = staged.get(source.revisionId);
+  if (!stage) throw new Error('Unexpected organized source');
+  const nativeIds = stage.document
+    ? stage.document.units.flatMap((u: any) => u.textIds)
+    : stage.primitives
+        .filter((p: any) => p.kind === 'text')
+        .map((p: any) => p.id);
+  const expected = nativeIds
+    .map((id: string) => stage.primitives.find((p: any) => p.id === id).text)
+    .join('');
+  let actual = '';
+  let cursor = 0;
+  for (const child of source.children) {
+    const leaf = await request(
+      `/api/memory/nodes/${child.nodeId}?versionId=${child.versionId}&knownVersion=${memory.version}`,
+    );
+    const range = leaf.node.current.segment;
+    if (range.revisionId !== source.revisionId || range.firstUnit !== cursor)
+      throw new Error('Segment coverage or source mismatch');
+    cursor = range.lastUnit + 1;
+    actual += leaf.source.content.texts.map((t: any) => t.text).join('');
+  }
+  if (actual !== expected)
+    throw new Error('Segment drilldown lost or reordered original text');
+  exactCharacters += actual.length;
+}
+for (const row of report) {
+  const replay = await request('/api/pushes', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflow: 'summary',
+      organizationMode: row.organizationMode,
+      idempotencyKey: `organized-weekly:${row.revisionId}:organization-2-en:${row.organizationMode}`,
+      projectScope: { mode: 'auto' },
+      items: [
+        {
+          uploadId: row.uploadId,
+          revisionId: row.revisionId,
+          acceptPartial: row.acceptPartial,
+        },
+      ],
+    }),
+  });
+  if (replay.id !== row.pushId || replay.commitVersion !== row.memoryVersion)
+    throw new Error('Unchanged replay duplicated knowledge');
+}
+if ((await request('/api/memory/organized')).version !== memory.version)
+  throw new Error('Replay changed memory');
+await Bun.write(
+  '/data/evaluations/organization-integrity.json',
+  JSON.stringify(
+    {
+      version: memory.version,
+      sources: memory.sources.length,
+      segments: memory.segments.length,
+      topics: memory.topics.length,
+      projects: memory.projects.length,
+      exactCharacters,
+      historyPins: true,
+      unpushedIsolation: true,
+      replayNoop: true,
+      projectContinuity: Object.fromEntries(
+        [...bySource].map(([name, ids]) => [name, [...ids]]),
+      ),
+    },
+    null,
+    2,
+  ),
+);
 console.log(
   JSON.stringify({
     accepted: true,
     version: memory.version,
-    projects: memory.projects.map((p: any) => ({ id: p.id, name: p.name })),
+    projects: memory.projects.map((p: any) => ({
+      id: p.id,
+      name: p.current.title,
+    })),
     projectContinuity: Object.fromEntries(
       [...bySource].map(([name, ids]) => [name, [...ids]]),
     ),

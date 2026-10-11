@@ -1,11 +1,11 @@
 /** Read-only acceptance checks on real, already staged recordings. Never edits their evidence. */
-import { validateStage } from '../src/lib/server/contracts';
+import { validateStage } from '../../apps/web/src/lib/server/contracts';
 import { unzipSync, strFromU8 } from 'fflate';
-import { memoryCount } from '../src/lib/server/services/uploads';
-import corpus from '../../../evals/meetings.json';
-import { config } from '../src/lib/server/config';
-import { audioSections } from '../src/lib/server/agents/interpreter/audio-sections';
-import { normalizeTranscription } from '../src/lib/server/text-normalization';
+import { memoryCount } from '../../apps/web/src/lib/server/services/uploads';
+import corpus from '../meetings.json';
+import { config } from '../../apps/web/src/lib/server/config';
+import { audioSections } from '../../apps/web/src/lib/server/agents/interpreter/audio-sections';
+import { normalizeTranscription } from '../../apps/web/src/lib/server/text-normalization';
 const url = process.env.WEB_URL ?? 'http://web:5173';
 const check = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -187,4 +187,4 @@ console.log(
     2,
   ),
 );
-await (await import('../src/lib/server/db/client')).sqlClient.end();
+await (await import('../../apps/web/src/lib/server/db/client')).sqlClient.end();
