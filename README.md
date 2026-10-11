@@ -21,6 +21,15 @@ podman run --rm --device nvidia.com/gpu=all --security-opt=label=disable docker.
 
 Use a device name actually listed by CDI. `all` exposes all GPUs available through WSL; indexed selection remains the default on hosts that support it. A successful `nvidia-smi` check establishes container device access; media inference still needs its own smoke test.
 
+The media build downloads large PyTorch/CUDA wheels. Its locked dependency install uses a 600-second HTTP read timeout, five retries, and two concurrent downloads. If a transient download failure interrupts the build, retry the media image and then start the stack:
+
+```sh
+bash ./infra/dev.sh build media
+bash ./infra/dev.sh up -d
+```
+
+The normal rebuild reuses successful image layers. A failed build may leave no application containers to inspect; run `ps` and service logs after startup succeeds.
+
 Run development checks in Podman:
 
 ```sh
