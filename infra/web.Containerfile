@@ -4,6 +4,7 @@ COPY package.json bun.lock ./
 COPY apps/web/package.json ./apps/web/
 RUN bun install --frozen-lockfile
 COPY apps/web ./apps/web
+ARG APP_ORIGIN=http://localhost:5173
 RUN bun run --cwd apps/web build
 CMD ["bun", "run", "--cwd", "apps/web", "dev"]
 

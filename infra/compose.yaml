@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
   web:
     image: localhost/chronicler-web:dev
-    build: {context: .., dockerfile: infra/web.Containerfile, target: development}
+    build: {context: .., dockerfile: infra/web.Containerfile, target: development, args: {APP_ORIGIN: "${CHRONICLER_ORIGIN:-http://localhost:5173}"}}
     command: ["sh", "-c", "bun run --cwd apps/web db:migrate && exec bun apps/web/build"]
     environment:
       DATABASE_URL: postgres://chronicler:local-only@database:5432/chronicler

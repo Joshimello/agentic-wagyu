@@ -12,6 +12,8 @@ Put the configured API credentials in private `.env` (see `.env.example`). Then:
 
 Open http://localhost:5173. PostgreSQL lives in the `chronicler_database` named volume; raw/derived assets and model caches live under ignored `data/`. `./infra/dev.sh down` preserves those records. Do not use `down -v` unless deliberately deleting the database.
 
+See [operations](docs/operations.md) for model usage limits, cancellation, restart recovery, full backups, fresh-volume restores and the isolated lifecycle pilot. Run `./infra/doctor.sh --live` after startup to check the configured stack and model without printing credentials.
+
 On WSL2, `nvidia-ctk cdi list` normally exposes `nvidia.com/gpu=all` rather than an indexed device. On a single-GPU WSL machine, set `NVIDIA_CDI_DEVICE=nvidia.com/gpu=all` in `.env`. The launcher reads the repository-root `.env` for Compose interpolation. Verify the selected device before starting the stack:
 
 ```sh
@@ -41,6 +43,7 @@ podman run --rm -v "$PWD:/app" -w /app docker.io/oven/bun:1.4.2 bun run test:con
 ./infra/test-research.sh
 ./infra/test-translations.sh
 ./infra/test-migrations.sh
+./infra/test-operations.sh
 podman build -t localhost/chronicler-browser:dev -f infra/browser.Containerfile .
 podman run --rm --network host -v "$PWD:/app" -v "$PWD/data:/data" localhost/chronicler-browser:dev
 ```
