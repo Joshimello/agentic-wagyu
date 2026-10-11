@@ -62,6 +62,19 @@ test('semantic partitions reject missing, overlapping and reordered passages', (
   expect(() =>
     validatePartition(
       [
+        { firstUnit: 4, lastUnit: 5 },
+        { firstUnit: 6, lastUnit: 7 },
+      ],
+      4,
+      7,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    validatePartition([{ firstUnit: 5, lastUnit: 8 }], 4, 7),
+  ).toThrow('Expected next firstUnit=4');
+  expect(() =>
+    validatePartition(
+      [
         { firstUnit: 0, lastUnit: 2 },
         { firstUnit: 3, lastUnit: 5 },
       ],

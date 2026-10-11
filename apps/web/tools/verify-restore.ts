@@ -73,24 +73,50 @@ try {
       throw new Error('Read-only restore banner missing');
   }
   if (process.argv.includes('--writable')) {
-    const [old] = await sqlClient`select input->>'question' as question from research_runs where state='completed' and jsonb_array_length(answer->'citations')>0 order by created_at limit 1`;
-    if (!old) throw new Error('A saved cited question is required for the resume check');
-    const [before] = await sqlClient`select coalesce(max(version),0)::int as version from memory_commits`;
-    const created = await fetch(base+'/api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:old.question,knownVersion:before.version,idempotencyKey:crypto.randomUUID()})});
-    if (!created.ok) throw new Error('Resumed workspace rejected a new question');
-    const run = await created.json(), deadline = Date.now()+15*60*1000;
+    const [old] =
+      await sqlClient`select input->>'question' as question from research_runs where state='completed' and jsonb_array_length(answer->'citations')>0 order by created_at limit 1`;
+    if (!old)
+      throw new Error(
+        'A saved cited question is required for the resume check',
+      );
+    const [before] =
+      await sqlClient`select coalesce(max(version),0)::int as version from memory_commits`;
+    const created = await fetch(base + '/api/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: old.question,
+        knownVersion: before.version,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    });
+    if (!created.ok)
+      throw new Error('Resumed workspace rejected a new question');
+    const run = await created.json(),
+      deadline = Date.now() + 15 * 60 * 1000;
     let result;
-    while(Date.now()<deadline) {
+    while (Date.now() < deadline) {
       result = await (await get(`/api/research/${run.id}`)).json();
-      if (result.state==='completed') break;
-      if (['failed','canceled'].includes(result.state)) throw new Error('Resumed Researcher failed');
+      if (result.state === 'completed') break;
+      if (['failed', 'canceled'].includes(result.state))
+        throw new Error('Resumed Researcher failed');
       await Bun.sleep(1000);
     }
-    if (result?.state !== 'completed' || !result.answer.citations.length) throw new Error('Resumed Researcher did not produce a cited answer');
-    for (const citation of result.answer.citations) await (await get(citation.url)).body?.cancel();
-    const [after] = await sqlClient`select coalesce(max(version),0)::int as version from memory_commits`;
-    if (before.version !== after.version) throw new Error('Research changed restored memory');
-    console.log(JSON.stringify({resumedAnswer:run.id,usage:result.usage,memoryUnchanged:true}));
+    if (result?.state !== 'completed' || !result.answer.citations.length)
+      throw new Error('Resumed Researcher did not produce a cited answer');
+    for (const citation of result.answer.citations)
+      await (await get(citation.url)).body?.cancel();
+    const [after] =
+      await sqlClient`select coalesce(max(version),0)::int as version from memory_commits`;
+    if (before.version !== after.version)
+      throw new Error('Research changed restored memory');
+    console.log(
+      JSON.stringify({
+        resumedAnswer: run.id,
+        usage: result.usage,
+        memoryUnchanged: true,
+      }),
+    );
   }
   console.log(
     JSON.stringify({

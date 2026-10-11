@@ -11,8 +11,13 @@
 <section class="card">
   <h2>Usage limits</h2>
   <p>
-    Per operation: {data.usage.limits.calls || 'unlimited'} HTTP attempts · {data.usage.limits.input.toLocaleString()}
-    input tokens · {data.usage.limits.output.toLocaleString()} output tokens.
+    Per operation: {data.usage.limits.calls || 'unlimited'} HTTP attempts · {data
+      .usage.limits.input
+      ? data.usage.limits.input.toLocaleString()
+      : 'unlimited'}
+    input tokens · {data.usage.limits.output
+      ? data.usage.limits.output.toLocaleString()
+      : 'unlimited'} output tokens.
   </p>
   <p>
     Daily token ceiling: {data.usage.limits.daily
