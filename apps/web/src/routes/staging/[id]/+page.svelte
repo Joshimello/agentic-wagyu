@@ -14,6 +14,8 @@
   import MediaPreview from '../../../lib/components/MediaPreview.svelte';
   import PushToMemory from '../../../lib/components/PushToMemory.svelte';
   import MeetingSummary from '../../../lib/components/MeetingSummary.svelte';
+  import ProcessingDetails from '../../../lib/components/ProcessingDetails.svelte';
+  import { processingMayResume } from '../../../lib/processing-status';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
@@ -46,6 +48,9 @@
     stage?.id === detail.upload.currentRevisionId && !removed,
   );
   let busy = $derived(['queued', 'processing'].includes(detail.run.state));
+  let retryPending = $derived(
+    detail.run.state === 'failed' && detail.run.retryPending,
+  );
   let alreadyPushed = $derived(
     Boolean(
       stage &&
@@ -88,7 +93,12 @@
     const timer = setInterval(async () => {
       if (
         fetching ||
-        (!['queued', 'processing'].includes(detail.run.state) &&
+        (!processingMayResume(
+          detail.run.state,
+          detail.run.updatedAt,
+          undefined,
+          detail.run.retryPending,
+        ) &&
           detail.memory.state !== 'push_pending')
       )
         return;
@@ -223,7 +233,7 @@
   }
 
   async function cancelProcessing() {
-    if (!busy || canceling) return;
+    if ((!busy && !retryPending) || canceling) return;
     const uploadId = detail.upload.id;
     const runId = detail.run.id;
     canceling = true;
@@ -345,11 +355,13 @@
         >
       </Menu>{/if}
     <Menu label="More" icon="more">
-      <button disabled={busy || retrying || removed} onclick={() => retry()}
+      <button
+        disabled={busy || retryPending || retrying || removed}
+        onclick={() => retry()}
         ><Icon name="refresh" />Reprocess original</button
       >
       {#if stage && (isVideo || stage.document) && current}<button
-          disabled={busy || retrying || removed}
+          disabled={busy || retryPending || retrying || removed}
           onclick={() => retry(true)}
           ><Icon name="image" />{stage.document
             ? 'Revisit document descriptions'
@@ -394,11 +406,13 @@
     <strong
       >{busy
         ? 'Processing'
-        : detail.run.state === 'failed'
-          ? 'Processing failed'
-          : detail.run.state === 'canceled'
-            ? 'Canceled'
-            : ''}</strong
+        : retryPending
+          ? 'Automatic retry queued'
+          : detail.run.state === 'failed'
+            ? 'Processing failed'
+            : detail.run.state === 'canceled'
+              ? 'Canceled'
+              : ''}</strong
     >
   {/if}
   {#if !busy && stage && !stage.coverage.complete}<span class="review-needed"
@@ -412,11 +426,13 @@
       />
     </div>{/if}
 </div>
-{#if busy}<div class="processing-strip">
+{#if busy || retryPending}<div class="processing-strip">
     <ProgressBar
-      value={detail.run.progressPercent ?? 0}
-      label={detail.run.progress}
-      state={detail.run.state}
+      value={retryPending ? null : (detail.run.progressPercent ?? 0)}
+      label={retryPending
+        ? 'Waiting for automatic retry; completed work is retained'
+        : detail.run.progress}
+      state={retryPending ? 'queued' : detail.run.state}
     /><button class="secondary" disabled={canceling} onclick={cancelProcessing}
       ><Icon name="close" />{canceling ? 'Stopping...' : 'Cancel'}</button
     >
@@ -427,6 +443,11 @@
 {#if detail.run.error}<p class="error" role="alert">{detail.run.error}</p>{/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+<ProcessingDetails
+  uploadId={detail.upload.id}
+  runId={detail.run.id}
+  state={detail.run.state}
+/>
 {#if stage}
   <div class="review-layout">
     <aside class="review-sidebar">
@@ -585,11 +606,13 @@
           : 'Preparing your review'}
     </h2>
     <p class="muted">
-      {['failed', 'canceled'].includes(detail.run.state)
-        ? 'Use More to retry processing.'
-        : 'You can leave this page. Progress is saved.'}
+      {retryPending
+        ? 'The worker will retry automatically and reuse completed audio windows. Processing details shows the previous error.'
+        : ['failed', 'canceled'].includes(detail.run.state)
+          ? 'Use More to retry processing.'
+          : 'You can leave this page. Progress is saved.'}
     </p>
-    {#if ['failed', 'canceled'].includes(detail.run.state) && !removed}<button
+    {#if ['failed', 'canceled'].includes(detail.run.state) && !removed && !retryPending}<button
         class="secondary"
         disabled={retrying}
         onclick={() => retry()}><Icon name="refresh" />Retry processing</button
