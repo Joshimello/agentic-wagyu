@@ -6,6 +6,9 @@
   import Select from '../lib/components/Select.svelte';
   import Tooltip from '../lib/components/Tooltip.svelte';
   import ProgressBar from '../lib/components/ProgressBar.svelte';
+  import SourceDetails from '../lib/components/SourceDetails.svelte';
+  import SourceProjectField from '../lib/components/SourceProjectField.svelte';
+  import { groupStagingSources, sourceProjectName, sourceProjectNames } from '../lib/source-organization';
   let { data } = $props();
   const activity = useActivity();
   let uploads = $state(untrack(() => data.uploads));
@@ -21,6 +24,11 @@
     ].filter((id) => uploads.some((file) => file.id === id)),
   );
   let refreshVersion = 0;
+  let detailsEditor = $state<ReturnType<typeof SourceDetails>>();
+  let stagingProjects = $derived(sourceProjectNames([
+    ...data.projects.map((project) => project.name),
+    ...uploads.map((file) => sourceProjectName(file.metadata)),
+  ]));
   let pushing = $state(false),
     projectMode = $state('auto'),
     projectId = $state(''),
@@ -110,12 +118,14 @@
       pushing = false;
     }
   }
-  let groups = $derived(
-    Array.from(
-      Map.groupBy(uploads, (file) => file.metadata.groupId ?? file.id),
-      ([id, files]) => ({ id, files }),
-    ),
-  );
+  let groups = $derived(groupStagingSources(uploads));
+  async function detailsUpdated() {
+    refreshVersion += 1;
+    const [files, selections] = await Promise.all([fetch('/api/uploads'), fetch('/api/selections')]);
+    if (!files.ok || !selections.ok) throw new Error('Details saved. Reload Staging to see your changes.');
+    uploads = await files.json();
+    selected = await selections.json();
+  }
   async function changeSelection(
     file: (typeof uploads)[number],
     remove = false,
@@ -160,6 +170,8 @@
     message = $state('');
   let uploader = $state('local'),
     groupHint = $state('');
+  let uploadMeetingTime = $state('');
+  let uploadDetailsVersion = $state(0);
   let sourceFiles = $state<File[]>([]);
   let sourceInput = $state<HTMLInputElement>();
   let uploadDetailsOpen = $state(false);
@@ -285,6 +297,7 @@
     if (busy || !sourceFiles.length) return;
     const form = event.currentTarget as HTMLFormElement;
     const body = new FormData(form);
+    body.set('sourceTime', uploadMeetingTime ? new Date(uploadMeetingTime).toISOString() : '');
     const filenames = sourceFiles.map((file) => file.name.slice(0, 255));
     const sessionId = crypto.randomUUID();
     let xhr: XMLHttpRequest | undefined;
@@ -338,6 +351,8 @@
         clearSourceFiles();
         uploader = 'local';
         groupHint = '';
+        uploadMeetingTime = '';
+        uploadDetailsVersion += 1;
         uploads = await (await fetch('/api/uploads')).json();
       }
     } catch (e) {
@@ -442,12 +457,8 @@
     <Disclosure title="Upload details" chevron bind:open={uploadDetailsOpen}>
       <div class="upload-details">
         <label>Uploaded by<input bind:value={uploader} /></label>
-        <label
-          >Group / project hint (optional)<input
-            bind:value={groupHint}
-            placeholder="Project meeting and slides"
-          /></label
-        >
+        <label>Meeting date and time (optional)<input type="datetime-local" bind:value={uploadMeetingTime} disabled={busy} /></label>
+        {#key uploadDetailsVersion}<SourceProjectField projects={stagingProjects} bind:value={groupHint} disabled={busy} />{/key}
       </div>
     </Disclosure>
   </form>
@@ -485,13 +496,12 @@
   {:else}
     <div class="list">
       {#each groups as group}
-        {#if group.files[0].metadata.groupId}
           <div class="group-label">
             <Icon name="folder" size={16} /><strong
-              >{group.files[0].metadata.groupHint}</strong
+              >{group.name}</strong
             ><span>{group.files.length} files</span>
             <Tooltip
-              text="A group keeps related uploads together. It does not establish that every source was discussed."
+              text="Project names organize your staging files. Sources without a name appear under No project."
               ><button
                 type="button"
                 class="group-info"
@@ -500,7 +510,6 @@
               ></Tooltip
             >
           </div>
-        {/if}
         {#each group.files as file}
           <div
             class="selectable-row"
@@ -528,7 +537,7 @@
                 ><strong>{file.metadata.label || file.filename}</strong><small
                   >{file.metadata.label && file.metadata.label !== file.filename
                     ? `${file.filename} / `
-                    : ''}{file.metadata.uploader} / {file.bytes >= 1048576
+                    : ''}{file.metadata.sourceTime ? `${new Date(file.metadata.sourceTime).toLocaleDateString()} / ` : ''}{file.metadata.uploader} / {file.bytes >= 1048576
                     ? `${(file.bytes / 1048576).toFixed(1)} MB`
                     : `${(file.bytes / 1024).toFixed(1)} KB`}</small
                 ></span
@@ -564,12 +573,18 @@
                 ><Icon name="arrow-right" size={18} /></span
               >
             </a>
+            <button class="secondary icon-button edit-source" aria-label={`Edit details for ${file.metadata.label || file.filename}`}
+              disabled={removing || ['queued', 'processing'].includes(file.run?.state ?? '') || file.run?.retryPending}
+              title={['queued', 'processing'].includes(file.run?.state ?? '') || file.run?.retryPending ? 'Available after processing finishes' : 'Edit details'}
+              onclick={() => detailsEditor?.open(file)}><Icon name="edit" size={17} /></button>
           </div>
         {/each}
       {/each}
     </div>
   {/if}
 </section>
+
+<SourceDetails bind:this={detailsEditor} projects={stagingProjects} onupdated={detailsUpdated} />
 
 {#if pendingSelections.length}
   <section class="card batch-review">
@@ -903,6 +918,11 @@
   }
   .selectable-row:last-child {
     border-bottom: 0;
+  }
+  .edit-source {
+    flex: none;
+    width: 2.1rem;
+    height: 2.1rem;
   }
   .selectable-row:hover {
     background: var(--surface-soft);

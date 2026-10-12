@@ -121,7 +121,66 @@ async function isolatedHome(page: Page, includeSaved = false) {
   await expect(
     page.getByRole('button', { name: 'Push To Memory', exact: true }),
   ).toHaveCount(0);
-  return { removed, selectionWrites };
+  return { removed, selectionWrites, get sources() { return sources; } };
+}
+
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 960 },
+  { name: 'mobile', width: 390, height: 844 },
+]) {
+  test(`${viewport.name}: source details create a project, preserve canceled drafts, and return a source to No project`, async ({ page }) => {
+    const home = await isolatedHome(page);
+    await page.setViewportSize(viewport);
+    await expect(page.locator('.group-label strong').filter({ hasText: /^No project$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit details for Processing meeting.mp4', exact: true })).toBeDisabled();
+    const writes: { label: string; sourceTime: string | null; projectName: string }[] = [];
+    await page.route(`**/api/uploads/${readyId}`, async (route) => {
+      expect(route.request().method()).toBe('PATCH');
+      const value = route.request().postDataJSON();
+      writes.push(value);
+      const source = home.sources.find((source) => source.id === readyId)!;
+      source.metadata = { ...source.metadata, label: value.label, sourceTime: value.sourceTime, groupHint: value.projectName } as typeof source.metadata;
+      source.currentRevisionId = crypto.randomUUID();
+      await route.fulfill({ json: { saved: true } });
+    });
+    await page.getByRole('button', { name: 'Edit details for Reviewed meeting.mp4', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Edit details', exact: true });
+    const projects = dialog.getByRole('combobox', { name: /^Project / });
+    if (process.env.EXPECT_EMPTY_PROJECTS === '1') await expect(projects).toHaveCount(0);
+    else if (await projects.count()) {
+      await projects.click();
+      await dialog.getByRole('option', { name: 'Custom', exact: true }).click();
+    }
+    await dialog.getByLabel('Name', { exact: true }).fill('Week 2 planning');
+    await dialog.getByLabel('Meeting date and time (optional)', { exact: true }).fill('2026-09-23T10:30');
+    await dialog.getByLabel('Project name (optional)', { exact: true }).fill('Continuity project');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await dialog.screenshot({ path: `${process.env.BROWSER_RESULTS ?? '/data/browser-results'}/source-details-${viewport.name}.png` });
+    await dialog.getByRole('button', { name: 'Save details', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ label: 'Week 2 planning', sourceTime: '2026-09-23T10:30:00.000Z', projectName: 'Continuity project' });
+    await expect(page.locator('.group-label strong').filter({ hasText: /^Continuity project$/ })).toBeVisible();
+    await page.reload();
+    await page.getByRole('button', { name: 'Edit details for Week 2 planning', exact: true }).click();
+    await expect(projects).toBeVisible();
+    await projects.click();
+    await expect(dialog.getByRole('option', { name: 'Continuity project', exact: true })).toBeVisible();
+    await dialog.getByRole('option', { name: 'Custom', exact: true }).click();
+    await dialog.getByLabel('Project name (optional)', { exact: true }).fill('Unsaved project');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(writes).toHaveLength(1);
+    await expect(page.locator('.group-label strong').filter({ hasText: /^Continuity project$/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit details for Week 2 planning', exact: true }).click();
+    await projects.click();
+    await dialog.getByRole('option', { name: 'No project', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save details', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(writes).toHaveLength(2);
+    expect(writes[1].projectName).toBe('');
+    await expect(page.locator('.group-label strong')).toHaveText(['No project']);
+    expect(home.sources.find((source) => source.id === readyId)!.filename).toBe('Reviewed meeting.mp4');
+  });
 }
 
 test('saved sources show their memory status and remain removable without a push menu', async ({
@@ -186,8 +245,13 @@ test('choosing and clearing files controls upload details without sending an upl
   await expect(submit).toBeEnabled();
   await expect(details).toHaveAttribute('aria-expanded', 'true');
   await page.getByLabel('Uploaded by', { exact: true }).fill('Research group');
+  const projects = page.getByRole('combobox', { name: /^Project / });
+  if (await projects.count()) {
+    await projects.click();
+    await page.getByRole('option', { name: 'Custom', exact: true }).click();
+  }
   await page
-    .getByLabel('Group / project hint (optional)')
+    .getByLabel('Project name (optional)')
     .fill('Real2Sim review');
   await details.click();
   await expect(details).toHaveAttribute('aria-expanded', 'false');
@@ -195,7 +259,7 @@ test('choosing and clearing files controls upload details without sending an upl
   await expect(page.getByLabel('Uploaded by', { exact: true })).toHaveValue(
     'Research group',
   );
-  await expect(page.getByLabel('Group / project hint (optional)')).toHaveValue(
+  await expect(page.getByLabel('Project name (optional)')).toHaveValue(
     'Real2Sim review',
   );
   await page
@@ -426,6 +490,11 @@ test('a reviewed recording fits mobile, tablet, and desktop without horizontal o
     'detail',
     `/staging/${file.id}?revision=${file.currentRevisionId}`,
   );
+  await page.getByRole('button', { name: 'Edit details', exact: true }).click();
+  const details = page.getByRole('dialog', { name: 'Edit details', exact: true });
+  await expect(details.getByLabel('Name', { exact: true })).toHaveValue(before.upload.metadata.label || before.upload.filename);
+  await expect(details.getByRole('combobox', { name: /^Project / })).toBeVisible();
+  await details.getByRole('button', { name: 'Cancel', exact: true }).click();
   const after = await (
     await page.request.get(`/api/uploads/${file.id}`)
   ).json();

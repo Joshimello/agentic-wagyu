@@ -6,6 +6,7 @@
   import Tooltip from './Tooltip.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import SpeakerReview from './SpeakerReview.svelte';
+  import { localMeetingTime } from '../source-organization';
   import type {
     TranscriptDraft,
     SpeakerReviewDraft,
@@ -139,13 +140,6 @@
             ? 'Unknown speaker'
             : 'Source text')
     );
-  }
-  function localTime(value: string | null) {
-    if (!value) return '';
-    const date = new Date(value);
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
   }
   $effect(() => {
     const revision = stage.id;
@@ -306,7 +300,7 @@
     search = '';
     baseRevision = stage.id;
     draftLabel = stage.metadata.label;
-    draftTime = localTime(stage.metadata.sourceTime);
+    draftTime = localMeetingTime(stage.metadata.sourceTime);
     baseTime = draftTime;
     drafts = texts.map((p) => ({
       primitiveId: p.id,

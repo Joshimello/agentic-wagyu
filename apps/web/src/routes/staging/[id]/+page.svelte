@@ -16,6 +16,8 @@
   import MeetingSummary from '../../../lib/components/MeetingSummary.svelte';
   import ProcessingDetails from '../../../lib/components/ProcessingDetails.svelte';
   import { processingMayResume } from '../../../lib/processing-status';
+  import SourceDetails from '../../../lib/components/SourceDetails.svelte';
+  import { sourceProjectName, sourceProjectNames } from '../../../lib/source-organization';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
@@ -23,6 +25,12 @@
   let error = $state('');
   let notice = $state('');
   let retrying = $state(false);
+  let detailsEditor = $state<ReturnType<typeof SourceDetails>>();
+  let stagingProjects = $derived(sourceProjectNames([
+    ...data.stagingProjects,
+    ...data.projects.map((project) => project.name),
+    sourceProjectName(detail.upload.metadata),
+  ]));
   let canceling = $state(false);
   let mediaPreview = $state<ReturnType<typeof MediaPreview>>();
   let activeSection = $state('original-evidence');
@@ -322,6 +330,9 @@
     ><Icon name="arrow-left" />Back</a
   >
   <div class="header-actions">
+    <button class="secondary" disabled={busy || retryPending || removed || (stage && !current)}
+      title={busy || retryPending ? 'Available after processing finishes' : 'Edit name, meeting date, and project'}
+      onclick={() => detailsEditor?.open(detail.upload)}><Icon name="edit" />Edit details</button>
     <Tooltip text="Preview the original source"
       ><button class="secondary" onclick={showOriginal}
         ><Icon name="expand" />Original</button
@@ -370,6 +381,7 @@
     </Menu>
   </div>
 </div>
+<SourceDetails bind:this={detailsEditor} projects={stagingProjects} onupdated={async () => { await refresh(); }} />
 <div class="heading">
   <div>
     <h1>{stage?.metadata.label || detail.upload.metadata.label}</h1>
@@ -384,6 +396,7 @@
         detail.upload.metadata.uploadedAt,
       ).toLocaleDateString()}
     </p>
+    <p class="muted source-project"><Icon name="folder" size={14} />{sourceProjectName(stage?.metadata ?? detail.upload.metadata) || 'No project'}{(stage?.metadata ?? detail.upload.metadata).sourceTime ? ` / Meeting ${new Date((stage?.metadata ?? detail.upload.metadata).sourceTime!).toLocaleString()}` : ''}</p>
   </div>
   <span class="memory-status"
     ><Icon
@@ -696,6 +709,14 @@
     font-size: 0.82rem;
     color: #787774;
     margin: 0.7rem 0 0;
+  }
+  .source-project {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    margin: 0.6rem 0 0;
+    overflow-wrap: anywhere;
   }
   .memory-status {
     display: inline-flex;
