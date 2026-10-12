@@ -20,6 +20,10 @@ import { applyTranscript } from './transcript';
 import { buildDocument, documentFormat } from './documents';
 import { enrichDocument } from './document-review';
 import { enqueueSummary } from '../../services/summaries';
+import {
+  describeProcessingFailure,
+  recordProcessingEvent,
+} from './diagnostics';
 
 export async function interpret(
   runId: string,
@@ -76,6 +80,7 @@ async function interpretLeased(
         state: 'processing',
         progress: 'Extracting source',
         attempts: sql`${runs.attempts}+1`,
+        progressPercent: 0,
         error: null,
         updatedAt: new Date(),
       })
@@ -88,6 +93,17 @@ async function interpretLeased(
       )
       .returning();
     if (!claimed.length) return;
+    const attempt = claimed[0].attempts;
+    let phase = 'Extracting source';
+    let loggedPhase = phase,
+      loggedPercent = 0;
+    await recordProcessingEvent(runId, {
+      attempt,
+      level: 'info',
+      phase,
+      message: `Processing attempt ${attempt} started. Completed audio windows are reused.`,
+      percent: 0,
+    });
     try {
       const [input] = await db
         .select()
@@ -118,6 +134,7 @@ async function interpretLeased(
       };
       const progress: JobProgress = async (message, percent) => {
         await control.assertActive();
+        phase = message;
         await db
           .update(runs)
           .set({
@@ -130,6 +147,22 @@ async function interpretLeased(
             updatedAt: new Date(),
           })
           .where(and(eq(runs.id, runId), eq(runs.state, 'processing')));
+        if (
+          message !== loggedPhase ||
+          (percent !== undefined && percent >= loggedPercent + 5)
+        ) {
+          await recordProcessingEvent(runId, {
+            attempt,
+            level: 'info',
+            phase: message,
+            message,
+            ...(percent === undefined
+              ? {}
+              : { percent: boundedProgress(percent) }),
+          });
+          loggedPhase = message;
+          if (percent !== undefined) loggedPercent = boundedProgress(percent);
+        }
       };
       if (run.inputRevisionId) {
         const [base] = await db
@@ -298,9 +331,29 @@ async function interpretLeased(
           })
           .where(eq(runs.id, runId));
       });
+      const [completed] = await db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, runId));
+      if (completed?.revisionId === stage.id)
+        await recordProcessingEvent(runId, {
+          attempt,
+          level: stage.coverage.warnings.length ? 'warning' : 'info',
+          phase: 'Ready for review',
+          message: stage.coverage.warnings.length
+            ? `Processing completed with ${stage.coverage.warnings.length} review warnings.`
+            : 'Processing completed.',
+          percent: 100,
+        });
     } catch (error) {
       const [current] = await db.select().from(runs).where(eq(runs.id, runId));
       if (current?.state === 'canceled') {
+        await recordProcessingEvent(runId, {
+          attempt,
+          level: 'info',
+          phase,
+          message: 'Processing canceled. Completed work is retained.',
+        });
         try {
           await fetch(`${config.mediaUrl}/jobs/${runId}/cancel`, {
             method: 'POST',
@@ -309,13 +362,27 @@ async function interpretLeased(
         } catch {}
         return;
       }
+      const failure = describeProcessingFailure(error);
+      await recordProcessingEvent(runId, {
+        attempt,
+        level: 'error',
+        phase,
+        message: failure.message,
+        failure,
+      });
+      console.error('Interpretation failed', {
+        runId,
+        attempt,
+        phase,
+        code: failure.code,
+        message: failure.message,
+      });
       await db
         .update(runs)
         .set({
           state: 'failed',
           progress: 'Interpretation failed',
-          error:
-            'Interpretation failed. Original files and saved progress are retained; retry processing.',
+          error: `${failure.message.slice(0, 1000)} Original files and completed work are retained.`,
           updatedAt: new Date(),
         })
         .where(
@@ -330,7 +397,11 @@ async function interpretLeased(
         'canceled'
       )
         return;
-      throw error;
+      if (!failure.retryable) return;
+      const safeError = new Error(failure.message);
+      safeError.name = failure.type;
+      safeError.stack = failure.stack || undefined;
+      throw safeError;
     }
   } finally {
     control.stop();

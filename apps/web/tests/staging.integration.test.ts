@@ -3,6 +3,8 @@ import {
   exportMarkdown,
 } from '../src/lib/server/services/staging';
 import { validateStage, type Stage } from '../src/lib/server/contracts';
+import { getProcessingDetails } from '../src/lib/server/services/processing';
+import { MediaRequestError } from '../src/lib/server/agents/interpreter/media-client';
 import { afterAll, test, expect } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../src/lib/server/db/client';
@@ -18,6 +20,7 @@ import {
   getUpload,
   memoryCount,
   retryUpload,
+  cancelUploadRun,
 } from '../src/lib/server/services/uploads';
 import { interpret } from '../src/lib/server/agents/interpreter';
 import {
@@ -32,6 +35,155 @@ const created: string[] = [];
 afterAll(async () => {
   if (enabled) await sqlClient.end();
 });
+check(
+  'concurrent cancellation of eight failed queued retries does not exhaust the transaction pool',
+  async () => {
+    const boss = await startQueue();
+    const deliveries: string[] = [];
+    const items: { uploadId: string; runId: string }[] = [];
+    try {
+      for (let index = 0; index < 8; index++) {
+        const item = await acceptUpload(
+          new File(
+            [`private cancellation fixture ${crypto.randomUUID()}`],
+            'retry.mp4',
+          ),
+          {},
+        );
+        items.push(item);
+        await db
+          .update(runs)
+          .set({ state: 'failed', attempts: 1 })
+          .where(eq(runs.id, item.runId));
+        const deliveryId = crypto.randomUUID();
+        deliveries.push(deliveryId);
+        await boss.send(queueName, { runId: item.runId }, { id: deliveryId });
+        await sqlClient`update pgboss.job set state='retry',start_after=now()+interval '1 hour' where id=${deliveryId}`;
+      }
+      const canceled = await Promise.all(
+        items.map((item) => cancelUploadRun(item.uploadId, item.runId)),
+      );
+      expect(canceled.map((run) => run.state)).toEqual(
+        Array(8).fill('canceled'),
+      );
+    } finally {
+      for (const deliveryId of deliveries)
+        await sqlClient`delete from pgboss.job where id=${deliveryId}`;
+      await boss.stop({ graceful: true });
+    }
+  },
+  15000,
+);
+check(
+  'a delayed automatic retry stays observable and prevents duplicate manual processing',
+  async () => {
+    const item = await acceptUpload(
+      new File(['private retry fixture'], 'pending.mp4'),
+      {},
+    );
+    const boss = await startQueue();
+    const deliveryId = crypto.randomUUID();
+    try {
+      await db
+        .update(runs)
+        .set({
+          state: 'failed',
+          attempts: 1,
+          updatedAt: new Date(Date.now() - 10 * 60000),
+          error: 'Temporary service failure',
+        })
+        .where(eq(runs.id, item.runId));
+      await boss.send(queueName, { runId: item.runId }, { id: deliveryId });
+      await sqlClient`update pgboss.job set state='retry',start_after=now()+interval '1 hour' where id=${deliveryId}`;
+      expect((await getUpload(item.uploadId)).run.retryPending).toBe(true);
+      expect(
+        (await getProcessingDetails(item.uploadId)).runs[0].retryPending,
+      ).toBe(true);
+      await expect(retryUpload(item.uploadId)).rejects.toThrow(
+        'automatic retry is already queued',
+      );
+      await sqlClient`update pgboss.job set state='failed' where id=${deliveryId}`;
+      expect((await getUpload(item.uploadId)).run.retryPending).toBe(false);
+      expect(
+        (await getProcessingDetails(item.uploadId)).runs[0].retryPending,
+      ).toBe(false);
+      await sqlClient`update pgboss.job set state='retry' where id=${deliveryId}`;
+      expect((await cancelUploadRun(item.uploadId, item.runId)).state).toBe(
+        'canceled',
+      );
+      await interpret(item.runId);
+      expect((await getUpload(item.uploadId)).run.state).toBe('canceled');
+      expect(
+        (await getProcessingDetails(item.uploadId)).runs[0].retryPending,
+      ).toBe(false);
+    } finally {
+      await sqlClient`delete from pgboss.job where id=${deliveryId}`;
+      await boss.stop({ graceful: true });
+    }
+  },
+);
+check(
+  'failed processing exposes its stage and redacted error, and retries retain attempt history without admitting evidence',
+  async () => {
+    const item = await acceptUpload(
+      new File(['private lifecycle bytes'], 'failure.mp4'),
+      {},
+    );
+    await expect(
+      interpret(item.runId, {
+        buildVideo: async (_stage, _key, _run, progress) => {
+          await progress('Transcribing audio window 1/2 with local MOSS', 15);
+          throw new MediaRequestError(
+            'Model request timed out token=private-diagnostic-token',
+            'transcribe',
+            'media_timeout',
+            true,
+          );
+        },
+      }),
+    ).rejects.toThrow('timed out');
+    const failed = await getUpload(item.uploadId);
+    expect(failed.run.error).toContain('timed out');
+    expect(failed.run.error).not.toContain('private-diagnostic-token');
+    const first = await getProcessingDetails(item.uploadId);
+    expect(first.failure).toMatchObject({
+      code: 'media_timeout',
+      retryable: true,
+    });
+    expect(first.events.at(-1)).toMatchObject({
+      phase: 'Transcribing audio window 1/2 with local MOSS',
+      attempt: 1,
+    });
+    expect(JSON.stringify(first)).not.toContain('private-diagnostic-token');
+    await interpret(item.runId, {
+      buildVideo: async (stage, _key, _run, progress) => {
+        await progress('Reusing saved audio window 1/2', 35);
+        return stage;
+      },
+    });
+    const recovered = await getProcessingDetails(item.uploadId);
+    expect(recovered.runs[0]).toMatchObject({
+      state: 'ready',
+      attempts: 2,
+      error: null,
+      progressPercent: 100,
+    });
+    expect(
+      recovered.events.some(
+        (event) => event.attempt === 1 && event.level === 'error',
+      ),
+    ).toBe(true);
+    expect(recovered.events.at(-1)).toMatchObject({ attempt: 2, percent: 100 });
+    const other = await acceptUpload(
+      new File(['another private source'], 'other.txt'),
+      {},
+    );
+    await expect(
+      getProcessingDetails(item.uploadId, other.runId),
+    ).rejects.toThrow('not found for this upload');
+    expect(await memoryCount()).toBe(0);
+  },
+);
 check(
   'speaker review saves scoped names, original labels and decisions in immutable correction history',
   async () => {
@@ -84,14 +236,12 @@ check(
       model: 'test-model',
       promptVersion: 'test-prompt',
     }));
-    await db
-      .insert(revisions)
-      .values({
-        id: stage.id,
-        uploadId: item.uploadId,
-        runId: item.runId,
-        manifest: validateStage(stage),
-      });
+    await db.insert(revisions).values({
+      id: stage.id,
+      uploadId: item.uploadId,
+      runId: item.runId,
+      manifest: validateStage(stage),
+    });
     await db
       .update(uploads)
       .set({ currentRevisionId: stage.id })
@@ -104,13 +254,11 @@ check(
       baseRevisionId: stage.id,
       label: stage.metadata.label,
       sourceTime: null,
-      edits: stage.primitives
-        .slice(0, 2)
-        .map((p) => ({
-          primitiveId: p.id,
-          text: p.kind === 'text' ? p.text : '',
-          speaker: ' Alice ',
-        })),
+      edits: stage.primitives.slice(0, 2).map((p) => ({
+        primitiveId: p.id,
+        text: p.kind === 'text' ? p.text : '',
+        speaker: ' Alice ',
+      })),
       speakerReviews: [
         { suggestionId: stage.speakerSuggestions[0].id, decision: 'confirmed' },
         { suggestionId: stage.speakerSuggestions[1].id, decision: 'rejected' },

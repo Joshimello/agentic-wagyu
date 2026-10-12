@@ -650,7 +650,7 @@ const transitions: Record<RunState, readonly RunState[]> = {
   processing: ['ready', 'ready_with_warnings', 'failed', 'canceled'],
   ready: [],
   ready_with_warnings: [],
-  failed: ['queued'],
+  failed: ['queued', 'canceled'],
   canceled: ['queued'],
 };
 export function transition(from: RunState, to: RunState) {

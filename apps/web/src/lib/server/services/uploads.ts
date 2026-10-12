@@ -13,6 +13,7 @@ import { storeBytes } from '../storage';
 import { metadata } from '../contracts';
 import { config } from '../config';
 import { memoryRelationship } from './memory';
+import { processingRetryPending } from './processing-retries';
 
 type UploadFields = {
   uploader?: string;
@@ -133,7 +134,12 @@ export async function listUploads() {
         ...row.uploads,
         bytes: row.assets.bytes,
         mime: row.assets.mime,
-        run,
+        run: run
+          ? {
+              ...run,
+              retryPending: await processingRetryPending(run.id, run.state),
+            }
+          : run,
         memory: await memoryRelationship(
           row.uploads.id,
           row.uploads.currentRevisionId,
@@ -163,7 +169,10 @@ export async function getUpload(id: string) {
   return {
     upload: row.uploads,
     asset: row.assets,
-    run,
+    run: {
+      ...run,
+      retryPending: await processingRetryPending(run.id, run.state),
+    },
     revisions: history,
     memory: await memoryRelationship(
       row.uploads.id,
@@ -204,6 +213,10 @@ export async function retryUpload(id: string, inputRevisionId?: string) {
       )
     )
       throw new Error('Current interpretation must finish before retrying');
+    if (await processingRetryPending(latest.id, latest.state, tx))
+      throw new Error(
+        'An automatic retry is already queued. Completed work will be reused.',
+      );
     const runId = crypto.randomUUID();
     await tx.insert(runs).values({ id: runId, uploadId: id, inputRevisionId });
     await tx.insert(outbox).values({ id: runId });
@@ -232,7 +245,11 @@ export async function cancelUploadRun(uploadId: string, runId: string) {
       .where(and(eq(runs.id, runId), eq(runs.uploadId, uploadId)))
       .for('update');
     if (!current) throw new Error('Run not found for this upload');
-    if (!['queued', 'processing'].includes(current.state)) return current;
+    if (
+      !['queued', 'processing'].includes(current.state) &&
+      !(await processingRetryPending(current.id, current.state, tx))
+    )
+      return current;
     const [canceled] = await tx
       .update(runs)
       .set({
@@ -241,9 +258,7 @@ export async function cancelUploadRun(uploadId: string, runId: string) {
         error: null,
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(runs.id, runId), inArray(runs.state, ['queued', 'processing'])),
-      )
+      .where(and(eq(runs.id, runId), eq(runs.state, current.state)))
       .returning();
     await tx
       .update(outbox)
