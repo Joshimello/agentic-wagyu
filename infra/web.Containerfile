@@ -17,6 +17,7 @@ RUN bun install --production --frozen-lockfile
 COPY --from=development /app/apps/web/build ./apps/web/build
 COPY apps/web/src/lib/server ./apps/web/src/lib/server
 COPY apps/web/src/lib/speaker-names.ts ./apps/web/src/lib/speaker-names.ts
+COPY apps/web/src/lib/transcript-speakers.ts ./apps/web/src/lib/transcript-speakers.ts
 COPY apps/web/src/lib/source-organization.ts ./apps/web/src/lib/source-organization.ts
 COPY apps/web/workers ./apps/web/workers
 COPY apps/web/drizzle ./apps/web/drizzle

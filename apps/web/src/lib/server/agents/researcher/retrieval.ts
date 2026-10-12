@@ -83,6 +83,7 @@ export function queryTerms(query: string) {
 export type CorpusData = {
   snapshot: OrganizationSnapshot;
   stages: Map<string, { stage: Stage; filename: string }>;
+  approved?: import('../../contracts/changes').ApprovedVersion[];
 };
 /** Everything an agent can see comes from this frozen, application-scoped corpus. No writes or latest-staging lookups. */
 export class ResearchCorpus {
@@ -92,6 +93,10 @@ export class ResearchCorpus {
   readonly evidence = new Map<string, Citation>();
   readonly inspected = new Set<string>();
   readonly warnings = new Set<string>();
+  readonly inspectedReviews = new Map<
+    string,
+    import('../../contracts/changes').ApprovedVersion
+  >();
   private textCharacters = 0;
   private evidenceKeys = new Map<string, string>();
   constructor(
@@ -429,12 +434,84 @@ export class ResearchCorpus {
     if (!p || p.kind !== 'image') throw new Error('Image unavailable');
     return { citation: c, assetId: p.assetId };
   }
+  approvedState(offset = 0, itemId?: string) {
+    const history = (this.data.approved ?? []).filter(
+      (v) =>
+        v.reviewVersion <= (this.scope.reviewVersion ?? 0) &&
+        v.memoryVersion <= this.scope.version &&
+        (!this.scope.projectId || v.projectId === this.scope.projectId) &&
+        v.evidence.every((c) => this.allowed.has(c.nodeId)),
+    );
+    const current = itemId
+      ? history.filter((v) => v.itemId === itemId)
+      : [...new Map(history.map((v) => [v.itemId, v])).values()];
+    const rows = [];
+    let returnedCharacters = 0;
+    for (const v of current.slice(offset, offset + 10)) {
+      const ref = `R${v.reviewVersion}`;
+      const row = {
+        reviewRef: ref,
+        itemId: v.itemId,
+        projectId: v.projectId,
+        eventId: v.eventId,
+        approvedAt: v.createdAt,
+        reviewVersion: v.reviewVersion,
+        value: v.value,
+        reviewerAdded: v.reviewerAdded,
+        evidence: v.evidence.slice(0, 4).map((c) => ({
+          filename: c.filename,
+          quote: c.quote?.slice(0, 600),
+          url: c.url,
+        })),
+        evidenceCount: v.evidence.length,
+        evidenceTruncated:
+          v.evidence.length > 4 ||
+          v.evidence.some((c) => (c.quote?.length ?? 0) > 600),
+        basis:
+          'Reviewer-approved state. Fields listed in reviewerAdded were supplied by the reviewer; do not attribute them to a meeting.',
+      };
+      const size = JSON.stringify(row).length;
+      if (rows.length && returnedCharacters + size > 12000) break;
+      if (this.textCharacters + size > researchLimits.textCharacters)
+        throw new Error(
+          'Research text budget exhausted; approved state was not inspected',
+        );
+      this.textCharacters += size;
+      returnedCharacters += size;
+      this.inspectedReviews.set(ref, v);
+      rows.push(row);
+    }
+    return {
+      snapshot: this.scope,
+      items: rows,
+      nextOffset:
+        offset + rows.length < current.length ? offset + rows.length : null,
+    };
+  }
   validate(value: AnswerProposal): ResearchAnswer {
     if (value.status === 'answered' && !value.claims.length)
       throw new Error('An answered question requires sourced claims');
     if (value.status === 'insufficient_evidence' && !value.limitations.length)
       throw new Error('Explain missing evidence');
     const ids = [...new Set(value.claims.flatMap((c) => c.citations))];
+    const reviewIds = [
+      ...new Set(value.claims.flatMap((c) => c.reviewRefs ?? [])),
+    ];
+    for (const claim of value.claims) {
+      if (!claim.citations.length && !claim.reviewRefs?.length)
+        throw new Error(
+          'Every claim requires inspected evidence or review references',
+        );
+      if (claim.basis === 'reviewed' && !claim.reviewRefs?.length)
+        throw new Error('Reviewed state requires a review reference');
+      if (claim.basis !== 'reviewed' && claim.reviewRefs?.length)
+        throw new Error('Label reviewer-approved facts as reviewed state');
+    }
+    for (const id of reviewIds)
+      if (!this.inspectedReviews.has(id))
+        throw new Error(
+          'Review reference was not inspected within this frozen scope',
+        );
     for (const id of ids)
       if (!this.inspected.has(id) || !this.evidence.has(id))
         throw new Error(`Citation ${id} was not inspected in this query scope`);
@@ -450,6 +527,19 @@ export class ResearchCorpus {
       snapshot: this.scope,
       citations: ids.map((id) => this.evidence.get(id)!),
       warnings: [...this.warnings],
+      reviewReferences: reviewIds.map((id) => {
+        const v = this.inspectedReviews.get(id)!;
+        return {
+          id,
+          eventId: v.eventId,
+          itemId: v.itemId,
+          reviewVersion: v.reviewVersion,
+          value: v.value,
+          reviewerAdded: v.reviewerAdded,
+          evidence: v.evidence,
+          url: `/changes/reviews/${v.eventId}`,
+        };
+      }),
     };
   }
 }

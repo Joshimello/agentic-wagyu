@@ -15,7 +15,7 @@ import {
   type RunState,
   type Stage,
 } from '../../contracts';
-import { buildVideo, revisitContext } from './video';
+import { buildVideo, revisitContext, revisitSpeakerNames } from './video';
 import { applyTranscript } from './transcript';
 import { buildDocument, documentFormat } from './documents';
 import { enrichDocument } from './document-review';
@@ -181,7 +181,23 @@ async function interpretLeased(
         stage.id = crypto.randomUUID();
         stage.parentRevisionId = base.id;
         stage.createdAt = new Date().toISOString();
-        if (stage.document) {
+        if (run.reviewMode === 'speakers') {
+          if (
+            stage.document ||
+            !stage.primitives.some((p) => p.kind === 'text' && p.role === 'asr')
+          )
+            throw new Error(
+              'Speaker review requires an existing recording transcript',
+            );
+          stage.provenance.adapter = 'video-speaker-revisit-1';
+          await revisitSpeakerNames(
+            stage,
+            raw.storageKey,
+            progress,
+            control.signal,
+            runId,
+          );
+        } else if (stage.document) {
           const previous = stage.document.review;
           stage.coverage.warnings = stage.coverage.warnings.filter(
             (warning) =>

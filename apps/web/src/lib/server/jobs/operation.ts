@@ -31,6 +31,11 @@ export const jobKinds = {
     legacyLock: 736507,
   },
   research: { table: 'research_runs', outbox: 'research_outbox', lock: 736504 },
+  comparison: {
+    table: 'comparison_jobs',
+    outbox: 'comparison_outbox',
+    lock: 72421,
+  },
   translation: {
     table: 'transcript_translations',
     outbox: 'translation_outbox',
@@ -94,6 +99,7 @@ export async function recoverInterrupted(
     'interpret',
     'chronicle',
     'research',
+    'comparison',
   ],
 ) {
   let recovered = 0;
@@ -120,6 +126,10 @@ export async function recoverInterrupted(
           await query`update transcript_translations set generation=generation+1 where id=${row.id}`;
         if (kind === 'research')
           await query`update research_outbox set generation=generation+1 where id=${row.id}`;
+        if (kind === 'comparison') {
+          await query`update comparison_jobs set generation=generation+1 where id=${row.id}`;
+          await query`update comparison_outbox set generation=generation+1 where id=${row.id}`;
+        }
         if (kind === 'chronicle') {
           await query`update push_batches set generation=generation+1 where id=${row.id}`;
           await query`update chronicler_outbox set generation=generation+1 where id=${row.id}`;

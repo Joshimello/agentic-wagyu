@@ -179,6 +179,9 @@
                 `${suggestion.confidence} confidence (unverified)`}</span
             >
             <p>{suggestion.reason}</p>
+            {#if suggestion.identityQuote}<blockquote>
+                {suggestion.identityQuote}
+              </blockquote>{/if}
             <div class="actions">
               {#each suggestion.transcriptIds as ref, evidenceIndex}<button
                   class="secondary small"

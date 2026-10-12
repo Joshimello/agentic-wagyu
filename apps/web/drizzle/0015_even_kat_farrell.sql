@@ -1,0 +1,1 @@
+ALTER TABLE "memory_commits" ADD COLUMN "review_version" integer DEFAULT 0 NOT NULL;

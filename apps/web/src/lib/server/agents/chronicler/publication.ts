@@ -15,6 +15,7 @@ import {
   memoryNodes,
   memoryNodeVersions,
   uploads,
+  changeReviewEvents,
 } from '../../db/schema';
 import { validateStage, type Stage } from '../../contracts';
 import {
@@ -301,6 +302,7 @@ export async function publishMemory(
       id: stableId(pushId, 'commit'),
       pushId,
       version,
+      reviewVersion: sql`(select coalesce(max(${changeReviewEvents.reviewVersion}),0) from ${changeReviewEvents})`,
       createdAt: sql`clock_timestamp()`,
     });
     if (plan.projects.length)

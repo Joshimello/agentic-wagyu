@@ -45,6 +45,7 @@ if (mode === 'unit') {
     'memory',
     'organization',
     'research',
+    'changes',
     'operations',
     'translations',
     'migrations',

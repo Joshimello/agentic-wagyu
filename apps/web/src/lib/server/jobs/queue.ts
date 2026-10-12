@@ -8,18 +8,31 @@ import {
   researchRuns,
   researchOutbox,
   runs,
+  comparisonJobs,
+  comparisonOutbox,
 } from '../db/schema';
 import { stableId } from '../contracts/memory';
 import { config } from '../config';
 export const queueName = 'interpret';
 export const chroniclerQueue = 'chronicle';
 export const researchQueue = 'research';
+export const comparisonQueue = 'comparison';
 export async function startQueue() {
   const boss = new PgBoss(config.databaseUrl);
   boss.on('error', () =>
     console.error('Queue connection error; pending jobs remain durable'),
   );
   await boss.start();
+  await boss.createQueue(comparisonQueue, {
+    retryLimit: 2,
+    retryDelay: 5,
+    expireInSeconds: 900,
+  });
+  await boss.updateQueue(comparisonQueue, {
+    retryLimit: 2,
+    retryDelay: 5,
+    expireInSeconds: 900,
+  });
   await boss.createQueue(queueName, {
     retryLimit: 3,
     retryDelay: 5,
@@ -51,6 +64,34 @@ export async function startQueue() {
     expireInSeconds: 900,
   });
   return boss;
+}
+
+export async function dispatchComparisons(boss: PgBoss) {
+  const pending = await db
+    .select()
+    .from(comparisonOutbox)
+    .innerJoin(comparisonJobs, eq(comparisonOutbox.id, comparisonJobs.id))
+    .where(isNull(comparisonOutbox.dispatchedAt))
+    .limit(50);
+  for (const row of pending) {
+    const job = row.comparison_jobs,
+      item = row.comparison_outbox;
+    if (job.state === 'queued')
+      await boss.send(
+        comparisonQueue,
+        { runId: job.id, generation: item.generation },
+        { id: stableId(job.id, 'comparison', String(item.generation)) },
+      );
+    await db
+      .update(comparisonOutbox)
+      .set({ dispatchedAt: new Date() })
+      .where(
+        and(
+          eq(comparisonOutbox.id, item.id),
+          eq(comparisonOutbox.generation, item.generation),
+        ),
+      );
+  }
 }
 export async function dispatchPending(boss: PgBoss) {
   const pending = await db

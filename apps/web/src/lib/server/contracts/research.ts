@@ -19,11 +19,12 @@ export const answerProposal = z
         z
           .object({
             text: z.string().min(1).max(2400),
-            basis: z.enum(['source', 'inference', 'conflict']),
-            citations: z
-              .array(z.string().regex(/^E[1-9][0-9]{0,3}$/))
-              .min(1)
-              .max(8),
+            basis: z.enum(['source', 'inference', 'conflict', 'reviewed']),
+            citations: z.array(z.string().regex(/^E[1-9][0-9]{0,3}$/)).max(8),
+            reviewRefs: z
+              .array(z.string().regex(/^R[1-9][0-9]{0,5}$/))
+              .max(8)
+              .optional(),
           })
           .strict(),
       )
@@ -36,6 +37,8 @@ export type ResearchScope = {
   version: number;
   projectId?: string;
   effectiveAt?: string;
+  reviewVersion?: number;
+  reviewKnownAt?: string;
 };
 export type Citation = {
   id: string;
@@ -57,13 +60,23 @@ export type ResearchAnswer = AnswerProposal & {
   citations: Citation[];
   snapshot: ResearchScope;
   warnings: string[];
+  reviewReferences?: {
+    id: string;
+    eventId: string;
+    itemId: string;
+    reviewVersion: number;
+    value: import('./changes').ReviewedValue;
+    reviewerAdded: string[];
+    evidence: Citation[];
+    url: string;
+  }[];
 };
 export type ResearchTrace = {
   tool: string;
   arguments: unknown;
   result: unknown;
 };
-export const researchPromptVersion = 'researcher-6-en';
+export const researchPromptVersion = 'researcher-7-reviewed-state-en';
 export const researchLimits = {
   rounds: 10,
   calls: 24,

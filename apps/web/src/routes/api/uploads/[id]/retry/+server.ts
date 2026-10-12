@@ -1,4 +1,5 @@
 import { id } from '../../../../../lib/server/contracts';
+import { z } from 'zod';
 import { retryUpload } from '../../../../../lib/server/services/uploads';
 export async function POST({
   params,
@@ -18,7 +19,15 @@ export async function POST({
         ? undefined
         : id.parse(value.inputRevisionId);
     return Response.json(
-      { runId: await retryUpload(id.parse(params.id), inputRevisionId) },
+      {
+        runId: await retryUpload(
+          id.parse(params.id),
+          inputRevisionId,
+          value.mode === undefined
+            ? undefined
+            : z.enum(['full', 'context', 'speakers']).parse(value.mode),
+        ),
+      },
       { status: 202 },
     );
   } catch (e) {

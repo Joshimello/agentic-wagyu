@@ -10,145 +10,165 @@ import {
   uploadSessions,
   researchRuns,
   researchOutbox,
+  comparisonJobs,
 } from '../db/schema';
 import type { ActivityTask } from '../../activity';
 
 export async function listActivity(): Promise<ActivityTask[]> {
   const since = new Date(Date.now() - 15 * 60 * 1000);
-  const [sourceRows, pushes, translations, summaries, transfers, research] =
-    await Promise.all([
-      db
-        .select({
-          interpretation_runs: {
-            id: runs.id,
-            uploadId: runs.uploadId,
-            inputRevisionId: runs.inputRevisionId,
-            state: runs.state,
-            progressPercent: runs.progressPercent,
-            progress: runs.progress,
-          },
-          uploads: {
-            id: uploads.id,
-            filename: uploads.filename,
-            metadata: uploads.metadata,
-          },
-        })
-        .from(runs)
-        .innerJoin(uploads, eq(runs.uploadId, uploads.id))
-        .where(
-          and(
-            isNull(uploads.deletedAt),
-            or(
-              inArray(runs.state, ['queued', 'processing']),
-              gte(runs.updatedAt, since),
-            ),
-          ),
-        )
-        .orderBy(desc(runs.updatedAt)),
-      db
-        .select({
-          id: pushBatches.id,
-          input: pushBatches.input,
-          state: pushBatches.state,
-          generation: pushBatches.generation,
-          progressPercent: pushBatches.progressPercent,
-          progress: pushBatches.progress,
-        })
-        .from(pushBatches)
-        .where(
+  const [
+    sourceRows,
+    pushes,
+    translations,
+    summaries,
+    transfers,
+    research,
+    comparisons,
+  ] = await Promise.all([
+    db
+      .select({
+        interpretation_runs: {
+          id: runs.id,
+          uploadId: runs.uploadId,
+          inputRevisionId: runs.inputRevisionId,
+          reviewMode: runs.reviewMode,
+          state: runs.state,
+          progressPercent: runs.progressPercent,
+          progress: runs.progress,
+        },
+        uploads: {
+          id: uploads.id,
+          filename: uploads.filename,
+          metadata: uploads.metadata,
+        },
+      })
+      .from(runs)
+      .innerJoin(uploads, eq(runs.uploadId, uploads.id))
+      .where(
+        and(
+          isNull(uploads.deletedAt),
           or(
-            inArray(pushBatches.state, ['queued', 'processing']),
-            gte(pushBatches.updatedAt, since),
+            inArray(runs.state, ['queued', 'processing']),
+            gte(runs.updatedAt, since),
           ),
-        )
-        .orderBy(desc(pushBatches.updatedAt)),
-      db
-        .select({
-          transcript_translations: {
-            id: translationJobs.id,
-            revisionId: translationJobs.revisionId,
-            generation: translationJobs.generation,
-            language: translationJobs.language,
-            state: translationJobs.state,
-            completedSegments: translationJobs.completedSegments,
-            totalSegments: translationJobs.totalSegments,
-          },
-          uploads: {
-            id: uploads.id,
-            filename: uploads.filename,
-            metadata: uploads.metadata,
-          },
-        })
-        .from(translationJobs)
-        .innerJoin(revisions, eq(translationJobs.revisionId, revisions.id))
-        .innerJoin(uploads, eq(revisions.uploadId, uploads.id))
-        .where(
-          and(
-            isNull(uploads.deletedAt),
-            or(
-              inArray(translationJobs.state, ['queued', 'processing']),
-              gte(translationJobs.updatedAt, since),
-            ),
-          ),
-        )
-        .orderBy(desc(translationJobs.updatedAt)),
-      db
-        .select({
-          meeting_summaries: {
-            id: summaryJobs.id,
-            revisionId: summaryJobs.revisionId,
-            generation: summaryJobs.generation,
-            state: summaryJobs.state,
-            progressPercent: summaryJobs.progressPercent,
-          },
-          uploads: {
-            id: uploads.id,
-            filename: uploads.filename,
-            metadata: uploads.metadata,
-          },
-        })
-        .from(summaryJobs)
-        .innerJoin(revisions, eq(summaryJobs.revisionId, revisions.id))
-        .innerJoin(uploads, eq(revisions.uploadId, uploads.id))
-        .where(
-          and(
-            isNull(uploads.deletedAt),
-            or(
-              inArray(summaryJobs.state, ['queued', 'processing']),
-              gte(summaryJobs.updatedAt, since),
-            ),
-          ),
-        )
-        .orderBy(desc(summaryJobs.updatedAt)),
-      db
-        .select({
-          id: uploadSessions.id,
-          filenames: uploadSessions.filenames,
-          state: uploadSessions.state,
-        })
-        .from(uploadSessions)
-        .where(
-          and(
-            inArray(uploadSessions.state, ['uploading', 'canceled', 'failed']),
-            gte(
-              uploadSessions.updatedAt,
-              new Date(Date.now() - 2 * 60 * 60 * 1000),
-            ),
-          ),
-        )
-        .orderBy(desc(uploadSessions.updatedAt)),
-      db
-        .select({ run: researchRuns, generation: researchOutbox.generation })
-        .from(researchRuns)
-        .innerJoin(researchOutbox, eq(researchRuns.id, researchOutbox.id))
-        .where(
+        ),
+      )
+      .orderBy(desc(runs.updatedAt)),
+    db
+      .select({
+        id: pushBatches.id,
+        input: pushBatches.input,
+        state: pushBatches.state,
+        generation: pushBatches.generation,
+        progressPercent: pushBatches.progressPercent,
+        progress: pushBatches.progress,
+      })
+      .from(pushBatches)
+      .where(
+        or(
+          inArray(pushBatches.state, ['queued', 'processing']),
+          gte(pushBatches.updatedAt, since),
+        ),
+      )
+      .orderBy(desc(pushBatches.updatedAt)),
+    db
+      .select({
+        transcript_translations: {
+          id: translationJobs.id,
+          revisionId: translationJobs.revisionId,
+          generation: translationJobs.generation,
+          language: translationJobs.language,
+          state: translationJobs.state,
+          completedSegments: translationJobs.completedSegments,
+          totalSegments: translationJobs.totalSegments,
+        },
+        uploads: {
+          id: uploads.id,
+          filename: uploads.filename,
+          metadata: uploads.metadata,
+        },
+      })
+      .from(translationJobs)
+      .innerJoin(revisions, eq(translationJobs.revisionId, revisions.id))
+      .innerJoin(uploads, eq(revisions.uploadId, uploads.id))
+      .where(
+        and(
+          isNull(uploads.deletedAt),
           or(
-            inArray(researchRuns.state, ['queued', 'processing']),
-            gte(researchRuns.updatedAt, since),
+            inArray(translationJobs.state, ['queued', 'processing']),
+            gte(translationJobs.updatedAt, since),
           ),
-        )
-        .orderBy(desc(researchRuns.updatedAt)),
-    ]);
+        ),
+      )
+      .orderBy(desc(translationJobs.updatedAt)),
+    db
+      .select({
+        meeting_summaries: {
+          id: summaryJobs.id,
+          revisionId: summaryJobs.revisionId,
+          generation: summaryJobs.generation,
+          state: summaryJobs.state,
+          progressPercent: summaryJobs.progressPercent,
+        },
+        uploads: {
+          id: uploads.id,
+          filename: uploads.filename,
+          metadata: uploads.metadata,
+        },
+      })
+      .from(summaryJobs)
+      .innerJoin(revisions, eq(summaryJobs.revisionId, revisions.id))
+      .innerJoin(uploads, eq(revisions.uploadId, uploads.id))
+      .where(
+        and(
+          isNull(uploads.deletedAt),
+          or(
+            inArray(summaryJobs.state, ['queued', 'processing']),
+            gte(summaryJobs.updatedAt, since),
+          ),
+        ),
+      )
+      .orderBy(desc(summaryJobs.updatedAt)),
+    db
+      .select({
+        id: uploadSessions.id,
+        filenames: uploadSessions.filenames,
+        state: uploadSessions.state,
+      })
+      .from(uploadSessions)
+      .where(
+        and(
+          inArray(uploadSessions.state, ['uploading', 'canceled', 'failed']),
+          gte(
+            uploadSessions.updatedAt,
+            new Date(Date.now() - 2 * 60 * 60 * 1000),
+          ),
+        ),
+      )
+      .orderBy(desc(uploadSessions.updatedAt)),
+    db
+      .select({ run: researchRuns, generation: researchOutbox.generation })
+      .from(researchRuns)
+      .innerJoin(researchOutbox, eq(researchRuns.id, researchOutbox.id))
+      .where(
+        or(
+          inArray(researchRuns.state, ['queued', 'processing']),
+          gte(researchRuns.updatedAt, since),
+        ),
+      )
+      .orderBy(desc(researchRuns.updatedAt)),
+    db
+      .select()
+      .from(comparisonJobs)
+      .where(
+        or(
+          inArray(comparisonJobs.state, ['queued', 'processing']),
+          gte(comparisonJobs.updatedAt, since),
+        ),
+      )
+      .orderBy(desc(comparisonJobs.updatedAt))
+      .limit(50),
+  ]);
   const pushUploadIds = [
     ...new Set(
       pushes.flatMap((push) => push.input.items.map((item) => item.uploadId)),
@@ -164,6 +184,18 @@ export async function listActivity(): Promise<ActivityTask[]> {
     pushSources.map((source) => [source.id, source.filename]),
   );
   const tasks: ActivityTask[] = [];
+  for (const job of comparisons)
+    tasks.push({
+      id: job.id,
+      kind: 'comparison',
+      generation: job.generation,
+      title: `${job.scope.earlier.filename} / ${job.scope.later.filename}`,
+      operation: 'Meeting comparison',
+      state: job.state,
+      percent: job.state === 'completed' ? 100 : null,
+      phase: job.progress,
+      href: `/changes/${job.id}`,
+    });
   for (const { run, generation } of research)
     tasks.push({
       id: run.id,
@@ -186,13 +218,16 @@ export async function listActivity(): Promise<ActivityTask[]> {
       generation: 0,
       uploadId: source.id,
       title: source.metadata.label || source.filename,
-      operation: run.inputRevisionId
-        ? video
-          ? 'Visual review'
-          : 'Document review'
-        : video
-          ? 'Transcription'
-          : 'Source processing',
+      operation:
+        run.reviewMode === 'speakers'
+          ? 'Speaker name review'
+          : run.inputRevisionId
+            ? video
+              ? 'Visual review'
+              : 'Document review'
+            : video
+              ? 'Transcription'
+              : 'Source processing',
       state: run.state,
       percent: run.progressPercent,
       phase: run.progress,

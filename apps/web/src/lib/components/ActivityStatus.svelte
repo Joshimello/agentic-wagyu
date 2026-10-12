@@ -41,6 +41,7 @@
     translation: 'translate',
     summary: 'file',
     research: 'help',
+    comparison: 'refresh',
   };
 </script>
 

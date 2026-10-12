@@ -256,15 +256,7 @@ test('context agent reads before searching and keeps names separate from unchang
     ],
   });
   expect(value.primitives.filter((p) => p.kind === 'text')).toEqual(original);
-  expect(value.speakerSuggestions?.[0]).toMatchObject({
-    speaker: 'S01',
-    candidateName: '小林',
-    transcriptIds: [original[1].id],
-  });
-  expect(value.speakerSuggestions).toHaveLength(1);
-  const invalid = structuredClone(value);
-  invalid.speakerSuggestions![0].speaker = 'S99';
-  expect(() => validateStage(invalid)).toThrow('lacks evidence');
+  expect(value.speakerSuggestions).toEqual([]);
   const missing = structuredClone(value);
   missing.context!.questions[0].searches[0].frameIds = [crypto.randomUUID()];
   expect(() => validateStage(missing)).toThrow('evidence');
@@ -429,16 +421,8 @@ test('visual revisits keep rejected names scoped to their corrected voice and le
     llm,
   );
   validateStage(value);
-  expect(value.speakerSuggestions).toHaveLength(2);
+  expect(value.speakerSuggestions).toHaveLength(1);
   expect(value.speakerSuggestions?.[0]).toEqual(rejected);
-  expect(value.speakerSuggestions?.[1]).toMatchObject({
-    speaker: 'S01',
-    candidateName: 'Alice',
-    voiceTranscriptIds: [voices[1].id],
-    transcriptIds: [voices[0].id, voices[1].id],
-  });
-  expect(value.context?.questions.map((q) => q.status)).toEqual([
-    'unresolved',
-    'answered',
-  ]);
+  expect(answers).toBe(0);
+  expect(value.context?.questions).toEqual([]);
 });

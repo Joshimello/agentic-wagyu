@@ -6,7 +6,8 @@ export type ActivityTask = {
     | 'push'
     | 'translation'
     | 'summary'
-    | 'research';
+    | 'research'
+    | 'comparison';
   generation: number;
   uploadId?: string;
   title: string;

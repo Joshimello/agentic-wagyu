@@ -120,7 +120,9 @@ export async function listUploads() {
     .select({
       uploads,
       assets,
-      currentMetadata: sql<typeof uploads.$inferSelect.metadata | null>`${revisions.manifest}->'metadata'`,
+      currentMetadata: sql<
+        typeof uploads.$inferSelect.metadata | null
+      >`${revisions.manifest}->'metadata'`,
     })
     .from(uploads)
     .innerJoin(assets, eq(uploads.assetId, assets.id))
@@ -175,12 +177,17 @@ export async function getUpload(id: string) {
   return {
     upload: {
       ...row.uploads,
-      metadata: history.find((revision) => revision.id === row.uploads.currentRevisionId)?.manifest.metadata ?? row.uploads.metadata,
+      metadata:
+        history.find(
+          (revision) => revision.id === row.uploads.currentRevisionId,
+        )?.manifest.metadata ?? row.uploads.metadata,
     },
     asset: row.assets,
     run: {
       ...run,
-      retryPending: await processingRetryPending(run.id, run.state),
+      retryPending: run
+        ? await processingRetryPending(run.id, run.state)
+        : false,
     },
     revisions: history,
     memory: await memoryRelationship(
@@ -189,7 +196,16 @@ export async function getUpload(id: string) {
     ),
   };
 }
-export async function retryUpload(id: string, inputRevisionId?: string) {
+export async function retryUpload(
+  id: string,
+  inputRevisionId?: string,
+  mode?: 'full' | 'context' | 'speakers',
+) {
+  const reviewMode = mode ?? (inputRevisionId ? 'context' : 'full');
+  if (reviewMode !== 'full' && !inputRevisionId)
+    throw new Error('Review mode requires a pinned input revision');
+  if (reviewMode === 'full' && inputRevisionId)
+    throw new Error('Full reprocessing cannot use an input revision');
   return db.transaction(async (tx) => {
     // Serialize user actions before reading the latest run.
     const [upload] = await tx
@@ -198,6 +214,11 @@ export async function retryUpload(id: string, inputRevisionId?: string) {
       .where(eq(uploads.id, id))
       .for('update');
     if (!upload || upload.deletedAt) throw new Error('Upload not found');
+    if (
+      reviewMode === 'speakers' &&
+      !/\.(mp4|mov|mkv|webm|m4v|avi)$/i.test(upload.filename)
+    )
+      throw new Error('Speaker name review requires a recording');
     if (inputRevisionId && upload.currentRevisionId !== inputRevisionId)
       throw new Error(
         'Staging changed. Reload before revisiting descriptions.',
@@ -227,7 +248,9 @@ export async function retryUpload(id: string, inputRevisionId?: string) {
         'An automatic retry is already queued. Completed work will be reused.',
       );
     const runId = crypto.randomUUID();
-    await tx.insert(runs).values({ id: runId, uploadId: id, inputRevisionId });
+    await tx
+      .insert(runs)
+      .values({ id: runId, uploadId: id, inputRevisionId, reviewMode });
     await tx.insert(outbox).values({ id: runId });
     return runId;
   });

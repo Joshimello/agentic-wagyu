@@ -6,11 +6,14 @@ Use `infra/test.sh` from a checkout with Podman. It builds a frozen Bun developm
 | --- | --- |
 | `./infra/test.sh check` | Svelte/TypeScript, including tests and workers |
 | `./infra/test.sh unit` | Pure contracts, provenance, source ranges, retrieval, normalization, exports and backup manifest validation |
-| `./infra/test.sh integration` | Ten independently migrated PostgreSQL suites: staging, typed memory/history, summary organization, Researcher, operation recovery/limits, translations, branch migration upgrades, activity/summaries, cancellation and staging removal |
+| `./infra/test.sh integration` | Eleven independently migrated PostgreSQL suites: staging, typed memory/history, summary organization, Researcher, reviewed changes, operation recovery/limits, translations, branch migration upgrades, activity/summaries, cancellation and staging removal |
 | `./infra/test.sh documents` | Real PPTX/PDF/image staging, native extraction, immutable revisions, caching, portable exports and memory isolation; requires `data/documents` and the media image |
 | `./infra/test.sh media` | Python source timing, MOSS output budgeting, rendering/media edge cases and cross-language JSON Schema checks; requires supplied recordings/documents |
 | `./infra/test.sh browser` | Chromium review/search/correction/translation, pinned selections, memory/history, Ask and source navigation; requires running workspace with the supplied staged corpus |
 | `./infra/test.sh build` | Frozen Bun production application build |
+| `./infra/test-change-guards.sh` | Mutates three approval guards (completion verification, simultaneous approvals, superseded baseline support) in a disposable container and requires each mutation to fail the changes suite |
+| `./infra/test-changes-browser.sh` | Seeds a disposable database and runs Chromium **What changed?**, review and speaker-only revisit checks at 1280px and 390px |
+| `./infra/verify-reviewed-model.sh` | Live configured-model comparison, edit-approval and Ask check on a disposable database; uses private `.env` |
 
 Set `CHRONICLER_FIXTURE_ROOT` to another private corpus directory for document/media checks. Browser checks use `WEB_URL` (default `http://localhost:5173`) and write disposable results under `data/browser-results`. Each check image is built from the current checkout. Python test-only JSON Schema tooling lives in the `checks` image target, outside the runtime image.
 

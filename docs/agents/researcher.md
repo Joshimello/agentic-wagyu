@@ -38,7 +38,11 @@ inspectImage(citationId)
 getHistory(nodeId)
 getChanges(fromVersion, toVersion)
 listSources(offset)
+approvedState(offset)
+approvedHistory(itemId, offset)
 ```
+
+The frozen scope also records a review-history version. `approvedState` and `approvedHistory` read reviewer-approved decisions and commitments from **What changed?** at that version; current questions capture the latest approvals, and historical questions respect the requested known-time or memory-version cutoff. Unapproved or rejected proposals are unavailable. Claims citing approved state use `basis: reviewed` with `reviewRefs`; the answer's `reviewReferences` link each to its approving event, original evidence and reviewer-added fields. Meeting reports remain separate `source` claims. Saved answers from earlier prompt versions are unchanged.
 
 Snapshot/project/known-time access constraints are injected by application context and cannot be widened by model arguments. Validate requested IDs and bounds against completed push membership.
 

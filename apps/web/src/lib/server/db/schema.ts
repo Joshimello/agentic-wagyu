@@ -58,6 +58,10 @@ export const runs = pgTable('interpretation_runs', {
   error: text('error'),
   revisionId: uuid('revision_id'),
   inputRevisionId: uuid('input_revision_id'),
+  reviewMode: text('review_mode')
+    .$type<'full' | 'context' | 'speakers'>()
+    .notNull()
+    .default('full'),
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
@@ -85,6 +89,7 @@ export const revisions = pgTable(
   (t) => [uniqueIndex('staging_run_unique').on(t.runId)],
 );
 export const memoryCommits = pgTable('memory_commits', {
+  reviewVersion: integer('review_version').notNull().default(0),
   id: uuid('id').primaryKey(),
   version: integer('version').notNull().unique(),
   pushId: uuid('push_id').unique(),
@@ -318,6 +323,92 @@ export const researchOutbox = pgTable('research_outbox', {
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+export const comparisonJobs = pgTable('comparison_jobs', {
+  id: uuid('id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  input: jsonb('input')
+    .$type<
+      import('zod').infer<typeof import('../contracts/changes').comparisonInput>
+    >()
+    .notNull(),
+  scope: jsonb('scope')
+    .$type<import('../contracts/changes').ComparisonScope>()
+    .notNull(),
+  state: text('state').notNull().default('queued'),
+  progress: text('progress').notNull().default('Waiting to compare meetings'),
+  attempts: integer('attempts').notNull().default(0),
+  generation: integer('generation').notNull().default(0),
+  error: text('error'),
+  warnings: jsonb('warnings').$type<string[]>().notNull().default([]),
+  model: text('model'),
+  promptVersion: text('prompt_version'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+export const comparisonOutbox = pgTable('comparison_outbox', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => comparisonJobs.id),
+  generation: integer('generation').notNull().default(0),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+});
+export const changeProposals = pgTable('change_proposals', {
+  id: uuid('id').primaryKey(),
+  comparisonId: uuid('comparison_id')
+    .notNull()
+    .references(() => comparisonJobs.id),
+  proposal: jsonb('proposal')
+    .$type<import('../contracts/changes').ChangeProposal>()
+    .notNull(),
+  createdAt: createdAt(),
+});
+export const changeReviewEvents = pgTable('change_review_events', {
+  id: uuid('id').primaryKey(),
+  proposalId: uuid('proposal_id')
+    .notNull()
+    .unique()
+    .references(() => changeProposals.id),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  reviewVersion: integer('review_version').notNull().unique(),
+  input: jsonb('input')
+    .$type<import('../contracts/changes').ProposalReviewInput>()
+    .notNull(),
+  reviewer: text('reviewer').notNull().default('local user'),
+  createdAt: createdAt(),
+});
+export const approvedItemVersions = pgTable(
+  'approved_item_versions',
+  {
+    id: uuid('id').primaryKey(),
+    itemId: uuid('item_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => memoryNodes.id),
+    reviewVersion: integer('review_version').notNull().unique(),
+    eventId: uuid('event_id')
+      .notNull()
+      .unique()
+      .references(() => changeReviewEvents.id),
+    previousVersionId: uuid('previous_version_id'),
+    value: jsonb('value')
+      .$type<import('../contracts/changes').ReviewedValue>()
+      .notNull(),
+    evidence: jsonb('evidence')
+      .$type<import('../contracts/research').Citation[]>()
+      .notNull(),
+    reviewerAdded: jsonb('reviewer_added').$type<string[]>().notNull(),
+    memoryVersion: integer('memory_version')
+      .notNull()
+      .references(() => memoryCommits.version),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('approved_item_version_unique').on(t.itemId, t.reviewVersion),
+  ],
+);
 
 // Translations are derivative caches of immutable evidence, never corrections.
 export const translationJobs = pgTable(

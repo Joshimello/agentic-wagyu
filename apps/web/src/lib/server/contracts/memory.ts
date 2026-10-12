@@ -243,7 +243,12 @@ export type Snapshot = {
   relations: Relation[];
   admissions: Admission[];
   events: Event[];
-  commits: { version: number; createdAt: string; pushId: string | null }[];
+  commits: {
+    version: number;
+    createdAt: string;
+    pushId: string | null;
+    reviewVersion?: number;
+  }[];
 };
 export type Plan = {
   organization?: import('./organization').OrganizationPlan;

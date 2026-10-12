@@ -114,6 +114,8 @@ export const speakerSuggestion = z
     model: z.string(),
     promptVersion: z.string(),
     review: z.enum(['confirmed', 'rejected']).optional(),
+    identityQuote: z.string().min(1).max(500).optional(),
+    activeSpeakerIndicator: z.boolean().optional(),
   })
   .strict();
 const contextQuestion = z
@@ -261,6 +263,35 @@ export const stageSchema = z
       .strict()
       .optional(),
     speakerSuggestions: z.array(speakerSuggestion).optional(),
+    speakerIdentity: z
+      .object({
+        model: z.string(),
+        promptVersion: z.string(),
+        voices: z.array(
+          z
+            .object({
+              key: z.string(),
+              speaker: z.string(),
+              status: z.enum(['suggested', 'unresolved', 'deferred', 'failed']),
+              reason: z.string(),
+              transcriptIds: z.array(id),
+              searches: z
+                .array(
+                  z
+                    .object({
+                      timesMs: z.array(ms).max(4),
+                      frameIds: z.array(id).max(4),
+                      reason: z.string(),
+                    })
+                    .strict(),
+                )
+                .max(2),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .optional(),
     context: z
       .object({
         model: z.string(),
@@ -376,6 +407,20 @@ export function validateStage(value: unknown): Stage {
         : [],
     ),
   );
+  for (const voice of stage.speakerIdentity?.voices ?? []) {
+    if (
+      !speakers.has(voice.speaker) ||
+      voice.transcriptIds.some((ref) => byId.get(ref)?.kind !== 'text') ||
+      voice.searches.some(
+        (s) =>
+          s.timesMs.some((t) => duration === null || t >= duration) ||
+          s.frameIds.some((ref) => byId.get(ref)?.kind !== 'image'),
+      )
+    )
+      throw new Error(
+        'Speaker identity audit references unavailable speech or frames',
+      );
+  }
   for (const suggestion of stage.speakerSuggestions ?? []) {
     const voiceIds = suggestion.voiceTranscriptIds ?? suggestion.transcriptIds;
     if (

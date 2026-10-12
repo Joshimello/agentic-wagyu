@@ -55,7 +55,12 @@ export type OrganizationSnapshot = {
     commitVersion: number;
     sourceTime: string | null;
   }[];
-  commits: { version: number; createdAt: string; pushId: string | null }[];
+  commits: {
+    version: number;
+    createdAt: string;
+    pushId: string | null;
+    reviewVersion?: number;
+  }[];
 };
 
 const match = z

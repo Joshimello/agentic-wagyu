@@ -17,6 +17,12 @@ export function reviewSpeakerNames(
   changed: Set<string>,
   changedText: Set<string>,
 ) {
+  for (const voice of stage.speakerIdentity?.voices ?? [])
+    if (voice.transcriptIds.some((id) => changedText.has(id))) {
+      voice.status = 'unresolved';
+      voice.reason =
+        'Supporting speech was corrected. Revisit speaker names to inspect identity evidence again.';
+    }
   if (!stage.speakerSuggestions && !reviews.length) return;
   const suggestions = stage.speakerSuggestions ?? [];
   const byId = new Map(stage.primitives.map((p) => [p.id, p]));

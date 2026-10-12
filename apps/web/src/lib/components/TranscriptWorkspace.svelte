@@ -141,6 +141,24 @@
             : 'Source text')
     );
   }
+  function pendingNames(text: Text) {
+    const original =
+      text.originalSpeaker !== undefined ? text.originalSpeaker : text.speaker;
+    return [
+      ...new Set(
+        (stage.speakerSuggestions ?? [])
+          .filter(
+            (s) =>
+              !s.review &&
+              s.speaker === original &&
+              (s.voiceTranscriptIds ?? s.transcriptIds).some((id) =>
+                texts.some((t) => t.id === id && t.speaker === text.speaker),
+              ),
+          )
+          .map((s) => s.candidateName),
+      ),
+    ];
+  }
   $effect(() => {
     const revision = stage.id;
     if (observedRevision === revision) return;
@@ -430,7 +448,10 @@
     {#each texts.slice(0, 4) as text}
       <article class="preview-turn">
         <div class="turn-head">
-          <strong>{speakerLabel(text)}</strong>
+          <strong>{speakerLabel(text)}</strong
+          >{#if pendingNames(text).length}<span class="original-speaker"
+              >Suggested: {pendingNames(text).join(' / ')} - pending review</span
+            >{/if}
           {#if text.locator.kind === 'media'}<button
               class="timestamp"
               onclick={() => jump(text)}
@@ -669,7 +690,10 @@
                   placeholder="Speaker"
                   maxlength="100"
                   disabled={saving}
-                />{:else}<strong>{speakerLabel(text)}</strong>{/if}
+                />{:else}<strong>{speakerLabel(text)}</strong
+                >{#if pendingNames(text).length}<span class="original-speaker"
+                    >Suggested: {pendingNames(text).join(' / ')} - pending review</span
+                  >{/if}{/if}
               {#if text.originalSpeaker !== undefined && text.originalSpeaker !== text.speaker}
                 <span class="original-speaker"
                   >Original: {text.originalSpeaker ?? 'Unlabeled'}</span

@@ -12,6 +12,10 @@ import { audioSections, joinAudioSections } from './audio-sections';
 import { type JobProgress } from '../../jobs/control';
 import { normalizeTranscription } from '../../text-normalization';
 import { mediaRequest } from './media-client';
+import {
+  suggestSpeakerIdentities,
+  speakerIdentityPromptVersion,
+} from './speaker-identity';
 
 const assetSchema = z.object({
   storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
@@ -250,7 +254,12 @@ export async function revisitContext(
   const reviewedNames = (stage.speakerSuggestions ?? []).filter(
     (s) => s.review,
   );
-  const reviewedFrames = new Set(reviewedNames.flatMap((s) => s.frameIds));
+  const reviewedFrames = new Set([
+    ...reviewedNames.flatMap((s) => s.frameIds),
+    ...(stage.speakerIdentity?.voices ?? []).flatMap((v) =>
+      v.searches.flatMap((s) => s.frameIds),
+    ),
+  ]);
   stage.primitives = stage.primitives.filter(
     (p) => p.kind === 'text' || reviewedFrames.has(p.id),
   );
@@ -288,6 +297,39 @@ export async function revisitContext(
       'Visual enrichment could not read/validate the transcript plan. Spoken transcript is preserved; revisit visual context to retry.',
     ];
     stage.coverage.complete = false;
+  }
+  await revisitSpeakerNames(stage, storageKey, progress, signal, jobId);
+  return stage;
+}
+
+/** Append tentative identity evidence; preserve speech, visuals and reviewed names. */
+export async function revisitSpeakerNames(
+  stage: Stage,
+  storageKey: string,
+  progress: JobProgress = async () => {},
+  signal?: AbortSignal,
+  jobId?: string,
+) {
+  signal?.throwIfAborted();
+  stage.speakerSuggestions = (stage.speakerSuggestions ?? []).filter(
+    (s) => s.review || s.promptVersion === speakerIdentityPromptVersion,
+  );
+  try {
+    await suggestSpeakerIdentities(
+      stage,
+      (times) => getContactSheet(storageKey, times, signal, jobId),
+      { progress, signal },
+    );
+  } catch (error) {
+    signal?.throwIfAborted();
+    stage.coverage.warnings.push(
+      'Speaker identity: analysis unavailable. Transcript, visuals and prior name reviews are preserved; revisit speaker names to retry.',
+    );
+    stage.speakerIdentity ??= {
+      model: 'unavailable',
+      promptVersion: speakerIdentityPromptVersion,
+      voices: [],
+    };
   }
   return stage;
 }

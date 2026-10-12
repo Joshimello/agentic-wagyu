@@ -6,8 +6,11 @@ import {
   dispatchPushes,
   dispatchResearch,
   researchQueue,
+  dispatchComparisons,
+  comparisonQueue,
 } from '../src/lib/server/jobs/queue';
 import { research } from '../src/lib/server/agents/researcher';
+import { compare } from '../src/lib/server/agents/changes';
 import { chronicle } from '../src/lib/server/agents/chronicler';
 import { interpret } from '../src/lib/server/agents/interpreter';
 import { sqlClient } from '../src/lib/server/db/client';
@@ -15,6 +18,16 @@ import { recoverInterrupted } from '../src/lib/server/jobs/operation';
 
 const boss = await startQueue();
 await recoverInterrupted();
+await boss.work<{ runId: string; generation: number }>(
+  comparisonQueue,
+  { batchSize: 1 },
+  async (jobs) => {
+    for (const job of jobs)
+      await compare(job.data.runId, job.data.generation, {
+        signal: job.signal,
+      });
+  },
+);
 await boss.work<{ runId: string }>(
   queueName,
   { batchSize: 1 },
@@ -52,6 +65,7 @@ const pump = (async () => {
         nextRecovery = Date.now() + 30000;
       }
       await dispatchResearch(boss);
+      await dispatchComparisons(boss);
       await dispatchPending(boss);
       await dispatchPushes(boss);
     } catch {

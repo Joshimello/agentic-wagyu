@@ -57,10 +57,20 @@
             ? 'Source report'
             : claim.basis === 'inference'
               ? 'Inference'
-              : 'Conflicting evidence'}</span
+              : claim.basis === 'reviewed'
+                ? 'Reviewed state'
+                : 'Conflicting evidence'}</span
         >
         <p>{claim.text}</p>
         <nav aria-label={`Sources for claim ${i + 1}`}>
+          {#each claim.reviewRefs ?? [] as id}{@const review =
+              data.run.answer.reviewReferences?.find(
+                (r) => r.id === id,
+              )}{#if review}<a href={review.url}
+                >Approved review {review.reviewVersion}</a
+              >{#if review.reviewerAdded.length}<span
+                  >Reviewer additions: {review.reviewerAdded.join(', ')}</span
+                >{/if}{/if}{/each}
           {#each claim.citations as id}{@const citation =
               data.run.answer.citations.find(
                 (c) => c.id === id,
@@ -93,6 +103,12 @@
         <p>{c.quote ?? 'Visual evidence inspected by Researcher'}</p>
       </article>{/each}
     <ul>
+      {#each data.run.answer.reviewReferences ?? [] as review}<li>
+          <a href={review.url}>Approved review {review.reviewVersion}</a
+          >{#each review.evidence as evidence}<p>
+              <a href={evidence.url}>{evidence.filename}</a>: {evidence.quote}
+            </p>{/each}
+        </li>{/each}
       {#each data.run.answer.warnings as warning}<li>{warning}</li>{/each}
     </ul>
   </details>

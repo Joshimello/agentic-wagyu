@@ -17,19 +17,23 @@
   let entry: gsap.Context | undefined;
   let memoryActive = $derived(page.url.pathname.startsWith('/memory'));
   let askActive = $derived(page.url.pathname.startsWith('/ask'));
+  let changesActive = $derived(page.url.pathname.startsWith('/changes'));
   setContext(activityContext, createActivity());
   let nav = $state<HTMLElement>();
   let indicator = $state<HTMLSpanElement>();
   let stagingLink = $state<HTMLAnchorElement>();
   let memoryLink = $state<HTMLAnchorElement>();
   let askLink = $state<HTMLAnchorElement>();
+  let changesLink = $state<HTMLAnchorElement>();
   let indicatorReady = $state(false);
   function positionIndicator(animate = true) {
-    const target = askActive
-      ? askLink
-      : memoryActive
-        ? memoryLink
-        : stagingLink;
+    const target = changesActive
+      ? changesLink
+      : askActive
+        ? askLink
+        : memoryActive
+          ? memoryLink
+          : stagingLink;
     if (!nav || !indicator || !target) return;
     const bounds = target.getBoundingClientRect(),
       parent = nav.getBoundingClientRect();
@@ -57,6 +61,7 @@
   $effect(() => {
     memoryActive;
     askActive;
+    changesActive;
     if (typeof window !== 'undefined')
       void tick().then(() => positionIndicator());
   });
@@ -125,8 +130,10 @@
       <a
         bind:this={stagingLink}
         href="/"
-        class:current={!memoryActive && !askActive}
-        aria-current={!memoryActive && !askActive ? 'page' : undefined}
+        class:current={!memoryActive && !askActive && !changesActive}
+        aria-current={!memoryActive && !askActive && !changesActive
+          ? 'page'
+          : undefined}
       >
         <Icon name="folder" size={17} /><span>Staging</span>
       </a>
@@ -146,6 +153,13 @@
       >
         <Icon name="help" size={17} /><span>Ask</span>
       </a>
+      <a
+        bind:this={changesLink}
+        href="/changes"
+        class:current={changesActive}
+        aria-current={changesActive ? 'page' : undefined}
+        ><Icon name="refresh" size={17} /><span>What changed?</span></a
+      >
     </nav>
     <ActivityStatus />
   </header>

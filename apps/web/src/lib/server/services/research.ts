@@ -4,7 +4,11 @@ import { researchRuns, researchOutbox, revisions, uploads } from '../db/schema';
 import { researchInput, type ResearchScope } from '../contracts/research';
 import { organizationSnapshot, reduceOrganization } from './organization';
 import { ResearchCorpus } from '../agents/researcher/retrieval';
-export async function loadResearchCorpus(scope: ResearchScope) {
+import { approvedHistory, reviewHistoryVersion } from './changes';
+export async function loadResearchCorpus(
+  scope: ResearchScope,
+  includeReviews = true,
+) {
   const snapshot = await organizationSnapshot({ knownVersion: scope.version });
   const ids = snapshot.admissions.map((a) => a.revisionId);
   const rows = ids.length
@@ -15,13 +19,25 @@ export async function loadResearchCorpus(scope: ResearchScope) {
         .where(inArray(revisions.id, ids))
     : [];
   return new ResearchCorpus(
-    { snapshot, stages: new Map(rows.map((r) => [r.stage.id, r])) },
+    {
+      snapshot,
+      stages: new Map(rows.map((r) => [r.stage.id, r])),
+      approved: includeReviews
+        ? await approvedHistory(
+            scope.reviewVersion ?? 0,
+            scope.projectId,
+            db,
+            scope.reviewKnownAt,
+          )
+        : [],
+    },
     scope,
   );
 }
 export async function createResearch(value: unknown) {
   const input = researchInput.parse(value);
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(736502)`);
     await tx.execute(sql`select pg_advisory_xact_lock(736503)`);
     const [existing] = await tx
       .select()
@@ -43,6 +59,14 @@ export async function createResearch(value: unknown) {
       throw new Error('Project unavailable in selected snapshot');
     const scope: ResearchScope = {
       version: snapshot.version,
+      reviewVersion: Math.min(
+        await reviewHistoryVersion(input.knownAt, tx),
+        input.knownVersion === undefined
+          ? Number.MAX_SAFE_INTEGER
+          : (snapshot.commits.find((c) => c.version === snapshot.version)
+              ?.reviewVersion ?? 0),
+      ),
+      ...(input.knownAt ? { reviewKnownAt: input.knownAt } : {}),
       ...(input.projectId ? { projectId: input.projectId } : {}),
       ...(input.effectiveAt ? { effectiveAt: input.effectiveAt } : {}),
     };

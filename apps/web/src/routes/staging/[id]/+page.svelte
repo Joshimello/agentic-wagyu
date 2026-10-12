@@ -17,7 +17,10 @@
   import ProcessingDetails from '../../../lib/components/ProcessingDetails.svelte';
   import { processingMayResume } from '../../../lib/processing-status';
   import SourceDetails from '../../../lib/components/SourceDetails.svelte';
-  import { sourceProjectName, sourceProjectNames } from '../../../lib/source-organization';
+  import {
+    sourceProjectName,
+    sourceProjectNames,
+  } from '../../../lib/source-organization';
   import { isUsableCandidateName } from '../../../lib/speaker-names';
   let { data } = $props();
   let detail = $state(untrack(() => data));
@@ -26,11 +29,13 @@
   let notice = $state('');
   let retrying = $state(false);
   let detailsEditor = $state<ReturnType<typeof SourceDetails>>();
-  let stagingProjects = $derived(sourceProjectNames([
-    ...data.stagingProjects,
-    ...data.projects.map((project) => project.name),
-    sourceProjectName(detail.upload.metadata),
-  ]));
+  let stagingProjects = $derived(
+    sourceProjectNames([
+      ...data.stagingProjects,
+      ...data.projects.map((project) => project.name),
+      sourceProjectName(detail.upload.metadata),
+    ]),
+  );
   let canceling = $state(false);
   let mediaPreview = $state<ReturnType<typeof MediaPreview>>();
   let activeSection = $state('original-evidence');
@@ -212,26 +217,31 @@
     detail = result;
     if (selectCurrent) selection = 'current';
   }
-  async function retry(contextOnly = false) {
+  async function retry(contextOnly = false, speakersOnly = false) {
     if (retrying) return;
     retrying = true;
     error = '';
     try {
       const response = await fetch(`/api/uploads/${detail.upload.id}/retry`, {
         method: 'POST',
-        ...(contextOnly && stage
+        ...((contextOnly || speakersOnly) && stage
           ? {
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ inputRevisionId: stage.id }),
+              body: JSON.stringify({
+                inputRevisionId: stage.id,
+                mode: speakersOnly ? 'speakers' : 'context',
+              }),
             }
           : {}),
       });
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || 'Could not start processing.');
-      notice = contextOnly
-        ? 'Visual review queued. Your reviewed source is preserved.'
-        : 'Processing queued. Your previous revision remains available.';
+      notice = speakersOnly
+        ? 'Speaker review queued. Transcript, visual notes and manual names are preserved.'
+        : contextOnly
+          ? 'Visual review queued. Your reviewed source is preserved.'
+          : 'Processing queued. Your previous revision remains available.';
       await refresh(false);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not start processing.';
@@ -330,9 +340,15 @@
     ><Icon name="arrow-left" />Back</a
   >
   <div class="header-actions">
-    <button class="secondary" disabled={busy || retryPending || removed || (stage && !current)}
-      title={busy || retryPending ? 'Available after processing finishes' : 'Edit name, meeting date, and project'}
-      onclick={() => detailsEditor?.open(detail.upload)}><Icon name="edit" />Edit details</button>
+    <button
+      class="secondary"
+      disabled={busy || retryPending || removed || (stage && !current)}
+      title={busy || retryPending
+        ? 'Available after processing finishes'
+        : 'Edit name, meeting date, and project'}
+      onclick={() => detailsEditor?.open(detail.upload)}
+      ><Icon name="edit" />Edit details</button
+    >
     <Tooltip text="Preview the original source"
       ><button class="secondary" onclick={showOriginal}
         ><Icon name="expand" />Original</button
@@ -378,10 +394,21 @@
             ? 'Revisit document descriptions'
             : 'Revisit visual context'}</button
         >{/if}
+      {#if stage && isVideo && current}<button
+          disabled={busy || retryPending || retrying || removed}
+          onclick={() => retry(false, true)}
+          ><Icon name="refresh" />Revisit speaker names</button
+        >{/if}
     </Menu>
   </div>
 </div>
-<SourceDetails bind:this={detailsEditor} projects={stagingProjects} onupdated={async () => { await refresh(); }} />
+<SourceDetails
+  bind:this={detailsEditor}
+  projects={stagingProjects}
+  onupdated={async () => {
+    await refresh();
+  }}
+/>
 <div class="heading">
   <div>
     <h1>{stage?.metadata.label || detail.upload.metadata.label}</h1>
@@ -396,7 +423,13 @@
         detail.upload.metadata.uploadedAt,
       ).toLocaleDateString()}
     </p>
-    <p class="muted source-project"><Icon name="folder" size={14} />{sourceProjectName(stage?.metadata ?? detail.upload.metadata) || 'No project'}{(stage?.metadata ?? detail.upload.metadata).sourceTime ? ` / Meeting ${new Date((stage?.metadata ?? detail.upload.metadata).sourceTime!).toLocaleString()}` : ''}</p>
+    <p class="muted source-project">
+      <Icon name="folder" size={14} />{sourceProjectName(
+        stage?.metadata ?? detail.upload.metadata,
+      ) || 'No project'}{(stage?.metadata ?? detail.upload.metadata).sourceTime
+        ? ` / Meeting ${new Date((stage?.metadata ?? detail.upload.metadata).sourceTime!).toLocaleString()}`
+        : ''}
+    </p>
   </div>
   <span class="memory-status"
     ><Icon
@@ -572,6 +605,21 @@
           onseek={seek}
           ontranscript={(id) => transcript?.openTranscript(id)}
         />{/if}
+      {#if stage.speakerIdentity}<section class="speaker-notes">
+          <Disclosure title="Speaker identity review audit"
+            ><p>
+              Names remain tentative until confirmed. Each voice belongs to its
+              own recording section.
+            </p>
+            {#each stage.speakerIdentity.voices as voice}<article>
+                <strong>{voice.speaker}</strong><span class="badge"
+                  >{voice.status}</span
+                >
+                <p>{voice.reason}</p>
+                <p class="muted">{voice.searches.length} frame searches</p>
+              </article>{/each}</Disclosure
+          >
+        </section>{/if}
       {#if speakerSuggestions.length}<section class="speaker-notes">
           <Disclosure
             title={`Speaker suggestions (${speakerSuggestions.length})`}
