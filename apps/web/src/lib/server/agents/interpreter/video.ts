@@ -261,10 +261,16 @@ export async function revisitContext(
 ) {
   signal?.throwIfAborted();
   normalizeTranscription(stage);
-  stage.primitives = stage.primitives.filter((p) => p.kind === 'text');
+  const reviewedNames = (stage.speakerSuggestions ?? []).filter(
+    (s) => s.review,
+  );
+  const reviewedFrames = new Set(reviewedNames.flatMap((s) => s.frameIds));
+  stage.primitives = stage.primitives.filter(
+    (p) => p.kind === 'text' || reviewedFrames.has(p.id),
+  );
   stage.annotations = [];
   delete stage.context;
-  delete stage.speakerSuggestions;
+  stage.speakerSuggestions = reviewedNames;
   stage.coverage.warnings = stage.coverage.warnings.filter(
     (w) =>
       !/visual agent received|visual sampling|sparse visual|visual enrichment|visual coverage|visual response|transcript context questions|transcript questions were deferred|Video frames were selected/i.test(
@@ -290,7 +296,7 @@ export async function revisitContext(
     stage.primitives = speech;
     stage.annotations = [];
     delete stage.context;
-    delete stage.speakerSuggestions;
+    stage.speakerSuggestions = reviewedNames;
     stage.coverage.warnings = [
       ...warnings,
       'Visual enrichment could not read/validate the transcript plan. Spoken transcript is preserved; revisit visual context to retry.',

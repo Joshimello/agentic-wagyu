@@ -1,4 +1,8 @@
-import { correctStage } from '../src/lib/server/services/staging';
+import {
+  correctStage,
+  exportMarkdown,
+} from '../src/lib/server/services/staging';
+import { validateStage, type Stage } from '../src/lib/server/contracts';
 import { afterAll, test, expect } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { db, sqlClient } from '../src/lib/server/db/client';
@@ -28,6 +32,159 @@ const created: string[] = [];
 afterAll(async () => {
   if (enabled) await sqlClient.end();
 });
+check(
+  'speaker review saves scoped names, original labels and decisions in immutable correction history',
+  async () => {
+    const item = await acceptUpload(
+      new File(['private speaker review fixture'], 'speakers.mp4'),
+      {},
+    );
+    const detail = await getUpload(item.uploadId);
+    const stage: Stage = {
+      schemaVersion: 1,
+      id: crypto.randomUUID(),
+      uploadId: item.uploadId,
+      rawAssetId: detail.asset.id,
+      parentRevisionId: null,
+      createdAt: new Date().toISOString(),
+      metadata: detail.upload.metadata,
+      primitives: ['Part 1 · S01', 'Part 1 · S01', 'Part 2 · S01'].map(
+        (speaker, index) => ({
+          id: crypto.randomUUID(),
+          kind: 'text',
+          role: 'asr',
+          speaker,
+          text: `Original turn ${index + 1}`,
+          locator: {
+            kind: 'media',
+            timeline: 'container',
+            startMs: index * 1000,
+            endMs: (index + 1) * 1000,
+          },
+        }),
+      ),
+      annotations: [],
+      coverage: { complete: true, durationMs: 3000, warnings: [] },
+      provenance: {
+        adapter: 'video',
+        model: 'MOSS',
+        modelRevision: 'pinned',
+        promptVersion: null,
+      },
+    };
+    stage.speakerSuggestions = [0, 2].map((index) => ({
+      id: crypto.randomUUID(),
+      speaker: index === 0 ? 'Part 1 · S01' : 'Part 2 · S01',
+      candidateName: index === 0 ? 'Alice' : 'Bob',
+      confidence: 'medium',
+      basis: 'self_introduction',
+      reason: 'Explicit introduction in this turn.',
+      transcriptIds: [stage.primitives[index].id],
+      frameIds: [],
+      model: 'test-model',
+      promptVersion: 'test-prompt',
+    }));
+    await db
+      .insert(revisions)
+      .values({
+        id: stage.id,
+        uploadId: item.uploadId,
+        runId: item.runId,
+        manifest: validateStage(stage),
+      });
+    await db
+      .update(uploads)
+      .set({ currentRevisionId: stage.id })
+      .where(eq(uploads.id, item.uploadId));
+    await db
+      .update(runs)
+      .set({ state: 'ready', revisionId: stage.id })
+      .where(eq(runs.id, item.runId));
+    const input = {
+      baseRevisionId: stage.id,
+      label: stage.metadata.label,
+      sourceTime: null,
+      edits: stage.primitives
+        .slice(0, 2)
+        .map((p) => ({
+          primitiveId: p.id,
+          text: p.kind === 'text' ? p.text : '',
+          speaker: ' Alice ',
+        })),
+      speakerReviews: [
+        { suggestionId: stage.speakerSuggestions[0].id, decision: 'confirmed' },
+        { suggestionId: stage.speakerSuggestions[1].id, decision: 'rejected' },
+      ],
+    };
+    const corrected = await correctStage(item.uploadId, input);
+    expect(corrected.parentRevisionId).toBe(stage.id);
+    expect(corrected.primitives[0]).toMatchObject({
+      speaker: 'Alice',
+      originalSpeaker: 'Part 1 · S01',
+      text: 'Original turn 1',
+    });
+    expect(corrected.primitives[1]).toMatchObject({
+      speaker: 'Alice',
+      originalSpeaker: 'Part 1 · S01',
+    });
+    expect(corrected.primitives[2]).toEqual(stage.primitives[2]);
+    expect(corrected.speakerSuggestions?.map((s) => s.review)).toEqual([
+      'confirmed',
+      'rejected',
+    ]);
+    const markdown = exportMarkdown(
+      corrected,
+      'speakers.mp4',
+      'http://localhost:5173',
+    );
+    expect(markdown).toContain('Original speaker label: Part 1 · S01');
+    expect(markdown).toContain('User review: confirmed');
+    expect(markdown).toContain('User review: rejected');
+    await expect(correctStage(item.uploadId, input)).rejects.toThrow(
+      'Staging changed',
+    );
+    const individual = await correctStage(item.uploadId, {
+      ...input,
+      baseRevisionId: corrected.id,
+      edits: [
+        {
+          primitiveId: stage.primitives[0].id,
+          text: 'Original turn 1',
+          speaker: 'Carol',
+        },
+      ],
+      speakerReviews: [],
+    });
+    expect(individual.primitives[0]).toMatchObject({
+      speaker: 'Carol',
+      originalSpeaker: 'Part 1 · S01',
+    });
+    expect(individual.primitives[1]).toMatchObject({
+      speaker: 'Alice',
+      originalSpeaker: 'Part 1 · S01',
+    });
+    expect(individual.speakerSuggestions?.map((s) => s.review)).toEqual([
+      'rejected',
+    ]);
+    const history = await getUpload(item.uploadId);
+    expect(history.revisions).toHaveLength(3);
+    expect(history.revisions.find((r) => r.id === stage.id)?.manifest).toEqual(
+      stage,
+    );
+    expect(await memoryCount()).toBe(0);
+    await expect(
+      correctStage(item.uploadId, {
+        ...input,
+        baseRevisionId: individual.id,
+        edits: [],
+        speakerReviews: [
+          { suggestionId: crypto.randomUUID(), decision: 'rejected' },
+        ],
+      }),
+    ).rejects.toThrow('no longer available');
+    expect((await getUpload(item.uploadId)).revisions).toHaveLength(3);
+  },
+);
 check(
   'database migration installs pgvector and durable application tables',
   async () => {

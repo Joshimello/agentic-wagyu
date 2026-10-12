@@ -3,6 +3,7 @@ import {
   enrichContext,
   transcriptBlocks,
   validateSearch,
+  contextPromptVersion,
 } from '../src/lib/server/agents/interpreter/context';
 import {
   validateStage,
@@ -305,7 +306,7 @@ test('citation-only visual output does not count as an English answer and retain
   const questionId = crypto.randomUUID();
   value.context = {
     model: 'test-model',
-    promptVersion: 'context-4-en',
+    promptVersion: contextPromptVersion,
     readSegments: 3,
     totalSegments: 3,
     questions: [
@@ -334,7 +335,7 @@ test('citation-only visual output does not count as an English answer and retain
       frameIds: [frame.id],
       origin: 'model',
       model: 'test-model',
-      promptVersion: 'context-4-en',
+      promptVersion: contextPromptVersion,
       questionId,
     },
   ];
@@ -344,4 +345,100 @@ test('citation-only visual output does not count as an English answer and retain
   expect(value.context.questions[0].status).toBe('unresolved');
   expect(value.context.questions[0].searches[0].frameIds).toEqual([frame.id]);
   expect(value.primitives).toContainEqual(frame);
+});
+
+test('visual revisits keep rejected names scoped to their corrected voice and leave repeated rejected answers unresolved', async () => {
+  const value = stage();
+  const voices = value.primitives.filter((p) => p.kind === 'text');
+  for (const p of voices) p.originalSpeaker = p.speaker;
+  voices[0].speaker = voices[2].speaker = 'Bob';
+  voices[1].speaker = 'Carol';
+  const rejected = {
+    id: crypto.randomUUID(),
+    speaker: 'S01',
+    candidateName: 'Alice',
+    confidence: 'medium' as const,
+    basis: 'handoff' as const,
+    reason: 'Previously rejected introduction.',
+    transcriptIds: [voices[0].id],
+    voiceTranscriptIds: [voices[0].id],
+    frameIds: [],
+    model: 'test-model',
+    promptVersion: contextPromptVersion,
+    review: 'rejected' as const,
+  };
+  value.speakerSuggestions = [rejected];
+  let answers = 0;
+  const llm = {
+    model: 'test-model',
+    client: {
+      chat: {
+        completions: {
+          create: async (request: {
+            response_format?: { json_schema?: { name: string } };
+          }) => {
+            const planning =
+              request.response_format?.json_schema?.name ===
+              'context_questions';
+            const content = planning
+              ? {
+                  questions: ['T1', 'T2'].map((ref, index) => ({
+                    question: `Who is voice ${index + 1}?`,
+                    purpose: 'speaker_identity',
+                    transcriptRefs: [ref],
+                    priority: 1,
+                  })),
+                }
+              : {
+                  annotations: [],
+                  speakerSuggestions: [
+                    {
+                      speakerRef: `P${++answers}`,
+                      candidateName: 'Alice',
+                      confidence: 'medium',
+                      basis: 'handoff',
+                      reason: 'A handoff names the other speaker.',
+                      transcriptRefs: ['T1', 'T2'],
+                      frameRefs: [],
+                    },
+                  ],
+                  unresolvedReason: '',
+                };
+            return {
+              choices: [
+                {
+                  finish_reason: 'stop',
+                  message: {
+                    role: 'assistant',
+                    content: JSON.stringify(content),
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    },
+  } as unknown as ReturnType<typeof llmClient>;
+  await enrichContext(
+    value,
+    async () => {
+      throw new Error('No frames needed for this introduction');
+    },
+    async () => {},
+    llm,
+  );
+  validateStage(value);
+  expect(value.speakerSuggestions).toHaveLength(2);
+  expect(value.speakerSuggestions?.[0]).toEqual(rejected);
+  expect(value.speakerSuggestions?.[1]).toMatchObject({
+    speaker: 'S01',
+    candidateName: 'Alice',
+    voiceTranscriptIds: [voices[1].id],
+    transcriptIds: [voices[0].id, voices[1].id],
+  });
+  expect(value.context?.questions.map((q) => q.status)).toEqual([
+    'unresolved',
+    'answered',
+  ]);
 });

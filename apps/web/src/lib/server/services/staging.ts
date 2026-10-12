@@ -5,6 +5,7 @@ import { uploads, revisions } from '../db/schema';
 import { validateStage, id, type Stage } from '../contracts';
 import { isUsableCandidateName } from '../../speaker-names';
 import { cleanEnglishReview } from '../review-language';
+import { reviewSpeakerNames, speakerReviewEdit } from './speaker-review';
 import { enqueueSummary } from './summaries';
 import {
   normalizeTranscription,
@@ -21,11 +22,12 @@ export const correctionSchema = z
           .object({
             primitiveId: id,
             text: z.string().max(1000000),
-            speaker: z.string().max(100).nullable(),
+            speaker: z.string().trim().max(100).nullable(),
           })
           .strict(),
       )
       .max(10000),
+    speakerReviews: z.array(speakerReviewEdit).max(10000).default([]),
   })
   .strict();
 export async function correctStage(uploadId: string, value: unknown) {
@@ -60,6 +62,7 @@ export async function correctStage(uploadId: string, value: unknown) {
     )
       throw new Error('Duplicate correction');
     const changed = new Set<string>();
+    const changedText = new Set<string>();
     for (const edit of correction.edits) {
       const p = stage.primitives.find((p) => p.id === edit.primitiveId);
       if (!p || p.kind !== 'text')
@@ -68,22 +71,19 @@ export async function correctStage(uploadId: string, value: unknown) {
         p.role === 'asr' && edit.text !== p.text
           ? traditionalChinese(edit.text)
           : edit.text;
-      if (p.text !== text || p.speaker !== edit.speaker) changed.add(p.id);
+      const speaker = edit.speaker || null;
+      if (p.text !== text || p.speaker !== speaker) changed.add(p.id);
+      if (p.text !== text) changedText.add(p.id);
+      if (
+        p.role === 'asr' &&
+        p.speaker !== speaker &&
+        p.originalSpeaker === undefined
+      )
+        p.originalSpeaker = p.speaker;
       p.text = text;
-      p.speaker = edit.speaker;
+      p.speaker = speaker;
     }
-    if (stage.speakerSuggestions) {
-      const previous = stage.speakerSuggestions.length;
-      stage.speakerSuggestions = stage.speakerSuggestions.filter(
-        (s) =>
-          isUsableCandidateName(s.candidateName) &&
-          !s.transcriptIds.some((ref) => changed.has(ref)),
-      );
-      if (stage.speakerSuggestions.length < previous)
-        stage.coverage.warnings.push(
-          'Unsupported or outdated speaker name suggestions were removed; revisit visual context to review them.',
-        );
-    }
+    reviewSpeakerNames(stage, correction.speakerReviews, changed, changedText);
     if (stage.context && changed.size) {
       stage.context.readSegments = Math.max(
         0,
@@ -273,6 +273,11 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
       lines.push(
         `<a id="text-${p.id}"></a>`,
         `${p.speaker ? `**${clean(p.speaker)}**` : ''}${time}`,
+        ...(p.originalSpeaker !== undefined && p.originalSpeaker !== p.speaker
+          ? [
+              `Original speaker label: ${clean(p.originalSpeaker ?? 'Unlabeled')}`,
+            ]
+          : []),
         p.text,
         '',
       );
@@ -305,7 +310,7 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
     lines.push(
       '## Tentative speaker names',
       '',
-      'These are unverified model suggestions. Original speaker codes are preserved.',
+      'Model suggestions remain tentative unless confirmed by the user. Review decisions and original speaker codes are preserved.',
       '',
     );
     for (const s of stage.speakerSuggestions.filter((s) =>
@@ -313,6 +318,7 @@ export function exportMarkdown(stage: Stage, filename: string, origin: string) {
     ))
       lines.push(
         `**${clean(s.speaker)}** → possibly **${clean(s.candidateName)}** (${s.confidence}; ${s.basis})`,
+        `User review: ${s.review ?? 'unreviewed'}`,
         s.reason,
         ...s.transcriptIds.map(
           (ref) => `Related speech: [${ref}](#text-${ref})`,

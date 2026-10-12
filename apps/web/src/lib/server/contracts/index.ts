@@ -56,6 +56,7 @@ export const textPrimitive = z
     role: z.enum(['asr', 'native', 'ocr', 'notes']),
     text: z.string(),
     speaker: z.string().nullable(),
+    originalSpeaker: z.string().nullable().optional(),
     locator,
     bounds: bounds.nullable().optional(),
   })
@@ -108,9 +109,11 @@ export const speakerSuggestion = z
     ]),
     reason: z.string().min(1),
     transcriptIds: z.array(id).min(1),
+    voiceTranscriptIds: z.array(id).min(1).optional(),
     frameIds: z.array(id),
     model: z.string(),
     promptVersion: z.string(),
+    review: z.enum(['confirmed', 'rejected']).optional(),
   })
   .strict();
 const contextQuestion = z
@@ -312,6 +315,14 @@ export function validateStage(value: unknown): Stage {
     throw new Error('Duplicate primitive ID');
   const duration = stage.coverage.durationMs;
   for (const p of stage.primitives) {
+    if (
+      p.kind === 'text' &&
+      p.originalSpeaker !== undefined &&
+      p.role !== 'asr'
+    )
+      throw new Error(
+        'Original speaker labels belong to spoken transcript turns',
+      );
     if ('startMs' in p.locator) {
       if (
         p.locator.endMs < p.locator.startMs ||
@@ -358,21 +369,60 @@ export function validateStage(value: unknown): Stage {
   }
   const speakers = new Set(
     stage.primitives.flatMap((p) =>
-      p.kind === 'text' && p.speaker ? [p.speaker] : [],
+      p.kind === 'text'
+        ? [
+            p.originalSpeaker !== undefined ? p.originalSpeaker : p.speaker,
+          ].filter((speaker): speaker is string => speaker !== null)
+        : [],
     ),
   );
   for (const suggestion of stage.speakerSuggestions ?? []) {
+    const voiceIds = suggestion.voiceTranscriptIds ?? suggestion.transcriptIds;
     if (
       !speakers.has(suggestion.speaker) ||
       suggestion.transcriptIds.some((ref) => byId.get(ref)?.kind !== 'text') ||
       suggestion.frameIds.some((ref) => byId.get(ref)?.kind !== 'image') ||
-      !suggestion.transcriptIds.some((ref) => {
+      !voiceIds.some((ref) => {
         const p = byId.get(ref);
-        return p?.kind === 'text' && p.speaker === suggestion.speaker;
+        return (
+          p?.kind === 'text' &&
+          (p.originalSpeaker !== undefined ? p.originalSpeaker : p.speaker) ===
+            suggestion.speaker
+        );
       })
     )
       throw new Error(
         'Speaker suggestion lacks evidence for its anonymous speaker',
+      );
+    if (
+      suggestion.voiceTranscriptIds &&
+      (new Set(voiceIds).size !== voiceIds.length ||
+        voiceIds.some((ref) => {
+          const p = byId.get(ref);
+          return (
+            !suggestion.transcriptIds.includes(ref) ||
+            p?.kind !== 'text' ||
+            (p.originalSpeaker !== undefined
+              ? p.originalSpeaker
+              : p.speaker) !== suggestion.speaker
+          );
+        }))
+    )
+      throw new Error('Speaker voice evidence must belong to its cited voice');
+    if (
+      suggestion.review === 'confirmed' &&
+      voiceIds.some((ref) => {
+        const p = byId.get(ref);
+        return (
+          p?.kind === 'text' &&
+          (p.originalSpeaker !== undefined ? p.originalSpeaker : p.speaker) ===
+            suggestion.speaker &&
+          p.speaker !== suggestion.candidateName
+        );
+      })
+    )
+      throw new Error(
+        'Confirmed speaker name differs from the reviewed transcript',
       );
   }
   if (

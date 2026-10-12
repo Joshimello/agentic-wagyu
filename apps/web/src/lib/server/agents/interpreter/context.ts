@@ -6,7 +6,7 @@ import { llmClient } from '../../llm/client';
 import { isUsableCandidateName } from '../../../speaker-names';
 import { traditionalChinese } from '../../text-normalization';
 import { cleanEnglishReview } from '../../review-language';
-export const contextPromptVersion = 'context-4-en';
+export const contextPromptVersion = 'context-5-speaker-review-en';
 const refs = z.array(z.string().min(1)).min(1);
 const candidate = z
   .object({
@@ -70,9 +70,27 @@ const safety =
 export function transcriptBlocks(speech: Text[], limit = 18000) {
   const blocks: { refs: string[]; content: string }[] = [];
   const speakers = new Map<string, string>();
+  const speakerDetails = new Map<
+    string,
+    { label: string; originalSpeaker: string | null }
+  >();
+  const speakerRefs = new Map<string, string>();
   const lines = speech.map((p, i) => {
-    const speaker = p.speaker ?? 'unknown';
-    if (!speakers.has(speaker)) speakers.set(speaker, `P${speakers.size + 1}`);
+    const originalSpeaker =
+      p.originalSpeaker !== undefined ? p.originalSpeaker : p.speaker;
+    const speaker =
+      originalSpeaker === null
+        ? p.id
+        : JSON.stringify([originalSpeaker, p.speaker]);
+    if (!speakers.has(speaker)) {
+      const ref = `P${speakers.size + 1}`;
+      speakers.set(speaker, ref);
+      speakerDetails.set(ref, {
+        label: p.speaker ?? 'Unknown speaker',
+        originalSpeaker,
+      });
+    }
+    speakerRefs.set(`T${i + 1}`, speakers.get(speaker)!);
     const time =
       p.locator.kind === 'media'
         ? `${p.locator.startMs}-${p.locator.endMs}`
@@ -91,7 +109,7 @@ export function transcriptBlocks(speech: Text[], limit = 18000) {
     content += lines[i] + '\n';
   }
   if (refs.length) blocks.push({ refs, content });
-  return { blocks, speakers, lines };
+  return { blocks, speakers, lines, speakerDetails, speakerRefs };
 }
 export function validateSearch(
   times: number[],
@@ -133,12 +151,16 @@ export async function enrichContext(
     : {};
   const speech = stage.primitives.filter((p): p is Text => p.kind === 'text');
   const byRef = new Map(speech.map((p, i) => [`T${i + 1}`, p]));
-  const { blocks, speakers, lines } = transcriptBlocks(speech);
-  const speakerByRef = new Map(
-    [...speakers].map(([label, ref]) => [ref, label]),
+  const { blocks, lines, speakerDetails, speakerRefs } =
+    transcriptBlocks(speech);
+  const voiceRefById = new Map(
+    speech.map((p, index) => [p.id, speakerRefs.get(`T${index + 1}`)]),
   );
-  const speakerTable = [...speakers]
-    .map(([label, ref]) => `${ref}: ${label}`)
+  const speakerTable = [...speakerDetails]
+    .map(
+      ([ref, detail]) =>
+        `${ref}: ${detail.label} (original voice label: ${detail.originalSpeaker ?? 'unlabeled'})`,
+    )
     .join('\n');
   const plans: (z.infer<typeof planSchema>['questions'][number] & {
     id: string;
@@ -207,7 +229,9 @@ export async function enrichContext(
     totalSegments: speech.length,
     questions: [],
   };
-  stage.speakerSuggestions = [];
+  stage.speakerSuggestions = (stage.speakerSuggestions ?? []).filter(
+    (s) => s.review,
+  );
   const selected = new Set(
     plans
       .slice()
@@ -404,10 +428,12 @@ export async function enrichContext(
               ? null
               : traditionalChinese(s.candidateName);
           if (!isUsableCandidateName(candidateName)) return [];
-          const speaker = speakerByRef.get(s.speakerRef);
+          const speaker = speakerDetails.get(s.speakerRef)?.originalSpeaker;
           if (
             !speaker ||
-            !s.transcriptRefs.some((ref) => byRef.get(ref)?.speaker === speaker)
+            !s.transcriptRefs.some(
+              (ref) => speakerRefs.get(ref) === s.speakerRef,
+            )
           )
             throw new Error('Name lacks voice evidence');
           return [
@@ -419,6 +445,11 @@ export async function enrichContext(
               basis: s.basis,
               reason: traditionalChinese(s.reason),
               transcriptIds: textIds(s.transcriptRefs),
+              voiceTranscriptIds: textIds(
+                s.transcriptRefs.filter(
+                  (ref) => speakerRefs.get(ref) === s.speakerRef,
+                ),
+              ),
               frameIds: frameIds(s.frameRefs),
               model,
               promptVersion: contextPromptVersion,
@@ -426,9 +457,27 @@ export async function enrichContext(
           ];
         });
         stage.annotations.push(...annotations);
-        stage.speakerSuggestions.push(...suggestions);
+        const retainedSuggestions = suggestions.filter(
+          (candidate) =>
+            !stage.speakerSuggestions!.some(
+              (existing) =>
+                existing.review &&
+                existing.speaker === candidate.speaker &&
+                existing.candidateName === candidate.candidateName &&
+                (existing.voiceTranscriptIds ?? existing.transcriptIds).some(
+                  (id) =>
+                    candidate.voiceTranscriptIds?.some(
+                      (targetId) =>
+                        voiceRefById.get(id) === voiceRefById.get(targetId),
+                    ),
+                ),
+            ),
+        );
+        stage.speakerSuggestions.push(...retainedSuggestions);
         question.status =
-          annotations.length || suggestions.length ? 'answered' : 'unresolved';
+          annotations.length || retainedSuggestions.length
+            ? 'answered'
+            : 'unresolved';
         question.explanation = traditionalChinese(answer.unresolvedReason);
         break;
       }

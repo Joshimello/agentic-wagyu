@@ -13,8 +13,10 @@ export function cleanEnglishReview(stage: Stage) {
     const observed = stage.annotations.some(
       (a) => a.questionId === question.id,
     );
-    const named = stage.speakerSuggestions?.some((s) =>
-      s.transcriptIds.some((ref) => question.transcriptIds.includes(ref)),
+    const named = stage.speakerSuggestions?.some(
+      (s) =>
+        s.review !== 'rejected' &&
+        s.transcriptIds.some((ref) => question.transcriptIds.includes(ref)),
     );
     if (question.status === 'answered' && !observed && !named) {
       question.status = 'unresolved';
