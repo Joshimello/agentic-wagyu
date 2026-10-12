@@ -18,6 +18,7 @@ import {
 import {
   acceptUpload,
   getUpload,
+  listUploads,
   memoryCount,
   retryUpload,
   cancelUploadRun,
@@ -29,11 +30,95 @@ import {
   queueName,
 } from '../src/lib/server/jobs/queue';
 import { assetPath } from '../src/lib/server/storage';
+import { updateSourceDetails, listSourceProjectNames } from '../src/lib/server/services/source-details';
+import { selectRevision, listSelections } from '../src/lib/server/services/selections';
+import { sourceProjectName } from '../src/lib/source-organization';
 const enabled = process.env.TEST_SUITE === 'staging';
 const check = test.skipIf(!enabled);
 const created: string[] = [];
 afterAll(async () => {
   if (enabled) await sqlClient.end();
+});
+const detailsInput = (source: Awaited<ReturnType<typeof getUpload>>) => ({
+  baseRevisionId: source.upload.currentRevisionId,
+  previous: { label: source.upload.metadata.label, sourceTime: source.upload.metadata.sourceTime,
+    projectName: sourceProjectName(source.upload.metadata) },
+  label: source.upload.metadata.label,
+  sourceTime: source.upload.metadata.sourceTime,
+  projectName: sourceProjectName(source.upload.metadata),
+});
+
+check('source details preserve evidence, earlier revisions, and pinned selections while updating the list', async () => {
+  const item = await acceptUpload(new File(['Original meeting notes'], 'original.txt'), { groupHint: 'Uploaded together' });
+  await interpret(item.runId);
+  const before = await getUpload(item.uploadId);
+  const original = before.revisions[0].manifest;
+  await selectRevision({ uploadId: item.uploadId, revisionId: original.id });
+  const memories = await memoryCount();
+  await updateSourceDetails(item.uploadId, { ...detailsInput(before), label: 'Planning meeting',
+    sourceTime: '2026-09-23T02:00:00.000Z', projectName: 'Agentic AI' });
+  const after = await getUpload(item.uploadId);
+  const current = after.revisions.find((revision) => revision.id === after.upload.currentRevisionId)!.manifest;
+  expect(after.upload.filename).toBe('original.txt');
+  expect(after.asset).toEqual(before.asset);
+  expect(current.primitives).toEqual(original.primitives);
+  expect(current.annotations).toEqual(original.annotations);
+  expect(current.provenance).toEqual(original.provenance);
+  expect(current.metadata).toMatchObject({ label: 'Planning meeting', groupHint: 'Agentic AI',
+    sourceTime: '2026-09-23T02:00:00.000Z', sourceTimeOrigin: 'user' });
+  expect(after.revisions.find((revision) => revision.id === original.id)!.manifest).toEqual(original);
+  expect((await listSelections()).find((selection) => selection.uploadId === item.uploadId)).toMatchObject({
+    revisionId: original.id, stale: true, metadata: original.metadata,
+  });
+  expect((await listUploads()).find((source) => source.id === item.uploadId)!.metadata).toEqual(current.metadata);
+  expect(await listSourceProjectNames()).toContain('Agentic AI');
+  expect(await memoryCount()).toBe(memories);
+  await expect(updateSourceDetails(item.uploadId, detailsInput(before))).rejects.toThrow('details changed');
+  const count = after.revisions.length;
+  await updateSourceDetails(item.uploadId, detailsInput(after));
+  expect((await getUpload(item.uploadId)).revisions).toHaveLength(count);
+  const corrected = await correctStage(item.uploadId, { baseRevisionId: current.id, label: 'Updated title',
+    sourceTime: null, edits: [] });
+  expect((await listUploads()).find((source) => source.id === item.uploadId)!.metadata).toEqual(corrected.metadata);
+});
+
+check('failed sources can be organized before transcription and concurrent edits do not overwrite one another', async () => {
+  const item = await acceptUpload(new File(['Raw preserved bytes'], 'failed.mp4'), {});
+  const queued = await getUpload(item.uploadId);
+  await expect(updateSourceDetails(item.uploadId, detailsInput(queued))).rejects.toThrow('processing to finish');
+  await db.update(runs).set({ state: 'failed' }).where(eq(runs.id, item.runId));
+  const before = await getUpload(item.uploadId);
+  const results = await Promise.allSettled([
+    updateSourceDetails(item.uploadId, { ...detailsInput(before), label: 'First edit', projectName: 'Review A' }),
+    updateSourceDetails(item.uploadId, { ...detailsInput(before), label: 'Second edit', projectName: 'Review B' }),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  const after = await getUpload(item.uploadId);
+  expect(after.revisions).toHaveLength(0);
+  expect(after.upload.currentRevisionId).toBeNull();
+  expect(after.asset).toEqual(before.asset);
+  expect(await Bun.file(assetPath(after.asset.storageKey)).text()).toBe('Raw preserved bytes');
+  await updateSourceDetails(item.uploadId, { ...detailsInput(after), projectName: '' });
+  expect(sourceProjectName((await getUpload(item.uploadId)).upload.metadata)).toBe('');
+});
+
+check('a worker claiming the failed run wins before metadata can overwrite its processing input', async () => {
+  const item = await acceptUpload(new File(['Untouched retry source'], 'retry-details.mp4'), {});
+  await db.update(runs).set({ state: 'failed' }).where(eq(runs.id, item.runId));
+  const before = await getUpload(item.uploadId);
+  let pending: Promise<string | Error>;
+  await db.transaction(async (worker) => {
+    await worker.select().from(runs).where(eq(runs.id, item.runId)).for('update');
+    pending = updateSourceDetails(item.uploadId, { ...detailsInput(before), label: 'Concurrent edit' })
+      .catch((error: Error) => error);
+    await Bun.sleep(100);
+    await worker.update(runs).set({ state: 'processing' }).where(eq(runs.id, item.runId));
+  });
+  const result = await pending!;
+  expect(result).toBeInstanceOf(Error);
+  expect((result as Error).message).toContain('processing to finish');
+  expect((await getUpload(item.uploadId)).upload.metadata).toEqual(before.upload.metadata);
 });
 check(
   'concurrent cancellation of eight failed queued retries does not exhaust the transaction pool',

@@ -117,9 +117,14 @@ export async function acceptUploadBatch(
 }
 export async function listUploads() {
   const rows = await db
-    .select()
+    .select({
+      uploads,
+      assets,
+      currentMetadata: sql<typeof uploads.$inferSelect.metadata | null>`${revisions.manifest}->'metadata'`,
+    })
     .from(uploads)
     .innerJoin(assets, eq(uploads.assetId, assets.id))
+    .leftJoin(revisions, eq(revisions.id, uploads.currentRevisionId))
     .where(isNull(uploads.deletedAt))
     .orderBy(desc(uploads.createdAt));
   return Promise.all(
@@ -132,6 +137,7 @@ export async function listUploads() {
         .limit(1);
       return {
         ...row.uploads,
+        metadata: row.currentMetadata ?? row.uploads.metadata,
         bytes: row.assets.bytes,
         mime: row.assets.mime,
         run: run
@@ -167,7 +173,10 @@ export async function getUpload(id: string) {
     .where(eq(revisions.uploadId, id))
     .orderBy(desc(revisions.createdAt));
   return {
-    upload: row.uploads,
+    upload: {
+      ...row.uploads,
+      metadata: history.find((revision) => revision.id === row.uploads.currentRevisionId)?.manifest.metadata ?? row.uploads.metadata,
+    },
     asset: row.assets,
     run: {
       ...run,

@@ -128,7 +128,7 @@ export async function correctStage(uploadId: string, value: unknown) {
     await enqueueSummary(tx, stage);
     await tx
       .update(uploads)
-      .set({ currentRevisionId: stage.id })
+      .set({ currentRevisionId: stage.id, metadata: stage.metadata })
       .where(eq(uploads.id, uploadId));
     return stage;
   });
