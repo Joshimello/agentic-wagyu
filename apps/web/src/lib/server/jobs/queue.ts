@@ -23,12 +23,12 @@ export async function startQueue() {
   await boss.createQueue(queueName, {
     retryLimit: 3,
     retryDelay: 5,
-    expireInSeconds: 7200,
+    expireInSeconds: 4 * 60 * 60,
   });
   await boss.updateQueue(queueName, {
     retryLimit: 3,
     retryDelay: 5,
-    expireInSeconds: 7200,
+    expireInSeconds: 4 * 60 * 60,
   });
   await boss.createQueue(chroniclerQueue, {
     retryLimit: 3,

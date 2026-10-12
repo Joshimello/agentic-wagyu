@@ -6,6 +6,7 @@ import { db } from '../../db/client';
 import { assets } from '../../db/schema';
 import { config } from '../../config';
 import { assetPath } from '../../storage';
+import { mediaRequest } from './media-client';
 import {
   bounds,
   stageSchema,
@@ -167,29 +168,15 @@ export async function buildDocument(
         })();
       }, 1500)
     : undefined;
-  let response: Response;
+  let raw: unknown;
   try {
-    response = await fetch(`${config.mediaUrl}/document`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storageKey, format, jobId }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(1800000)])
-        : AbortSignal.timeout(1800000),
-    });
+    raw = await mediaRequest('document', { storageKey, format, jobId }, signal);
   } finally {
     acceptingProgress = false;
     if (timer) clearInterval(timer);
     await polling;
   }
   signal?.throwIfAborted();
-  const raw = await response.json();
-  if (!response.ok)
-    throw new Error(
-      typeof raw.detail === 'string'
-        ? raw.detail
-        : 'Document extraction failed',
-    );
   const result = responseSchema.parse(raw);
   if (result.format !== format) throw new Error('Document format mismatch');
   const units: NonNullable<Stage['document']>['units'] = [];

@@ -26,6 +26,25 @@ from jobs import (
 
 
 class Cancellation(unittest.TestCase):
+    def test_cached_transcription_does_not_wait_for_the_gpu(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'immutable-recording'
+            cache = root / 'transcripts' / source.name / f'{app.REVISION}-5000-1000-continuous-2.json'
+            cache.parent.mkdir(parents=True)
+            cache.write_text(json.dumps({'revision': app.REVISION, 'startMs': 5000, 'durationMs': 1000, 'segments': []}))
+            body = app.TranscriptRequest(storageKey='unused', startMs=5000, durationMs=1000)
+            control = JobControl()
+            with patch.object(app, 'ROOT', root), patch.object(app, 'source', return_value=source), \
+                 patch.object(app, 'probe', return_value={'durationMs': 6000, 'hasAudio': True}), \
+                 patch.object(app, 'cancellable_lock', side_effect=AssertionError('Cache hits must not acquire the GPU')), \
+                 operation(control, 'probing'):
+                result = app.transcribe_section(body)
+            self.assertTrue(result['cached'])
+            self.assertEqual(control.snapshot()['coveredMs'], 1000)
+            self.assertEqual(control.snapshot()['startMs'], 5000)
+            self.assertEqual(control.snapshot()['durationMs'], 1000)
+
     def test_pre_dispatch_cancel_is_permanent_for_only_that_run(self):
         registry = JobRegistry()
         cancelled_id, next_id = uuid4(), uuid4()
@@ -241,6 +260,21 @@ class ModelStopping(unittest.TestCase):
 
 
 class JobApi(unittest.IsolatedAsyncioTestCase):
+    async def test_transcription_failure_reports_the_original_engine_exception(self):
+        body = app.TranscriptRequest(storageKey='unused', jobId=uuid4())
+        request = SimpleNamespace(is_disconnected=AsyncMock(return_value=False))
+        with patch.object(app, 'transcribe_section', side_effect=RuntimeError('GPU allocation failed password="two secret words"')), \
+             self.assertLogs('chronicler.media', level='ERROR') as captured:
+            with self.assertRaises(app.HTTPException) as caught:
+                await app.transcript(body, request)
+        self.assertEqual(caught.exception.status_code, 500)
+        failure = caught.exception.detail['failure']
+        self.assertEqual(failure['type'], 'RuntimeError')
+        self.assertEqual(failure['message'], 'GPU allocation failed password="[redacted]"')
+        self.assertIn('RuntimeError: GPU allocation failed', failure['stack'])
+        self.assertNotIn('secret words', '\n'.join(captured.output))
+        self.assertEqual(app.job_status(body.jobId)['status'], 'failed')
+
     async def test_cancel_endpoint_blocks_later_dispatch_but_allows_new_run(self):
         job_id = uuid4()
         first = app.cancel_job(job_id)

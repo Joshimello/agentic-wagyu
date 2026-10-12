@@ -11,6 +11,7 @@ import { asrSchema, applyTranscript } from './transcript';
 import { audioSections, joinAudioSections } from './audio-sections';
 import { type JobProgress } from '../../jobs/control';
 import { normalizeTranscription } from '../../text-normalization';
+import { mediaRequest } from './media-client';
 
 const assetSchema = z.object({
   storageKey: z.string().regex(/^assets\/[a-f0-9]{2}\/[a-f0-9]{64}$/),
@@ -37,28 +38,6 @@ const sheetSchema = z.object({
 export const contactArguments = z
   .object({ timesMs: z.array(z.number().int().nonnegative()).min(1).max(8) })
   .strict();
-async function mediaRequest(
-  route: string,
-  body: unknown,
-  signal?: AbortSignal,
-) {
-  const r = await fetch(`${config.mediaUrl}/${route}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(960000)])
-      : AbortSignal.timeout(960000),
-  });
-  const result = await r.json();
-  if (!r.ok)
-    throw new Error(
-      typeof result.detail === 'string'
-        ? result.detail
-        : `Media ${route} failed`,
-    );
-  return result;
-}
 async function registerAsset(asset: z.infer<typeof assetSchema>) {
   const file = Bun.file(assetPath(asset.storageKey));
   if (file.size !== asset.bytes) throw new Error('Derived asset size mismatch');
@@ -143,6 +122,7 @@ export async function buildVideo(
       const path = `${cacheDir}/part-${windowMs}-${section.index}.json`;
       const sharedPath = `${windowCacheDir}/part-${windowMs}-${section.index}.json`;
       let value: unknown;
+      let reused = false;
       try {
         const checkpoint = await Bun.file(
           (await Bun.file(path).exists()) ? path : sharedPath,
@@ -156,6 +136,7 @@ export async function buildVideo(
           throw new Error('Checkpoint does not match recording');
         asrSchema.parse(checkpoint.result);
         value = checkpoint.result;
+        reused = true;
       } catch {
         signal?.throwIfAborted();
         let polling: Promise<void> | undefined;
@@ -220,6 +201,11 @@ export async function buildVideo(
         await Bun.write(sharedTemp, Bun.file(path));
         await rename(sharedTemp, sharedPath);
       }
+      if (reused)
+        await onProgress(
+          `Reusing saved audio window ${section.index + 1}/${sections.length}`,
+          5 + (65 * section.startMs) / meta.durationMs,
+        );
       signal?.throwIfAborted();
       values.push(value);
       await onProgress(

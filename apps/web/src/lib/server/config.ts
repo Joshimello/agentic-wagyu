@@ -5,5 +5,6 @@ export const config = {
     'postgres://chronicler:local-only@database:5432/chronicler',
   dataRoot: resolve(process.env.DATA_ROOT ?? '/data'),
   mediaUrl: process.env.MEDIA_URL ?? 'http://media:8000',
+  mediaTranscriptionTimeoutMs: 60 * 60 * 1000,
   maxUploadBytes: 512 * 1024 * 1024,
 };
