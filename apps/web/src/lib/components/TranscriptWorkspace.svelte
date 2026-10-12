@@ -5,6 +5,12 @@
   import Disclosure from './Disclosure.svelte';
   import Tooltip from './Tooltip.svelte';
   import ProgressBar from './ProgressBar.svelte';
+  import SpeakerReview from './SpeakerReview.svelte';
+  import type {
+    TranscriptDraft,
+    SpeakerReviewDraft,
+  } from '../transcript-speakers';
+  import { speakerConfirmationMatches } from '../transcript-speakers';
   import type { TranslationStatus } from '../server/contracts/translations';
 
   type Text = Extract<Primitive, { kind: 'text' }>;
@@ -32,6 +38,7 @@
   const rowId = (id: string) =>
     `${stage.document ? 'reader-text' : 'text'}-${id}`;
   let dialog = $state<HTMLDialogElement>();
+  let hydrated = $state(false);
   let opened = $state(false);
   let editing = $state(false);
   let saving = $state(false);
@@ -48,8 +55,21 @@
   let draftTime = $state('');
   let baseTime = $state('');
   let baseRevision = $state('');
-  let drafts = $state<{ primitiveId: string; text: string; speaker: string }[]>(
-    [],
+  let drafts = $state<TranscriptDraft[]>([]);
+  let speakerReviews = $state<SpeakerReviewDraft[]>([]);
+  let draftById = $derived(
+    new Map(drafts.map((draft) => [draft.primitiveId, draft])),
+  );
+  let reviewsToSave = $derived(
+    speakerReviews.filter((review) => {
+      if (review.decision !== 'confirmed') return true;
+      const suggestion = stage.speakerSuggestions?.find(
+        (s) => s.id === review.suggestionId,
+      );
+      return (
+        suggestion && speakerConfirmationMatches(suggestion, texts, draftById)
+      );
+    }),
   );
   let requestVersion = 0;
   let observedRevision = '';
@@ -73,7 +93,7 @@
       const query = search.trim().toLocaleLowerCase();
       return (
         !query ||
-        `${p.speaker ?? ''} ${displayText(p)}`
+        `${editing ? (draftById.get(p.id)?.speaker ?? '') : (p.speaker ?? '')} ${p.originalSpeaker ?? ''} ${editing ? (draftById.get(p.id)?.text ?? p.text) : displayText(p)}`
           .toLocaleLowerCase()
           .includes(query)
       );
@@ -81,7 +101,8 @@
   );
   let visible = $derived(filtered.slice(0, limit));
   let dirty = $derived(
-    draftLabel !== stage.metadata.label ||
+    reviewsToSave.length > 0 ||
+      draftLabel !== stage.metadata.label ||
       draftTime !== baseTime ||
       drafts.some((d) => {
         const original = texts.find((p) => p.id === d.primitiveId);
@@ -146,6 +167,7 @@
     });
   });
   onMount(() => {
+    hydrated = true;
     const timer = setInterval(() => {
       if (
         opened &&
@@ -291,6 +313,7 @@
       text: p.text,
       speaker: p.speaker ?? '',
     }));
+    speakerReviews = [];
     editing = true;
     error = '';
     notice = '';
@@ -359,7 +382,8 @@
                 p && (p.text !== d.text || (p.speaker ?? '') !== d.speaker)
               );
             })
-            .map((d) => ({ ...d, speaker: d.speaker || null })),
+            .map((d) => ({ ...d, speaker: d.speaker.trim() || null })),
+          speakerReviews: reviewsToSave,
         }),
       });
       const result = await response.json();
@@ -435,7 +459,10 @@
         ? `Showing 4 of ${texts.length}`
         : `${texts.length} entries`}</span
     >
-    <button class="secondary" onclick={() => openTranscript()}
+    <button
+      class="secondary"
+      disabled={!hydrated}
+      onclick={() => openTranscript()}
       ><Icon name="expand" />Show full transcript</button
     >
   </div>
@@ -602,6 +629,21 @@
               </div></Disclosure
             >
           </div>{/if}
+        {#if editing && isVideo}
+          {#key baseRevision}
+            <SpeakerReview
+              {stage}
+              {texts}
+              bind:drafts
+              bind:reviews={speakerReviews}
+              disabled={saving}
+              onshow={(id) => {
+                void openTranscript(id);
+              }}
+              onplay={(text) => jump(text, true)}
+            />
+          {/key}
+        {/if}
         {#if !filtered.length}<div class="empty-search">
             <Icon name="search" size={28} />
             <h3>No matching entries</h3>
@@ -609,9 +651,7 @@
               >Clear search</button
             >
           </div>{/if}
-        {#each visible as text, index (text.id)}{@const draft = drafts.find(
-            (d) => d.primitiveId === text.id,
-          )}
+        {#each visible as text (text.id)}{@const draft = draftById.get(text.id)}
           <article
             class="reader-turn"
             class:highlighted={highlight === text.id}
@@ -629,16 +669,23 @@
                   )}</button
                 >{/if}
               {#if editing && draft && isVideo}<input
-                  aria-label={`Speaker for entry ${index + 1}`}
+                  aria-label={`Speaker for entry ${texts.indexOf(text) + 1}`}
                   class="speaker-input"
                   bind:value={draft.speaker}
                   placeholder="Speaker"
                   maxlength="100"
+                  disabled={saving}
                 />{:else}<strong>{speakerLabel(text)}</strong>{/if}
+              {#if text.originalSpeaker !== undefined && text.originalSpeaker !== text.speaker}
+                <span class="original-speaker"
+                  >Original: {text.originalSpeaker ?? 'Unlabeled'}</span
+                >
+              {/if}
             </div>
             {#if editing && draft}<textarea
-                aria-label={`Text for entry ${index + 1}`}
+                aria-label={`Text for entry ${texts.indexOf(text) + 1}`}
                 rows="3"
+                disabled={saving}
                 bind:value={draft.text}></textarea>{:else}<p>
                 {displayText(text)}
               </p>{/if}
@@ -869,6 +916,12 @@
   .reader-turn-meta {
     font-size: 0.78rem;
     margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .original-speaker {
+    color: var(--muted);
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
   }
   .reader-turn p {
     white-space: pre-wrap;
@@ -884,7 +937,7 @@
     font-variant-numeric: tabular-nums;
   }
   .speaker-input {
-    width: 8rem;
+    width: min(16rem, 100%);
     padding: 0.3rem 0.5rem;
     font-size: 0.8rem;
   }

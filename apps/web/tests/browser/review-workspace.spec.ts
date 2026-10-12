@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { test } from './fixtures';
 import type { Primitive, Stage } from '../../src/lib/server/contracts';
+import { speakerGroups } from '../../src/lib/transcript-speakers';
 
 type Text = Extract<Primitive, { kind: 'text' }>;
 type Detail = {
@@ -54,6 +55,9 @@ async function openReader(page: Page, meeting: Meeting) {
   await page.goto(
     `/staging/${meeting.detail.upload.id}?revision=${meeting.stage.id}`,
   );
+  await expect(
+    page.getByRole('button', { name: 'Export', exact: true }),
+  ).toBeEnabled();
   await page
     .getByRole('button', { name: 'Show full transcript', exact: true })
     .click();
@@ -63,6 +67,126 @@ async function openReader(page: Page, meeting: Meeting) {
   });
   await expect(dialog).toBeVisible();
   return dialog;
+}
+
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 960 },
+  { name: 'mobile', width: 390, height: 844 },
+]) {
+  test(`speaker names in the full transcript apply to all scoped turns and cancel cleanly on ${viewport.name}`, async ({
+    page,
+  }) => {
+    const meeting = await readyMeeting(page);
+    const groups = speakerGroups(meeting.texts);
+    const group = groups.find((g) => g.originalSpeaker && g.turns.length > 2);
+    test.skip(
+      !group,
+      'No repeated labeled voice is available in this recording.',
+    );
+    if (!group) return;
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    let correction:
+      | {
+          baseRevisionId: string;
+          edits: {
+            primitiveId: string;
+            text: string;
+            speaker: string | null;
+          }[];
+          speakerReviews: unknown[];
+        }
+      | undefined;
+    await page.route(
+      `**/api/uploads/${meeting.detail.upload.id}/corrections`,
+      async (route) => {
+        correction = route.request().postDataJSON();
+        await route.fulfill({
+          status: 409,
+          json: {
+            error:
+              'Speaker review test intercepted this save; no evidence was changed.',
+          },
+        });
+      },
+    );
+    const dialog = await openReader(page, meeting);
+    await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
+    const label = group.originalSpeaker!;
+    await dialog
+      .getByRole('textbox', { name: `Name for ${label}`, exact: true })
+      .fill('Reviewed speaker');
+    await dialog
+      .getByRole('button', { name: `Apply name to ${label}`, exact: true })
+      .click();
+    const first =
+      meeting.texts.findIndex((p) => p.id === group.turns[0].id) + 1;
+    const firstInput = dialog.getByRole('textbox', {
+      name: `Speaker for entry ${first}`,
+      exact: true,
+    });
+    await expect(firstInput).toHaveValue('Reviewed speaker');
+    await firstInput.fill('Different voice on this turn');
+    await dialog
+      .getByRole('searchbox', { name: 'Search transcript' })
+      .fill('Reviewed speaker');
+    await expect(dialog.locator('.reader-turn')).toHaveCount(
+      Math.min(group.turns.length - 1, 60),
+    );
+    await expect(dialog.locator('.reader-turn input').first()).toHaveValue(
+      'Reviewed speaker',
+    );
+    await expect
+      .poll(() => dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1))
+      .toBe(true);
+    await dialog
+      .getByRole('button', { name: 'Save corrections', exact: true })
+      .click();
+    await expect(dialog.getByRole('alert')).toContainText(
+      'no evidence was changed',
+    );
+    expect(correction?.baseRevisionId).toBe(meeting.stage.id);
+    expect(correction?.edits).toEqual(
+      group.turns.map((p, index) => ({
+        primitiveId: p.id,
+        text: p.text,
+        speaker:
+          index === 0 ? 'Different voice on this turn' : 'Reviewed speaker',
+      })),
+    );
+    // The request contains all matching turns even when search and pagination hide them.
+    expect(
+      correction?.edits.some((p) => p.primitiveId === group.turns.at(-1)!.id),
+    ).toBe(true);
+    await dialog
+      .getByRole('button', { name: 'Cancel editing', exact: true })
+      .click();
+    await dialog.getByRole('searchbox', { name: 'Search transcript' }).fill('');
+    await expect(dialog.locator('.reader-turn').first()).toContainText(
+      meeting.texts[0].speaker ?? 'Unknown speaker',
+    );
+    await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(
+      dialog.getByRole('textbox', {
+        name: `Speaker for entry ${first}`,
+        exact: true,
+      }),
+    ).toHaveValue(group.turns[0].speaker ?? '');
+    await expect(
+      dialog.getByRole('button', { name: 'Save corrections', exact: true }),
+    ).toBeDisabled();
+    await dialog.locator('.reader-content').evaluate((element) => { element.scrollTop = 0; });
+    await dialog.screenshot({
+      path: `${process.env.BROWSER_RESULTS ?? '/data/browser-results'}/speaker-review-${viewport.name}.png`,
+    });
+    await dialog
+      .getByRole('button', { name: 'Cancel editing', exact: true })
+      .click();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await assertUnchanged(page, meeting);
+  });
 }
 
 function translatedStatus(
@@ -94,6 +218,136 @@ function translatedStatus(
     updatedAt: '2026-10-11T00:00:00.000Z',
   };
 }
+
+test('speaker name confirmation and rejection use reviewed evidence and later turn corrections drop pending confirmation', async ({
+  page,
+}) => {
+  const meeting = await readyMeeting(page);
+  const group = speakerGroups(meeting.texts).find(
+    (g) => g.originalSpeaker && g.turns.length > 2,
+  );
+  test.skip(!group, 'No repeated labeled voice is available.');
+  if (!group) return;
+  const refreshed = structuredClone(meeting.detail);
+  const preview = structuredClone(meeting.stage);
+  preview.id = crypto.randomUUID();
+  preview.parentRevisionId = meeting.stage.id;
+  const candidate = {
+    id: crypto.randomUUID(),
+    speaker: group.originalSpeaker!,
+    candidateName: 'Reviewed candidate',
+    confidence: 'medium' as const,
+    basis: 'self_introduction' as const,
+    reason:
+      'Browser fixture for reviewing a name against real transcript anchors.',
+    transcriptIds: [group.turns[0].id],
+    voiceTranscriptIds: [group.turns[0].id],
+    frameIds: [],
+    model: 'browser-review',
+    promptVersion: 'browser-review',
+  };
+  preview.speakerSuggestions = [candidate];
+  refreshed.upload.currentRevisionId = preview.id;
+  refreshed.revisions.unshift({ id: preview.id, manifest: preview });
+  await page.route(`**/api/uploads/${meeting.detail.upload.id}`, (route) =>
+    route.fulfill({ json: refreshed }),
+  );
+  const posts: {
+    baseRevisionId: string;
+    edits: { primitiveId: string; text: string; speaker: string }[];
+    speakerReviews: { suggestionId: string; decision: string }[];
+  }[] = [];
+  await page.route(
+    `**/api/uploads/${meeting.detail.upload.id}/corrections`,
+    async (route) => {
+      posts.push(route.request().postDataJSON());
+      await route.fulfill(
+        posts.length === 1
+          ? { status: 201, json: preview }
+          : {
+              status: 409,
+              json: {
+                error:
+                  'Review fixture intercepted this save; no evidence was changed.',
+              },
+            },
+      );
+    },
+  );
+  const dialog = await openReader(page, meeting);
+  await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
+  await dialog
+    .getByRole('textbox', { name: 'Text for entry 1', exact: true })
+    .fill(`${meeting.texts[0].text}\nBrowser refresh draft`);
+  await dialog
+    .getByRole('button', { name: 'Save corrections', exact: true })
+    .click();
+  await expect(dialog.getByRole('status')).toContainText('Corrections saved');
+  await dialog.getByRole('button', { name: 'Edit', exact: true }).click();
+  const label = group.originalSpeaker!;
+  await dialog
+    .getByRole('button', {
+      name: `Reject ${candidate.candidateName} for ${label}`,
+      exact: true,
+    })
+    .click();
+  await dialog
+    .getByRole('button', { name: 'Save corrections', exact: true })
+    .click();
+  await expect(dialog.getByRole('alert')).toContainText(
+    'no evidence was changed',
+  );
+  expect(posts[1].speakerReviews).toEqual([
+    { suggestionId: candidate.id, decision: 'rejected' },
+  ]);
+  expect(posts[1].edits).toEqual([]);
+  await dialog
+    .getByRole('button', {
+      name: `Confirm ${candidate.candidateName} for ${label}`,
+      exact: true,
+    })
+    .click();
+  const entryNumber =
+    meeting.texts.findIndex((p) => p.id === group.turns[0].id) + 1;
+  await expect(
+    dialog.getByRole('textbox', {
+      name: `Speaker for entry ${entryNumber}`,
+      exact: true,
+    }),
+  ).toHaveValue(candidate.candidateName);
+  await dialog
+    .getByRole('button', { name: 'Save corrections', exact: true })
+    .click();
+  await expect.poll(() => posts.length).toBe(3);
+  expect(posts[2].speakerReviews).toEqual([
+    { suggestionId: candidate.id, decision: 'confirmed' },
+  ]);
+  expect(posts[2].edits).toHaveLength(group.turns.length);
+  await dialog
+    .getByRole('textbox', {
+      name: `Speaker for entry ${entryNumber}`,
+      exact: true,
+    })
+    .fill('Corrected individual voice');
+  await dialog
+    .getByRole('textbox', {
+      name: `Text for entry ${entryNumber}`,
+      exact: true,
+    })
+    .fill(`${group.turns[0].text}\nCorrected speech`);
+  await dialog
+    .getByRole('button', { name: 'Save corrections', exact: true })
+    .click();
+  await expect.poll(() => posts.length).toBe(4);
+  expect(posts[3].speakerReviews).toEqual([]);
+  expect(
+    posts[3].edits.find((p) => p.primitiveId === group.turns[0].id),
+  ).toMatchObject({ speaker: 'Corrected individual voice' });
+  await dialog
+    .getByRole('button', { name: 'Cancel editing', exact: true })
+    .click();
+  await assertUnchanged(page, meeting);
+});
 
 async function fulfillTranslation(
   route: Route,

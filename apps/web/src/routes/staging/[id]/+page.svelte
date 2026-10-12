@@ -543,13 +543,18 @@
             title={`Speaker suggestions (${speakerSuggestions.length})`}
             icon="info"
             ><p class="muted">
-              Suggested names are unverified. Original speaker labels stay
-              separate.
+              Suggested names remain tentative until you confirm them in the
+              full transcript. Original speaker labels stay separate.
             </p>
             {#each speakerSuggestions as suggestion}<article>
                 <div class="suggestion-heading">
                   <strong>{suggestion.speaker}</strong><span
-                    >Possibly {suggestion.candidateName}</span
+                    >{suggestion.review === 'confirmed'
+                      ? 'Confirmed'
+                      : suggestion.review === 'rejected'
+                        ? 'Rejected suggestion:'
+                        : 'Possibly'}
+                    {suggestion.candidateName}</span
                   ><span class="badge">{suggestion.confidence}</span>
                 </div>
                 <p>{suggestion.reason}</p>
