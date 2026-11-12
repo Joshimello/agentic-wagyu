@@ -23,6 +23,8 @@ services:
     image: ghcr.io/tailscale/tailscale:v1.104.4@sha256:ed6480b33c6eb67c9cbd203ed42b9fb57e361986725b6856def71b7a3d9e276c
     environment:
       TS_USERSPACE: "true"
+      # Avoid stalled larger HTTP responses on the lab proxy path.
+      TS_DEBUG_MTU: "1200"
       TS_AUTH_ONCE: "true"
       TS_ACCEPT_DNS: "false"
       TS_HOSTNAME: "${CHRONICLER_TAILSCALE_HOSTNAME:-chronicler-finals}"

@@ -37,24 +37,39 @@ application revision. These are deployment checks, not model-quality results.
 - Installed `ChroniclerLabHost` as a limited current-user logon task. Observed
   Running state, unlimited execution duration, IgnoreNew instance policy,
   restart settings and a live `/bin/sleep infinity` WSL hosting process.
+- After the senior configured the public proxy, reproduced a size-dependent
+  delivery failure: health and 548-byte JavaScript completed, but a 1,400-byte
+  asset and the 16,104-byte homepage timed out before response headers. Ranges
+  of 256/512 bytes from that same asset passed; a 1,024-byte range stalled.
+- Confirmed local rendering and static assets were healthy. A correctly
+  constructed Linux self-dial through the node's Tailscale address also
+  returned the complete homepage, so the backend was not missing frontend
+  files. The exact peer-path bottleneck was not independently identified.
+- Set only the userspace sidecar's `TS_DEBUG_MTU` to 1200 and recreated that
+  sidecar, preserving its identity. The full public homepage and formerly
+  stalled asset then returned HTTP 200 in approximately 0.4 seconds.
+- A fresh headless Chrome session rendered the complete public Staging UI.
+  All 18 JavaScript files, seven stylesheets and one font returned HTTP 200;
+  no console exceptions, failed requests or HTTP errors were observed.
+- Through the public HTTPS proxy, repeated the invalid form request: the
+  correct origin returned application validation HTTP 400; an incorrect
+  origin returned HTTP 403. No model request or research job was created.
 
 The container IP and node metadata are kept in the private operator handoff,
 not required as hardcoded values in deployment source.
 
 ## Still requiring external validation
 
-- An authorized lab-tailnet peer must request the sidecar's port 80. A local
-  self-dial test returned no HTTP response and is not counted as a forwarding
-  pass or proof of remote ACL reachability.
-- The public hostname did not resolve from this host during the check. The
-  senior must configure DNS, TLS, proxy routing and authentication, and test
-  from an ordinary browser outside the host's private network.
 - Verify the proxy protects pages, APIs, raw assets, exports and traces, while
   allowing the intended uploads and media playback. Tailnet ACLs should also
   prevent bypassing that access gate through the upstream directly.
+  The fresh public browser session had no application credentials; public page
+  rendering is not evidence that access protection has been configured.
 - Run an actual model/media operation and a representative upload through the
   final proxy. Deployment checks did not call models or measure inference
   accuracy, latency or cost.
+- IPv6 delivery with the reduced sidecar MTU was not tested; the senior's
+  configured upstream is the IPv4 endpoint.
 - A Windows reboot, logout, manual sleep and full recovery were not exercised.
   The logon task and scoped idle-sleep guard do not make the machine available
   while powered off or disconnected.

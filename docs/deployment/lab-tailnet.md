@@ -21,6 +21,12 @@ not replace the personal Windows Tailscale installation, change its login, or
 provide a host VPN interface. The final browser origin remains HTTPS even
 though both proxy hops inside this path use HTTP.
 
+The sidecar uses `TS_DEBUG_MTU=1200` for this lab proxy path. With the default
+1280, small responses arrived but larger HTML/JavaScript responses stalled.
+Reducing only the sidecar MTU restored complete public page and asset delivery.
+The configured proxy upstream uses IPv4; IPv6 operation at this MTU has not
+been verified. Recheck response sizes when changing the tunnel or proxy path.
+
 ## Prerequisites
 
 - The existing Podman, Compose, NVIDIA CDI, model-cache and private `.env`
@@ -194,8 +200,10 @@ sidecar enrolled successfully. The application image build, local HTTP pages,
 origin checks, internal service connectivity and retained sidecar identity
 passed the checks recorded in
 [deployment verification](../development/lab-tailnet-verification.md).
-The senior's external proxy path, public DNS/TLS and access gate still require
-verification. An actual Windows reboot was not performed during these checks.
+The public DNS/TLS/proxy path and fresh-browser rendering subsequently passed
+after the sidecar MTU adjustment. Public form-origin checks also passed.
+Authentication, real uploads/inference and a Windows reboot still need their
+own checks before calling the complete evaluator workflow ready.
 
 ### Persistent data and troubleshooting
 
