@@ -188,12 +188,14 @@ Stop-ScheduledTask -TaskName ChroniclerLabHost
 Stopping the task alone is not a container shutdown command. The registered
 task can start again at the next user logon.
 
-As of November 12, 2026, the Windows helper has passed syntax-only parsing;
-task installation, live tailnet enrollment and end-to-end runtime checks have
-not been completed. WSL commands remain blocked by the current host/service
-failure and require manual recovery with Administrator access before live
-deployment can continue. The commands in this document describe intended
-operator steps, not evidence that the endpoint is running.
+On November 12, 2026, the host recovered after an administrator restarted
+WSL. The Windows task was installed and observed running, and the isolated
+sidecar enrolled successfully. The application image build, local HTTP pages,
+origin checks, internal service connectivity and retained sidecar identity
+passed the checks recorded in
+[deployment verification](../development/lab-tailnet-verification.md).
+The senior's external proxy path, public DNS/TLS and access gate still require
+verification. An actual Windows reboot was not performed during these checks.
 
 ### Persistent data and troubleshooting
 

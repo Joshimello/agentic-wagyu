@@ -15,6 +15,10 @@ Put API credentials in private `.env` using `.env.example`, then:
 
 Open <http://localhost:5173>. PostgreSQL uses the `chronicler_database` volume; source evidence and caches live under ignored `data/`. Routine `down` preserves them. Never use `down -v` when rebuilding an existing workspace. See [operations](docs/operations.md) for safe rebuilds, GPU selection, model limits, cancellation, restart recovery and verified backups/restores.
 
+For an isolated workspace behind the lab's HTTPS reverse proxy, use the
+[userspace Tailscale deployment](docs/deployment/lab-tailnet.md). It keeps a
+separate tailnet identity and forwards HTTP without changing the host's VPN.
+
 ## File-to-memory workflow
 
 Upload text, meeting recordings, PPTX, PDFs or images. Staging keeps raw bytes, exact extracted text, renders, source locators, coverage warnings, model/prompt provenance and immutable revisions. Files remain outside memory until you select exact revisions and push them. Partial coverage needs an explicit inclusion choice.
