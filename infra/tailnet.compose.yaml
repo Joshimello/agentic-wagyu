@@ -1,0 +1,51 @@
+services:
+  database:
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Containerfile
+      target: runtime
+      args:
+        APP_ORIGIN: "${CHRONICLER_ORIGIN:?Set the public HTTPS origin}"
+    restart: unless-stopped
+  media:
+    build:
+      context: ..
+      dockerfile: infra/media.Containerfile
+      target: runtime
+    restart: unless-stopped
+  worker:
+    restart: unless-stopped
+  translator:
+    restart: unless-stopped
+  tailscale:
+    image: ghcr.io/tailscale/tailscale:v1.104.4@sha256:ed6480b33c6eb67c9cbd203ed42b9fb57e361986725b6856def71b7a3d9e276c
+    environment:
+      TS_USERSPACE: "true"
+      TS_AUTH_ONCE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_HOSTNAME: "${CHRONICLER_TAILSCALE_HOSTNAME:-chronicler-finals}"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_AUTHKEY: file:/run/secrets/chronicler-finals-tailscale-auth
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    secrets:
+      - chronicler-finals-tailscale-auth
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "tailscale status --json | grep -q '\"BackendState\": \"Running\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    restart: unless-stopped
+volumes:
+  tailscale-state:
+secrets:
+  chronicler-finals-tailscale-auth:
+    external: true
