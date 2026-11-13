@@ -148,21 +148,25 @@ overhead. Check that the chosen proxy policy permits the intended demo upload.
 
 The application enforces its own sign-in when `CHRONICLER_ACCESS_USER` and
 `CHRONICLER_ACCESS_PASSWORD` are set in the private `.env`. Every page,
-`/api/*` route, raw asset, download, export and trace then requires HTTP Basic
-credentials; only read-only `/api/health` stays open for liveness probes.
+`/api/*` route, raw asset, download, export and trace then requires a
+sign-in; only read-only `/api/health` stays open for liveness probes. Browsers
+get a full-screen sign-in page and a 14-day session cookie, with Sign out in
+the page footer. Scripts may send HTTP Basic credentials instead.
 Because the check runs inside the application, it also applies to tailnet
 members who reach the sidecar directly instead of through the reverse proxy.
 
 An optional second account, `CHRONICLER_ACCESS_VIEWER_USER` and
 `CHRONICLER_ACCESS_VIEWER_PASSWORD`, can inspect everything but cannot upload,
 push, review, ask or remove. Changing requests are also refused when they come
-from another site. Changed credentials take effect after `down` and `up -d`;
-no image rebuild is needed.
+from another site. Changed credentials take effect after `down` and `up -d`
+and sign everyone out; no image rebuild is needed. The sign-in form only
+accepts submissions from the public origin, so sign in through the public
+address rather than the loopback port.
 
 This is one shared workspace with shared accounts. It does not create
 per-person identities, per-user roles or a tenant boundary, and review history
-does not record which person approved a change. Do not add a second Basic
-login at the reverse proxy: both would use the same request header. Tailnet
+does not record which person approved a change. A second login at the
+reverse proxy is unnecessary and would make people sign in twice. Tailnet
 access controls restricting the upstream to the proxy remain worthwhile as a
 second layer.
 

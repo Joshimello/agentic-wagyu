@@ -10,8 +10,13 @@
   import ActivityStatus from '../lib/components/ActivityStatus.svelte';
   import { activityContext, createActivity } from '../lib/ui/activity.svelte';
 
-  let { children, data }: { children: Snippet; data: { readOnly: boolean } } =
-    $props();
+  let {
+    children,
+    data,
+  }: {
+    children: Snippet;
+    data: { readOnly: boolean; access: 'open' | 'full' | 'viewer' };
+  } = $props();
   let content: HTMLElement;
   let scroller: HTMLDivElement;
   let entry: gsap.Context | undefined;
@@ -170,11 +175,20 @@
             Restored workspace - inspection only. Uploads, pushes and new
             questions are disabled until this workspace is resumed.
           </p>{/if}
+        {#if data.access === 'viewer'}<p role="status">
+            View-only account. You can inspect sources, memory, answers and
+            reviews; uploads, pushes, questions and approvals are disabled.
+          </p>{/if}
         {@render children()}
       </main>
       <footer class="workspace-footer">
         <span>Chronicler</span>
-        <a href="/operations">Operations</a>
+        <span class="footer-links">
+          <a href="/operations">Operations</a>
+          {#if data.access !== 'open'}<form method="POST" action="/logout">
+              <button class="sign-out" type="submit">Sign out</button>
+            </form>{/if}
+        </span>
       </footer>
     </div>
   </div>
@@ -305,6 +319,24 @@
     font-size: 0.73rem;
     padding: 1.5rem 0;
     border-top: 1px solid var(--border);
+  }
+  .footer-links {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+  .sign-out {
+    background: none;
+    color: inherit;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  .sign-out:hover {
+    background: none;
+    color: var(--ink);
+    text-decoration: underline;
   }
   .skip-link {
     position: fixed;
