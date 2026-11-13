@@ -140,14 +140,31 @@ loopback application port or the personal Windows Tailscale address. Preserve
 the public Host and Origin headers and forward the HTTPS scheme through the
 reverse proxy, then verify actual form submissions.
 
-Apply the access policy to every route, including `/api/*`, raw assets,
-downloads, exports and traces. The application has shared single-user
-authority; a proxy login does not create per-user roles or a tenant boundary.
-Tailnet access controls must also restrict direct upstream access so that a
-tailnet member cannot bypass the reverse proxy's browser authentication.
 Set the proxy's upload-size and timeout policy deliberately: the application
 accepts source files up to 512 MiB, while the HTTP request also includes form
 overhead. Check that the chosen proxy policy permits the intended demo upload.
+
+## Shared sign-in
+
+The application enforces its own sign-in when `CHRONICLER_ACCESS_USER` and
+`CHRONICLER_ACCESS_PASSWORD` are set in the private `.env`. Every page,
+`/api/*` route, raw asset, download, export and trace then requires HTTP Basic
+credentials; only read-only `/api/health` stays open for liveness probes.
+Because the check runs inside the application, it also applies to tailnet
+members who reach the sidecar directly instead of through the reverse proxy.
+
+An optional second account, `CHRONICLER_ACCESS_VIEWER_USER` and
+`CHRONICLER_ACCESS_VIEWER_PASSWORD`, can inspect everything but cannot upload,
+push, review, ask or remove. Changing requests are also refused when they come
+from another site. Changed credentials take effect after `down` and `up -d`;
+no image rebuild is needed.
+
+This is one shared workspace with shared accounts. It does not create
+per-person identities, per-user roles or a tenant boundary, and review history
+does not record which person approved a change. Do not add a second Basic
+login at the reverse proxy: both would use the same request header. Tailnet
+access controls restricting the upstream to the proxy remain worthwhile as a
+second layer.
 
 ## Verify the deployed workflow
 

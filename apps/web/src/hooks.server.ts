@@ -1,9 +1,12 @@
 import type { Handle } from '@sveltejs/kit/hooks';
 import { sqlClient } from './lib/server/db/client';
+import { authorize } from './lib/server/access';
 process.once('sveltekit:shutdown', async () => {
   await sqlClient.end({ timeout: 5 });
 });
 export const handle: Handle = async ({ event, resolve }) => {
+  const access = authorize(event.request);
+  if (access instanceof Response) return access;
   if (
     process.env.READ_ONLY_MODE === '1' &&
     !['GET', 'HEAD', 'OPTIONS'].includes(event.request.method)
