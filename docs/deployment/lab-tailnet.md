@@ -179,7 +179,15 @@ request to a second model configured with `OPENAI_FALLBACK_MODEL`,
 `OPENAI_FALLBACK_BASE_URL` and `OPENAI_FALLBACK_API_KEY` in the private `.env`.
 After a failure the primary is skipped for `LLM_FALLBACK_COOLDOWN_MS` (two
 minutes by default) and then tried again. Request errors such as HTTP 400,
-budget refusals and cancellations never switch models. Local MOSS speech
+budget refusals and cancellations never switch models.
+
+Requests sent to the fallback are adapted for providers with fewer features:
+structured-output schemas become plain JSON mode with the schema added to the
+instructions, and if the fallback refuses `tool_choice` or `temperature` by
+name, the request is resent without it. The application validates every
+answer with its own schemas either way. Without `tool_choice`, the Researcher
+can be asked but not forced to read evidence, so answers may rely on fewer
+tool calls. Local MOSS speech
 recognition does not depend on either model.
 
 The usage ledger records which model received every attempt; the Operations

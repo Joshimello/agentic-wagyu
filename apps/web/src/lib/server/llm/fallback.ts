@@ -57,6 +57,9 @@ export function primaryAvailable(now = Date.now()) {
   return now >= circuit.primaryClosedUntil;
 }
 
+/** Parameters a request still works without, if a provider refuses them. */
+const optionalParameters = ['tool_choice', 'temperature'];
+
 /** Failures that another model can reasonably recover from. */
 const recoverable = (status: number) =>
   status === 408 || status === 429 || status >= 500;
@@ -84,6 +87,22 @@ function fallbackRequest(
     body.max_completion_tokens = body.max_tokens;
   delete body.max_tokens;
   if (config.omitTemperature) delete body.temperature;
+  // Not every provider or gateway route enforces structured-output schemas
+  // (some return prose). Plain JSON mode plus the schema in the instructions
+  // works everywhere; callers validate the result with their own schema.
+  if (body.response_format?.type === 'json_schema') {
+    const schema = body.response_format.json_schema?.schema;
+    body.response_format = { type: 'json_object' };
+    const instruction = `Return only a JSON object that matches this JSON Schema exactly: ${JSON.stringify(schema ?? {})}`;
+    const messages: any[] = Array.isArray(body.messages) ? body.messages : [];
+    const system = messages.find((m) => m?.role === 'system');
+    if (!system) messages.unshift({ role: 'system', content: instruction });
+    else if (typeof system.content === 'string')
+      system.content = `${system.content}\n\n${instruction}`;
+    else if (Array.isArray(system.content))
+      system.content.push({ type: 'text', text: instruction });
+    body.messages = messages;
+  }
   const headers = new Headers(init?.headers);
   headers.set('authorization', `Bearer ${config.apiKey}`);
   headers.delete('content-length');
@@ -142,7 +161,35 @@ export function modelFetch(env: Env = process.env): typeof fetch {
       trim(env.OPENAI_BASE_URL),
     );
     const attempt = withTimeout(external, config.fallbackTimeoutMs);
-    return meteredRequest(url, { ...request, signal: attempt.signal });
+    let response = await meteredRequest(url, {
+      ...request,
+      signal: attempt.signal,
+    });
+    // Some providers reject optional parameters outright, naming one per
+    // refusal. Resend without each named one; any other 400 is returned.
+    const body = JSON.parse(String(request.body));
+    for (let tries = 0; tries < optionalParameters.length; tries++) {
+      if (response.status !== 400) break;
+      const message = await response
+        .clone()
+        .text()
+        .catch(() => '');
+      const unsupported = optionalParameters.filter(
+        (name) => body[name] !== undefined && message.includes(name),
+      );
+      if (!unsupported.length) break;
+      await response.body?.cancel().catch(() => {});
+      for (const name of unsupported) delete body[name];
+      console.warn('Fallback model rejected optional parameters; resending', {
+        parameters: unsupported,
+      });
+      response = await meteredRequest(url, {
+        ...request,
+        body: JSON.stringify(body),
+        signal: attempt.signal,
+      });
+    }
+    return response;
   };
   return Object.assign(routed, { preconnect: fetch.preconnect });
 }

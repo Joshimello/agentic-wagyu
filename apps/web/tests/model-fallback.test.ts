@@ -78,7 +78,16 @@ const primary = server('http://primary.test', async (_, signal) => {
     ? answer('qwen-primary')
     : Response.json({ error: { message: 'down' } }, { status: primaryStatus });
 });
-const fallback = server('https://cloud.test', async ({ body }) => answer(body.model));
+let fallbackRejects: string[] = [];
+const fallback = server('https://cloud.test', async ({ body }) => {
+  const refused = fallbackRejects.find((name) => body[name] !== undefined);
+  return refused
+    ? Response.json(
+        { error: { message: `UnsupportedParamsError: does not support parameters: ['${refused}']` } },
+        { status: 400 },
+      )
+    : answer(body.model);
+});
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
@@ -124,6 +133,7 @@ beforeEach(() => {
   resetModelRouting();
   primaryStatus = 500;
   primaryDelay = 0;
+  fallbackRejects = [];
   primary.seen.length = 0;
   fallback.seen.length = 0;
 });
@@ -193,6 +203,60 @@ test('a healthy primary is used and never touches the fallback', async () => {
   primaryStatus = 200;
   expect((await ask(env())).model).toBe('qwen-primary');
   expect(fallback.seen).toHaveLength(0);
+});
+
+test('structured-output schemas become JSON mode with the schema in the instructions', async () => {
+  const schema = {
+    type: 'object',
+    properties: { questions: { type: 'array' } },
+    required: ['questions'],
+  };
+  await client(env()).chat.completions.create({
+    model: 'qwen-primary',
+    messages: [
+      { role: 'system', content: 'Find gaps.' },
+      { role: 'user', content: 'hi' },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'plan', strict: true, schema },
+    },
+  } as any);
+  const body = fallback.seen[0].body;
+  expect(body.response_format).toEqual({ type: 'json_object' });
+  expect(body.messages[0].content).toStartWith('Find gaps.');
+  expect(body.messages[0].content).toContain(JSON.stringify(schema));
+  expect(body.messages[1]).toEqual({ role: 'user', content: 'hi' });
+  // The primary still receives the original structured-output request.
+  expect(primary.seen[0].body.response_format.type).toBe('json_schema');
+});
+
+test('optional parameters the fallback refuses are dropped and resent once', async () => {
+  fallbackRejects = ['tool_choice', 'temperature'];
+  const result = await client(env()).chat.completions.create({
+    model: 'qwen-primary',
+    temperature: 0,
+    messages: [{ role: 'user', content: 'hi' }],
+    tools: [
+      {
+        type: 'function',
+        function: { name: 'searchMemory', parameters: { type: 'object' } },
+      },
+    ],
+    tool_choice: 'required',
+  } as any);
+  expect(result.model).toBe('cloud-model');
+  // One refusal per parameter, then the accepted request.
+  expect(fallback.seen).toHaveLength(3);
+  expect(fallback.seen[2].body.tool_choice).toBeUndefined();
+  expect(fallback.seen[2].body.temperature).toBeUndefined();
+  expect(fallback.seen[2].body.tools).toHaveLength(1);
+});
+
+test('other fallback request errors are returned without resending', async () => {
+  fallbackRejects = ['messages'];
+  expect(await failure(ask(env()))).toEqual({ status: 400 });
+  expect(fallback.seen).toHaveLength(1);
 });
 
 test('temperature can be omitted for providers that reject it', async () => {
