@@ -170,6 +170,33 @@ reverse proxy is unnecessary and would make people sign in twice. Tailnet
 access controls restricting the upstream to the proxy remain worthwhile as a
 second layer.
 
+## Model fallback
+
+Interpretation, organization, comparison, translation, summaries and Ask use
+the configured OpenAI-compatible model. If that gateway fails with a
+connection error, a timeout or HTTP 408/429/5xx, the worker can resend the same
+request to a second model configured with `OPENAI_FALLBACK_MODEL`,
+`OPENAI_FALLBACK_BASE_URL` and `OPENAI_FALLBACK_API_KEY` in the private `.env`.
+After a failure the primary is skipped for `LLM_FALLBACK_COOLDOWN_MS` (two
+minutes by default) and then tried again. Request errors such as HTTP 400,
+budget refusals and cancellations never switch models. Local MOSS speech
+recognition does not depend on either model.
+
+The usage ledger records which model received every attempt; the Operations
+page lists today's requests per model, and an Ask answer states the models that
+answered it when the fallback was involved. Other saved outputs still name the
+configured primary model, so use the ledger for exact provenance. While the
+fallback is active, transcript text and images go to that provider: disclose it
+and use only material approved for it.
+
+Check both models before a demonstration (prints status and timing only):
+
+```sh
+podman exec chronicler_finals_worker_1 bun apps/web/src/lib/server/llm/check.ts
+```
+
+Changing these settings needs `down` and `up -d`, not an image rebuild.
+
 ## Verify the deployed workflow
 
 - Confirm the sidecar is enrolled and record its current Tailscale IPv4.

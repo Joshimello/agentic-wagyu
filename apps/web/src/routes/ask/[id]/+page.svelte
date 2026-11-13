@@ -117,6 +117,13 @@
       (data.run.usage?.elapsedMs ?? 0) / 1000,
     )} seconds · {data.run.usage?.calls ?? 0} model calls
   </p>
+  {#if data.served.some((m) => m.model !== data.run.model)}<p class="muted">
+      Answered by: {data.served
+        .filter((m) => m.answered)
+        .map((m) => `${m.model} (${m.answered})`)
+        .join(', ') || 'no measured response'}. The primary model was
+      unavailable for part of this run.
+    </p>{/if}
 {/if}
 
 <style>

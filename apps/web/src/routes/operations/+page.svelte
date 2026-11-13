@@ -42,4 +42,10 @@
           : `$${row.costUsd}`}
       </p>
     </article>{/each}
+  {#if data.usage.models.length}<h3>By model</h3>
+    <ul>
+      {#each data.usage.models as m}<li>
+          {m.model}: {m.calls} attempts, {m.measured} answered
+        </li>{/each}
+    </ul>{/if}
 </section>

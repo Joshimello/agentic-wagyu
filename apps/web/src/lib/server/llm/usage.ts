@@ -68,13 +68,21 @@ export async function reserveRequest(body: Record<string, unknown>) {
   return id;
 }
 
-/** Each actual HTTP attempt is reserved, including SDK retries. Unknown outcomes stay charged. */
-export const meteredFetch: typeof fetch = Object.assign(
-  async (input: RequestInfo | URL, init?: RequestInit) => {
+/**
+ * Each actual HTTP attempt is reserved, including SDK retries. Unknown outcomes
+ * stay charged. `onSent` runs once the reservation succeeded and the request is
+ * about to leave, so callers can tell budget refusals from network failures.
+ */
+export async function meteredRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  onSent?: () => void,
+) {
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
     const id = await reserveRequest(body),
       started = Date.now();
     const operationSignal = currentOperation()?.signal;
+    onSent?.();
     try {
       const response = await fetch(input, {
         ...init,
@@ -113,9 +121,23 @@ export const meteredFetch: typeof fetch = Object.assign(
         await sqlClient`update model_requests set state='unknown', elapsed_ms=${Date.now() - started} where id=${id}`;
       throw error;
     }
-  },
+}
+export const meteredFetch: typeof fetch = Object.assign(
+  (input: RequestInfo | URL, init?: RequestInit) => meteredRequest(input, init),
   { preconnect: fetch.preconnect },
 );
+
+/** Which models actually answered one operation's requests. */
+export async function servedModels(kind: string, id: string) {
+  return (await sqlClient`select model, count(*)::int as attempts,
+    count(*) filter (where state='measured')::int as answered
+    from model_requests where operation_kind=${kind} and operation_id=${id}
+    group by model order by min(created_at)`) as unknown as {
+    model: string;
+    attempts: number;
+    answered: number;
+  }[];
+}
 
 export async function usageSummary() {
   const rows =
@@ -125,9 +147,18 @@ export async function usageSummary() {
     coalesce(sum(coalesce(output_tokens,reserved_output)),0)::float8 as output,
     case when count(cost_usd)=count(*) then sum(cost_usd::numeric)::text else null end as "costUsd"
     from model_requests where created_at >= date_trunc('day',now() at time zone 'UTC') at time zone 'UTC' group by operation_kind`;
+  const models =
+    await sqlClient`select model, count(*)::int as calls,
+    count(*) filter (where state='measured')::int as measured
+    from model_requests where created_at >= date_trunc('day',now() at time zone 'UTC') at time zone 'UTC' group by model order by count(*) desc`;
   return {
     limits: usageLimits(),
     day: new Date().toISOString().slice(0, 10),
     rows,
+    models: models as unknown as {
+      model: string;
+      calls: number;
+      measured: number;
+    }[],
   };
 }

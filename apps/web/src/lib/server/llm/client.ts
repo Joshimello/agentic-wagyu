@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { meteredFetch } from './usage';
+import { modelFetch, modelTimeoutMs } from './fallback';
 export function llmClient() {
   if (
     !process.env.OPENAI_API_KEY ||
@@ -13,9 +13,9 @@ export function llmClient() {
     client: new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
       baseURL: process.env.OPENAI_BASE_URL,
-      timeout: 120000,
+      timeout: modelTimeoutMs(),
       maxRetries: 1,
-      fetch: meteredFetch,
+      fetch: modelFetch(),
     }),
     model: process.env.OPENAI_MODEL,
   };
