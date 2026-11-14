@@ -20,6 +20,7 @@
     stage,
     uploadId,
     isVideo = true,
+    currentMs = 0,
     canEdit = false,
     onseek,
     onupdated,
@@ -27,6 +28,7 @@
     stage: Stage;
     uploadId: string;
     isVideo?: boolean;
+    currentMs?: number;
     canEdit?: boolean;
     onseek: (ms: number) => void;
     onupdated: () => Promise<void>;
@@ -34,6 +36,34 @@
   let texts = $derived(
     stage.primitives.filter((p): p is Text => p.kind === 'text'),
   );
+  // Beside a recording the whole transcript is listed and follows playback;
+  // documents keep a short preview.
+  let previewTexts = $derived(isVideo ? texts : texts.slice(0, 4));
+  let previewList = $state<HTMLDivElement>();
+  let activeId = $derived.by(() => {
+    if (!isVideo || currentMs <= 0) return '';
+    let found = '';
+    for (const text of texts)
+      if (text.locator.kind === 'media' && text.locator.startMs <= currentMs)
+        found = text.id;
+    return found;
+  });
+  // Scrolling by hand pauses following for a few seconds.
+  let followAfter = 0;
+  const holdFollow = () => (followAfter = Date.now() + 5000);
+  $effect(() => {
+    const id = activeId,
+      list = previewList;
+    if (!id || !list || Date.now() < followAfter) return;
+    const row = list.querySelector<HTMLElement>(`[data-turn="${id}"]`);
+    if (!row) return;
+    list.scrollTo({
+      top: row.offsetTop - list.clientHeight / 2 + row.clientHeight / 2,
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+    });
+  });
   // Documents also expose canonical text anchors in DocumentViewer. The
   // reading-copy dialog must not duplicate those IDs or steal source focus.
   const rowId = (id: string) =>
@@ -444,9 +474,22 @@
     </div>
     <span class="segment-count">{texts.length} entries</span>
   </div>
-  <div class="preview-list">
-    {#each texts.slice(0, 4) as text}
-      <article class="preview-turn">
+  <!-- Manual scrolling only pauses auto-follow; the list itself is not a control. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="preview-list"
+    class:following={isVideo}
+    bind:this={previewList}
+    onwheel={holdFollow}
+    ontouchmove={holdFollow}
+    onpointerdown={holdFollow}
+  >
+    {#each previewTexts as text (text.id)}
+      <article
+        class="preview-turn"
+        class:active={text.id === activeId}
+        data-turn={text.id}
+      >
         <div class="turn-head">
           <strong>{speakerLabel(text)}</strong
           >{#if pendingNames(text).length}<span class="original-speaker"
@@ -470,9 +513,13 @@
   </div>
   <div class="preview-footer">
     <span class="muted"
-      >{texts.length > 4
-        ? `Showing 4 of ${texts.length}`
-        : `${texts.length} entries`}</span
+      >{isVideo
+        ? activeId
+          ? 'Following playback'
+          : 'Play the recording to follow along'
+        : texts.length > 4
+          ? `Showing 4 of ${texts.length}`
+          : `${texts.length} entries`}</span
     >
     <button
       class="secondary"
@@ -1071,5 +1118,26 @@
     .metadata-fields {
       grid-template-columns: 1fr;
     }
+  }
+  .preview-list.following {
+    position: relative;
+    max-height: 30rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin-inline: -0.6rem;
+  }
+  .preview-list.following .preview-turn {
+    padding: 0.7rem 0.6rem;
+    border-radius: 8px;
+    transition: background 200ms;
+  }
+  .preview-turn.active {
+    background: var(--yellow-soft);
+    border-bottom-color: transparent;
+  }
+  .preview-turn.active p {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
   }
 </style>

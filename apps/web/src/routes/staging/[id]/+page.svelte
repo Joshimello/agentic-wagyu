@@ -40,6 +40,28 @@
   let mediaPreview = $state<ReturnType<typeof MediaPreview>>();
   let activeSection = $state('original-evidence');
   let player = $state<HTMLVideoElement>();
+  let currentMs = $state(0);
+  // A link such as ?t=52000 opens the recording at that moment.
+  let openedAt = '';
+  $effect(() => {
+    const t = page.url.searchParams.get('t');
+    const video = player;
+    const key = `${detail.upload.id}:${t}`;
+    if (!t || !/^\d+$/.test(t) || !video || key === openedAt) return;
+    openedAt = key;
+    const start = () => {
+      video.currentTime = Number(t) / 1000;
+      currentMs = Number(t);
+      void video.play().catch(() => {});
+    };
+    if (video.readyState >= 1) start();
+    else video.addEventListener('loadedmetadata', start, { once: true });
+  });
+  function fullscreen() {
+    void player?.requestFullscreen?.().catch(() => {
+      notice = 'This browser did not allow full screen for the video.';
+    });
+  }
   let transcript = $state<{ openTranscript: (id?: string) => Promise<void> }>();
   let refreshVersion = 0;
   $effect(() => {
@@ -530,9 +552,21 @@
             </div>
             {#if !isVideo}<span class="source-format"
                 >{stage.document?.format.toUpperCase() || 'FILE'}</span
+              >{:else}<button
+                type="button"
+                class="secondary icon-button"
+                aria-label="Full screen"
+                title="Full screen"
+                onclick={fullscreen}><Icon name="expand" size={16} /></button
               >{/if}
           </div>
-          {#if isVideo}<video controls preload="metadata" bind:this={player}
+          {#if isVideo}<video
+              controls
+              playsinline
+              preload="metadata"
+              bind:this={player}
+              ontimeupdate={() => (currentMs = (player?.currentTime ?? 0) * 1000)}
+              onseeked={() => (currentMs = (player?.currentTime ?? 0) * 1000)}
               ><source src={`/api/assets/${detail.asset.id}`} /><track
                 kind="captions"
                 src={`/api/uploads/${detail.upload.id}/captions?revision=${stage.id}`}
@@ -586,6 +620,7 @@
             {stage}
             uploadId={detail.upload.id}
             {isVideo}
+            {currentMs}
             canEdit={current}
             onseek={seek}
             onupdated={() => refresh()}
@@ -1013,5 +1048,10 @@
     .status-row {
       margin-bottom: 1rem;
     }
+  }
+  video:fullscreen {
+    aspect-ratio: auto;
+    border-radius: 0;
+    background: #000;
   }
 </style>

@@ -5,6 +5,7 @@
 
   type Citation = {
     id: string;
+    revisionId: string;
     filename: string;
     kind: 'text' | 'image';
     quote?: string;
@@ -35,7 +36,6 @@
   let { scope }: { scope: { projectId?: string; label: string } } = $props();
   let messages = $state<Message[]>([]),
     draft = $state(''),
-    openQuote = $state<string | null>(null),
     thread = $state<HTMLDivElement>(),
     input = $state<HTMLInputElement>();
   const storeKey = 'chronicler.ask.runs';
@@ -117,6 +117,11 @@
         : c.locator.kind === 'page'
           ? `Page ${c.locator.page}`
           : 'Text';
+  // Recordings open at the cited moment; slides and pages open as evidence.
+  const target = (c: Citation) =>
+    c.locator.kind === 'media' && c.locator.startMs !== undefined
+      ? `/meeting/${c.revisionId}?t=${Math.floor(c.locator.startMs)}`
+      : c.url;
   const short = (name: string) => {
     const base = name.replace(/\.[a-z0-9]+$/i, '');
     return base.length > 22 ? `${base.slice(0, 21)}…` : base;
@@ -215,23 +220,16 @@
                         >{/if}{/each}
                     {#each claim.citations as ref}{@const c =
                         answer.citations.find((c) => c.id === ref)}
-                      {#if c}{@const key = `${message.key}:${claim.text.length}:${ref}`}
-                        <button
+                      {#if c}<a
                           class="cite"
-                          aria-expanded={openQuote === key}
-                          onclick={() =>
-                            (openQuote = openQuote === key ? null : key)}
-                          >{short(c.filename)} · {place(c)}</button
+                          href={target(c)}
+                          title={c.quote ?? 'Open the source'}
+                          >{#if c.locator.kind === 'media'}<Icon
+                              name="play"
+                              size={11}
+                            />{/if}{short(c.filename)} · {place(c)}</a
                         >{/if}{/each}
                   </div>
-                  {#each claim.citations as ref}{@const c =
-                      answer.citations.find((c) => c.id === ref)}
-                    {#if c && openQuote === `${message.key}:${claim.text.length}:${ref}`}
-                      <blockquote>
-                        <p>{c.quote ?? 'Image evidence'}</p>
-                        <a href={c.url}>Open in source</a>
-                      </blockquote>
-                    {/if}{/each}
                 {/if}
               </div>
             {/each}
@@ -422,8 +420,7 @@
       color 150ms,
       transform 150ms var(--ease-out);
   }
-  .cite:hover,
-  .cite[aria-expanded='true'] {
+  .cite:hover {
     border-color: var(--accent);
     color: var(--blue-ink);
     background: var(--canvas);
@@ -435,17 +432,6 @@
     color: var(--blue-ink);
     border-color: transparent;
   }
-  blockquote {
-    margin: 0;
-    padding: 0.55rem 0.75rem;
-    border-radius: 0.5rem;
-    background: var(--yellow-soft);
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    width: 100%;
-  }
-  blockquote a,
   .full {
     font-size: 0.74rem;
     color: var(--muted);

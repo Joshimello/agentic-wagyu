@@ -29,6 +29,17 @@
 <div class="projects">
   {#each data.projects as project}
     <a class="card project" href={`/memory/nodes/${project.id}`}>
+      <span class="thumb">
+        {#if project.thumbnail}<video
+            src={`/api/assets/${project.thumbnail}#t=4`}
+            preload="metadata"
+            muted
+            playsinline
+            tabindex="-1"
+            aria-hidden="true"
+          ></video>{:else}<Icon name="folder" size={30} />{/if}
+      </span>
+      <span class="body">
       <span class="title">
         <h2>{project.title}</h2>
         {#if project.toReview}<span class="badge review"
@@ -37,12 +48,13 @@
       </span>
       <p class="summary">{project.summary}</p>
       <span class="stats">
-        <span>{plural(project.meetings, 'meeting')}</span>
-        <span>{plural(project.decisions, 'decision')}</span>
-        <span>{plural(project.commitments, 'commitment')}</span>
+        <span><Icon name="video" size={14} />{plural(project.meetings, 'meeting')}</span>
+        <span><Icon name="success" size={14} />{plural(project.decisions, 'decision')}</span>
+        <span><Icon name="list" size={14} />{plural(project.commitments, 'commitment')}</span>
         {#if project.lastMeeting}<span
-            >Last met {shortDate(project.lastMeeting)}</span
+            ><Icon name="clock" size={14} />{shortDate(project.lastMeeting)}</span
           >{/if}
+      </span>
       </span>
     </a>
   {/each}
@@ -67,8 +79,8 @@
   }
   .project {
     display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
+    align-items: stretch;
+    gap: 1.1rem;
     color: var(--ink);
     transition:
       border-color 150ms,
@@ -107,7 +119,7 @@
   .stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem 1.1rem;
+    gap: 0.4rem 1.1rem;
     color: var(--muted);
     font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
@@ -125,5 +137,48 @@
   .empty strong {
     color: var(--ink);
     font-weight: 500;
+  }
+  .thumb {
+    flex: none;
+    width: 9.5rem;
+    aspect-ratio: 16 / 10;
+    align-self: flex-start;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+  }
+  .thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+    transition: transform 300ms var(--ease-out);
+  }
+  .project:hover .thumb video {
+    transform: scale(1.03);
+  }
+  .body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .stats span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  @media (max-width: 560px) {
+    .project {
+      flex-direction: column;
+    }
+    .thumb {
+      width: 100%;
+    }
   }
 </style>
