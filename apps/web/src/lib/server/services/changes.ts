@@ -60,6 +60,39 @@ export async function approvedHistory(
 export function latestApproved(history: ApprovedVersion[]) {
   return [...new Map(history.map((v) => [v.itemId, v])).values()];
 }
+/** Proposals nobody has reviewed yet, counted per comparison and project. */
+export async function pendingReviews() {
+  return db
+    .select({
+      comparisonId: changeProposals.comparisonId,
+      projectId: sql<string>`${comparisonJobs.input}->>'projectId'`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(changeProposals)
+    .innerJoin(comparisonJobs, eq(comparisonJobs.id, changeProposals.comparisonId))
+    .where(
+      sql`not exists (select 1 from ${changeReviewEvents} where ${changeReviewEvents.proposalId}=${changeProposals.id})`,
+    )
+    .groupBy(
+      changeProposals.comparisonId,
+      sql`${comparisonJobs.input}->>'projectId'`,
+    );
+}
+/** What one project's page needs beyond its summaries. */
+export async function projectState(projectId: string) {
+  const [choices, history, pending] = await Promise.all([
+    comparisonChoices(),
+    approvedHistory(await reviewHistoryVersion(), projectId),
+    pendingReviews(),
+  ]);
+  return {
+    meetings: choices.projects.find((p) => p.id === projectId)?.meetings ?? [],
+    approved: latestApproved(history),
+    toReview: pending
+      .filter((p) => p.projectId === projectId)
+      .reduce((n, p) => n + p.count, 0),
+  };
+}
 export async function comparisonChoices() {
   const snapshot = await organizationSnapshot();
   const corpus = await loadResearchCorpus({ version: snapshot.version }, false);

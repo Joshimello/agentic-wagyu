@@ -93,7 +93,7 @@
 {#if !memory.projects.length}<section class="card">
     <h2>Memory starts with an explicit push</h2>
     <p>
-      Select reviewed files in <a href="/">staging</a> and push them to memory.
+      Select reviewed files in <a href="/sources">Sources</a> and push them to memory.
     </p>
   </section>{:else}
   <section class="card">

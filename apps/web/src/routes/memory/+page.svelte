@@ -83,7 +83,7 @@
   </p>
   {#if !data.memory.projects.length}<div class="card">
       <p>
-        No organized projects in this snapshot. Select reviewed <a href="/"
+        No organized projects in this snapshot. Select reviewed <a href="/sources"
           >staging files</a
         > and push them to memory.
       </p>

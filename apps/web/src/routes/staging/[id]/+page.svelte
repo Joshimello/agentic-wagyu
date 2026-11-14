@@ -336,7 +336,7 @@
   ></svelte:head
 >
 <div class="review-header">
-  <a class="button-link secondary" href="/" aria-label="Back to staging"
+  <a class="button-link secondary" href="/sources" aria-label="Back to sources"
     ><Icon name="arrow-left" />Back</a
   >
   <div class="header-actions">
@@ -436,7 +436,7 @@
       name={alreadyPushed ? 'success' : 'folder'}
       size={15}
     />{alreadyPushed
-      ? 'Added to memory'
+      ? 'In project'
       : detail.memory.state === 'never_pushed'
         ? 'Not in memory'
         : detail.memory.state.replaceAll('_', ' ')}</span

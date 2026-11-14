@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
+  import { shortDate } from '../../../lib/dates';
   import ChangeProposalReview from '../../../lib/components/ChangeProposalReview.svelte';
   let { data } = $props();
   let error = $state(''),
@@ -33,21 +34,17 @@
 </script>
 
 <svelte:head><title>Review meeting changes | Chronicler</title></svelte:head>
-<a href="/changes">Back to What changed?</a>
-<h1>Review meeting changes</h1>
-<p class="muted">
-  Memory snapshot {data.job.scope.memoryVersion} - approved-state baseline {data
-    .job.scope.reviewVersion}
-</p>
+<a href="/changes">← What changed</a>
+<h1>Review changes</h1>
 <div class="pair card">
   <p>
     <strong>Earlier</strong><br />{data.job.scope.earlier.filename}<br /><span
-      >{data.job.scope.earlier.date ?? 'Unknown date'}</span
+      >{shortDate(data.job.scope.earlier.date)}</span
     >
   </p>
   <p>
     <strong>Later</strong><br />{data.job.scope.later.filename}<br /><span
-      >{data.job.scope.later.date ?? 'Unknown date'}</span
+      >{shortDate(data.job.scope.later.date)}</span
     >
   </p>
 </div>
@@ -64,12 +61,14 @@
     >Retry with the same evidence and baseline</button
   >{/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
-{#if data.job.warnings.length}<ul>
-    {#each data.job.warnings as warning}<li>{warning}</li>{/each}
-  </ul>{/if}
-{#if data.job.state === 'completed'}<p>
-    Proposals remain pending until you approve them. Approval updates reviewed
-    project state and Ask; it does not push staging evidence.
+{#if data.job.warnings.length}<details class="notes">
+    <summary>{data.job.warnings.length} notes from the comparison</summary>
+    <ul>
+      {#each data.job.warnings as warning}<li>{warning}</li>{/each}
+    </ul>
+  </details>{/if}
+{#if data.job.state === 'completed'}<p class="muted">
+    Nothing becomes project state until you approve it.
   </p>
   {#if !data.proposals.length}<section class="card">
       No supported new or changed decisions or commitments were established.
@@ -106,5 +105,13 @@
       grid-template-columns: 1fr;
       gap: 0;
     }
+  }
+  .notes {
+    margin: 16px 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .notes summary {
+    cursor: pointer;
   }
 </style>

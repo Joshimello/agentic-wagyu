@@ -34,6 +34,14 @@
   );
   let key = '',
     payload = '';
+  // After an edit-and-approve, the card shows what the reviewer approved.
+  let edited = $derived(
+    review?.input.action === 'edit' && review.input.value
+      ? review.input.value
+      : null,
+  );
+  let shown = $derived(edited ?? proposal.value);
+  let rejected = $derived(review?.input.action === 'reject');
   const quote = (ref: string) =>
     proposal.evidenceQuotes.find((q) => q.citationId === ref)?.quote ??
     scope.evidence.find((c) => c.id === ref)?.quote ??
@@ -74,16 +82,19 @@
   <div class="proposal-heading">
     <span class="badge">{proposal.value.kind}</span><span class="badge"
       >{review
-        ? `${review.input.action === 'reject' ? 'Rejected' : 'Approved'} - review ${review.reviewVersion}`
-        : 'Pending review'}</span
+        ? rejected
+          ? 'Rejected'
+          : edited
+            ? 'Approved with edits'
+            : 'Approved'
+        : 'Needs review'}</span
     >
   </div>
   <div class="comparison">
     <section>
-      <h3>Earlier statement</h3>
-      <p>
-        {proposal.earlier ??
-          'No earlier statement established by the selected evidence.'}
+      <h3>{proposal.earlier ? 'Was' : 'New'}</h3>
+      <p class:was={!!proposal.earlier}>
+        {proposal.earlier ?? 'Not mentioned in the earlier meeting.'}
       </p>
       {#each proposal.earlierCitations as ref}{@const c = scope.evidence.find(
           (c) => c.id === ref,
@@ -93,8 +104,8 @@
           </blockquote>{/if}{/each}
     </section>
     <section>
-      <h3>Later statement</h3>
-      <p>{proposal.value.text}</p>
+      <h3>Now</h3>
+      <p>{shown.text}</p>
       {#each proposal.laterCitations as ref}{@const c = scope.evidence.find(
           (c) => c.id === ref,
         )}{#if c}<blockquote>
@@ -103,23 +114,38 @@
           </blockquote>{/if}{/each}
     </section>
   </div>
-  <p>{proposal.rationale}</p>
   <p class="muted">
-    Status: {proposal.value.status?.replaceAll('_', ' ') ?? 'Decision'} - Owner: {proposal
-      .value.owner ?? 'Unknown'} - Deadline: {proposal.value.deadline ??
-      'Unknown'}
+    {shown.kind === 'decision'
+      ? 'Decision'
+      : `${shown.status?.replaceAll('_', ' ')} · ${shown.owner ?? 'no owner'} · ${shown.deadline ? `due ${shown.deadline}` : 'no date'}`}{shown.completionCriteria
+      ? ` · done when: ${shown.completionCriteria}`
+      : ''}
   </p>
-  <p class="muted">
-    Completion criteria: {proposal.value.completionCriteria ?? 'Unknown'}
-  </p>
-  {#if proposal.uncertainty.length || proposal.missingInformation.length}<ul>
-      {#each [...proposal.uncertainty, ...proposal.missingInformation] as note}<li
-        >
-          {note}
-        </li>{/each}
-    </ul>{/if}
-  {#if review}<p>Reviewer action: {review.input.reason}</p>
-    <a href={`/changes/reviews/${review.id}`}>Open immutable review event</a>
+  {#if edited}<details>
+      <summary>Original proposal</summary>
+      <p>{proposal.value.text}</p>
+      <p class="muted">
+        {proposal.value.status?.replaceAll('_', ' ') ?? 'Decision'} · {proposal
+          .value.owner ?? 'no owner'} · {proposal.value.deadline ?? 'no date'}
+      </p>
+    </details>{/if}
+  <details>
+    <summary
+      >Why, and what is missing ({proposal.uncertainty.length +
+        proposal.missingInformation.length})</summary
+    >
+    <p>{proposal.rationale}</p>
+    {#if proposal.uncertainty.length || proposal.missingInformation.length}<ul>
+        {#each [...proposal.uncertainty, ...proposal.missingInformation] as note}<li
+          >
+            {note}
+          </li>{/each}
+      </ul>{/if}
+  </details>
+  {#if review}<p class="muted">
+      {review.input.reason} ·
+      <a href={`/changes/reviews/${review.id}`}>Review record</a>
+    </p>
   {:else}
     {#if editing}<div class="editor">
         <p>
@@ -292,5 +318,17 @@
       grid-template-columns: 1fr;
       gap: 10px;
     }
+  }
+  .was {
+    color: var(--muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--border);
+  }
+  details {
+    font-size: 0.88rem;
+  }
+  summary {
+    cursor: pointer;
+    color: var(--muted);
   }
 </style>

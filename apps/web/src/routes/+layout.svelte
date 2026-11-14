@@ -8,6 +8,8 @@
   import Icon from '../lib/components/Icon.svelte';
   import BrandMark from '../lib/components/BrandMark.svelte';
   import ActivityStatus from '../lib/components/ActivityStatus.svelte';
+  import AskPanel from '../lib/components/AskPanel.svelte';
+  import { askPanel } from '../lib/ui/ask.svelte';
   import { activityContext, createActivity } from '../lib/ui/activity.svelte';
 
   let {
@@ -20,26 +22,37 @@
   let content: HTMLElement;
   let scroller: HTMLDivElement;
   let entry: gsap.Context | undefined;
-  let memoryActive = $derived(page.url.pathname.startsWith('/memory'));
-  let askActive = $derived(page.url.pathname.startsWith('/ask'));
-  let changesActive = $derived(page.url.pathname.startsWith('/changes'));
+  let path = $derived(page.url.pathname);
+  let memoryActive = $derived(path === '/' || path.startsWith('/memory'));
+  let changesActive = $derived(path.startsWith('/changes'));
+  let sourcesActive = $derived(
+    ['/sources', '/staging', '/pushes'].some((p) => path.startsWith(p)),
+  );
+  let askScope = $derived(
+    page.data?.node?.kind === 'project'
+      ? { projectId: page.data.node.id as string, label: page.data.node.current.title as string }
+      : { projectId: undefined, label: 'All projects' },
+  );
   setContext(activityContext, createActivity());
   let nav = $state<HTMLElement>();
   let indicator = $state<HTMLSpanElement>();
   let stagingLink = $state<HTMLAnchorElement>();
   let memoryLink = $state<HTMLAnchorElement>();
-  let askLink = $state<HTMLAnchorElement>();
   let changesLink = $state<HTMLAnchorElement>();
   let indicatorReady = $state(false);
   function positionIndicator(animate = true) {
     const target = changesActive
       ? changesLink
-      : askActive
-        ? askLink
-        : memoryActive
-          ? memoryLink
-          : stagingLink;
-    if (!nav || !indicator || !target) return;
+      : memoryActive
+        ? memoryLink
+        : sourcesActive
+          ? stagingLink
+          : undefined;
+    if (!nav || !indicator) return;
+    if (!target) {
+      gsap.set(indicator, { opacity: 0 });
+      return;
+    }
     const bounds = target.getBoundingClientRect(),
       parent = nav.getBoundingClientRect();
     const props = {
@@ -65,7 +78,7 @@
   }
   $effect(() => {
     memoryActive;
-    askActive;
+    sourcesActive;
     changesActive;
     if (typeof window !== 'undefined')
       void tick().then(() => positionIndicator());
@@ -120,7 +133,7 @@
 <a class="skip-link" href="#workspace-content">Skip to content</a>
 <div class="shell">
   <header class="workspace-header">
-    <a class="brand" href="/" aria-label="Chronicler staging">
+    <a class="brand" href="/" aria-label="Chronicler projects">
       <span class="brand-mark"><BrandMark size={21} /></span>
       <span>Chronicler<small>Research workspace</small></span>
     </a>
@@ -133,41 +146,40 @@
       <span class="nav-indicator" aria-hidden="true" bind:this={indicator}
       ></span>
       <a
-        bind:this={stagingLink}
-        href="/"
-        class:current={!memoryActive && !askActive && !changesActive}
-        aria-current={!memoryActive && !askActive && !changesActive
-          ? 'page'
-          : undefined}
-      >
-        <Icon name="folder" size={17} /><span>Staging</span>
-      </a>
-      <a
         bind:this={memoryLink}
-        href="/memory"
+        href="/"
         class:current={memoryActive}
         aria-current={memoryActive ? 'page' : undefined}
       >
-        <Icon name="grid" size={17} /><span>Memory</span>
+        <Icon name="grid" size={17} /><span>Projects</span>
       </a>
       <a
-        bind:this={askLink}
-        href="/ask"
-        class:current={askActive}
-        aria-current={askActive ? 'page' : undefined}
+        bind:this={stagingLink}
+        href="/sources"
+        class:current={sourcesActive}
+        aria-current={sourcesActive ? 'page' : undefined}
       >
-        <Icon name="help" size={17} /><span>Ask</span>
+        <Icon name="folder" size={17} /><span>Sources</span>
       </a>
       <a
         bind:this={changesLink}
         href="/changes"
         class:current={changesActive}
         aria-current={changesActive ? 'page' : undefined}
-        ><Icon name="refresh" size={17} /><span>What changed?</span></a
+        ><Icon name="refresh" size={17} /><span>Changes</span></a
       >
     </nav>
     <ActivityStatus />
+    <button
+      class="ask-toggle"
+      class:open={askPanel.open}
+      aria-expanded={askPanel.open}
+      aria-controls="ask-panel"
+      onclick={() => (askPanel.open = !askPanel.open)}
+      ><Icon name="help" size={17} /><span>Ask</span></button
+    >
   </header>
+  <div class="workspace-main">
   <div class="workspace-scroll" bind:this={scroller}>
     <div class="workspace-body">
       <main id="workspace-content" bind:this={content} tabindex="-1">
@@ -192,6 +204,8 @@
       </footer>
     </div>
   </div>
+  <AskPanel scope={askScope} />
+  </div>
 </div>
 
 <style>
@@ -206,11 +220,31 @@
     margin: auto;
     padding: 0 clamp(1rem, 3.5vw, 3.5rem);
   }
+  .workspace-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    position: relative;
+  }
   .workspace-scroll {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow: auto;
     scrollbar-gutter: stable;
+  }
+  .ask-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    flex: none;
+  }
+  .ask-toggle.open {
+    background: var(--blue-soft);
+    color: var(--blue-ink);
   }
   .workspace-header {
     flex-shrink: 0;
@@ -398,6 +432,9 @@
       padding: 0.45rem 0.55rem;
     }
     .workspace-nav a :global(.ui-icon) {
+      display: none;
+    }
+    .ask-toggle span {
       display: none;
     }
     .workspace-footer span:first-child {

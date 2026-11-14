@@ -1,10 +1,22 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
+  import { shortDate } from '../../lib/dates';
   let { data } = $props();
   let projectId = $state(untrack(() => data.choices.projects[0]?.id ?? '')),
     earlier = $state(''),
     later = $state('');
+  // Start from the two most recent meetings; the choice stays editable.
+  function latestPair(id: string) {
+    const sorted = [
+      ...(data.choices.projects.find((p) => p.id === id)?.meetings ?? []),
+    ].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+    earlier = sorted.at(-2)?.revisionId ?? '';
+    later = sorted.length > 1 ? (sorted.at(-1)?.revisionId ?? '') : '';
+  }
+  untrack(() => latestPair(projectId));
+  const waiting = (comparisonId: string) =>
+    data.pending.find((p) => p.comparisonId === comparisonId)?.count ?? 0;
   let busy = $state(false),
     error = $state('');
   let meetings = $derived(
@@ -48,27 +60,17 @@
 <svelte:head><title>What changed? | Chronicler</title></svelte:head>
 <div class="heading">
   <div>
-    <h1>What changed?</h1>
+    <h1>What changed</h1>
     <p class="muted">
-      Review decisions and commitments across meetings. Approved changes become
-      available in Ask.
+      Compare two meetings, then approve what should become project state.
     </p>
   </div>
-  <a href="/memory">Open research memory</a>
 </div>
 <section class="card selection">
-  <h2>Choose a meeting pair</h2>
-  <p>
-    Choose the order yourself. Unknown dates stay unknown; only admitted
-    meetings belonging to the accepted project appear here.
-  </p>
   <label
-    >Accepted project<select
+    >Project<select
       bind:value={projectId}
-      onchange={() => {
-        earlier = '';
-        later = '';
-      }}
+      onchange={() => latestPair(projectId)}
       ><option value="">Select a project</option
       >{#each data.choices.projects as p}<option value={p.id}>{p.title}</option
         >{/each}</select
@@ -86,14 +88,13 @@
           >{#each meetings as m}<option
               value={m.revisionId}
               disabled={m.revisionId === (side === 'Earlier' ? later : earlier)}
-              >{m.label || m.filename} - {m.date ?? 'Unknown date'}</option
+              >{m.label || m.filename} · {shortDate(m.date)}</option
             >{/each}</select
         ></label
       >{/each}
   </div>
   {#if meetings.length < 2}<p class="muted">
-      This project needs two different admitted meetings before comparison is
-      available.
+      Add two meetings to this project to compare them.
     </p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <button
@@ -103,15 +104,16 @@
   >
 </section>
 {#if approved.length}<section class="card">
-    <h2>Approved project state</h2>
+    <h2>Decisions and commitments</h2>
     {#each approved as v}<article>
         <span class="badge"
           >{v.value.kind} {v.value.status?.replaceAll('_', ' ') ?? ''}</span
         >
         <p>{v.value.text}</p>
         <p class="muted">
-          Owner: {v.value.owner ?? 'Unknown'} - Deadline: {v.value.deadline ??
-            'Unknown'}
+          {v.value.owner ?? 'No owner'} · {v.value.deadline
+            ? `due ${shortDate(v.value.deadline)}`
+            : 'no date'}
         </p>
         {#if v.reviewerAdded.length}<p class="muted">
             Reviewer additions: {v.reviewerAdded.join(', ')}
@@ -119,14 +121,18 @@
       </article>{/each}
   </section>{/if}
 <section class="card">
-  <h2>Saved comparisons</h2>
+  <h2>Comparisons</h2>
   {#if !data.comparisons.length}<p class="muted">
       No comparisons yet.
     </p>{/if}{#each data.comparisons as c}<article>
       <a href={`/changes/${c.id}`}
         >{data.choices.projects.find((p) => p.id === c.input.projectId)
           ?.title ?? 'Research project'}</a
-      ><span class="badge">{c.state}</span><small
+      >{#if waiting(c.id)}<span class="badge to-review"
+          >{waiting(c.id)} to review</span
+        >{:else}<span class="badge"
+          >{c.state === 'completed' ? 'reviewed' : c.state}</span
+        >{/if}<small
         >{new Date(c.createdAt).toLocaleString()}</small
       >
     </article>{/each}
@@ -191,5 +197,9 @@
       grid-template-columns: 1fr;
       gap: 0;
     }
+  }
+  .to-review {
+    background: var(--yellow-soft);
+    color: var(--yellow-ink);
   }
 </style>

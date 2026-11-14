@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { openMemoryNode } from '../../../../lib/server/services/organization';
 import { memoryOptions } from '../../../../lib/server/services/memory';
 import { id } from '../../../../lib/server/contracts';
+import { projectState } from '../../../../lib/server/services/changes';
 export async function load({
   params,
   url,
@@ -10,12 +11,19 @@ export async function load({
   url: URL;
 }) {
   try {
-    return await openMemoryNode(id.parse(params.id), {
+    const opened = await openMemoryNode(id.parse(params.id), {
       ...memoryOptions(url),
       versionId: url.searchParams.get('versionId')
         ? id.parse(url.searchParams.get('versionId'))
         : undefined,
     });
+    return {
+      ...opened,
+      project:
+        opened.node.kind === 'project'
+          ? await projectState(opened.node.id)
+          : null,
+    };
   } catch {
     error(404, 'Memory node unavailable in this snapshot');
   }
