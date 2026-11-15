@@ -20,6 +20,7 @@
     stage,
     uploadId,
     isVideo = true,
+    currentMs = 0,
     canEdit = false,
     onseek,
     onupdated,
@@ -27,6 +28,7 @@
     stage: Stage;
     uploadId: string;
     isVideo?: boolean;
+    currentMs?: number;
     canEdit?: boolean;
     onseek: (ms: number) => void;
     onupdated: () => Promise<void>;
@@ -34,6 +36,34 @@
   let texts = $derived(
     stage.primitives.filter((p): p is Text => p.kind === 'text'),
   );
+  // Beside a recording the whole transcript is listed and follows playback;
+  // documents keep a short preview.
+  let previewTexts = $derived(isVideo ? texts : texts.slice(0, 4));
+  let previewList = $state<HTMLDivElement>();
+  let activeId = $derived.by(() => {
+    if (!isVideo || currentMs <= 0) return '';
+    let found = '';
+    for (const text of texts)
+      if (text.locator.kind === 'media' && text.locator.startMs <= currentMs)
+        found = text.id;
+    return found;
+  });
+  // Scrolling by hand pauses following for a few seconds.
+  let followAfter = 0;
+  const holdFollow = () => (followAfter = Date.now() + 5000);
+  $effect(() => {
+    const id = activeId,
+      list = previewList;
+    if (!id || !list || Date.now() < followAfter) return;
+    const row = list.querySelector<HTMLElement>(`[data-turn="${id}"]`);
+    if (!row) return;
+    list.scrollTo({
+      top: row.offsetTop - list.clientHeight / 2 + row.clientHeight / 2,
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+    });
+  });
   // Documents also expose canonical text anchors in DocumentViewer. The
   // reading-copy dialog must not duplicate those IDs or steal source focus.
   const rowId = (id: string) =>
@@ -130,8 +160,11 @@
       : (translated.get(text.id) ?? '');
   }
   function speakerLabel(text: Text) {
+    // Revisions made before names were applied automatically still carry
+    // one clear suggestion: show it as the name.
+    const pending = pendingNames(text);
     return (
-      text.speaker ??
+      (pending.length === 1 ? pending[0] : text.speaker) ??
       (text.role === 'notes'
         ? 'Speaker notes'
         : text.role === 'ocr'
@@ -182,7 +215,6 @@
     hydrated = true;
     const timer = setInterval(() => {
       if (
-        opened &&
         !canceling &&
         !loading &&
         language !== 'original' &&
@@ -228,6 +260,8 @@
   }
   function closeTranscript() {
     if (!dialog || !dialog.open) return;
+    // Leaving the editor without changes ends it, so the panel is not left locked.
+    if (editing && !dirty) editing = false;
     closingAnimation?.cancel();
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       dialog.close();
@@ -253,7 +287,14 @@
     onseek(text.locator.startMs);
   }
   async function chooseLanguage(value: typeof language) {
-    if (editing) return;
+    if (editing) {
+      if (dirty && value !== 'original') {
+        notice = 'Save or cancel your edits before changing the language.';
+        void openTranscript();
+        return;
+      }
+      if (!dirty) editing = false;
+    }
     controller?.abort();
     requestVersion++;
     language = value;
@@ -442,15 +483,44 @@
         {isVideo ? 'Spoken transcript' : 'Extracted text'}
       </h2>
     </div>
-    <span class="segment-count">{texts.length} entries</span>
+    {#if isVideo && texts.length}<div
+        class="segmented-control compact"
+        role="group"
+        aria-label="Transcript language"
+      >
+        {#each ['original', 'en', 'zh-TW'] as target}<button
+            class:active={language === target}
+            aria-pressed={language === target}
+            onclick={() => chooseLanguage(target as typeof language)}
+            >{target === 'original'
+              ? 'Original'
+              : target === 'en'
+                ? 'EN'
+                : '繁中'}</button
+          >{/each}
+      </div>{:else}<span class="segment-count">{texts.length} entries</span
+      >{/if}
   </div>
-  <div class="preview-list">
-    {#each texts.slice(0, 4) as text}
-      <article class="preview-turn">
+  <!-- Manual scrolling only pauses auto-follow; the list itself is not a control. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="preview-list"
+    class:following={isVideo}
+    bind:this={previewList}
+    onwheel={holdFollow}
+    ontouchmove={holdFollow}
+    onpointerdown={holdFollow}
+  >
+    {#each previewTexts as text (text.id)}
+      <article
+        class="preview-turn"
+        class:active={text.id === activeId}
+        data-turn={text.id}
+      >
         <div class="turn-head">
           <strong>{speakerLabel(text)}</strong
-          >{#if pendingNames(text).length}<span class="original-speaker"
-              >Suggested: {pendingNames(text).join(' / ')} - pending review</span
+          >{#if pendingNames(text).length > 1}<span class="original-speaker"
+              >Suggested: {pendingNames(text).join(' / ')}</span
             >{/if}
           {#if text.locator.kind === 'media'}<button
               class="timestamp"
@@ -461,7 +531,13 @@
               )}</button
             >{/if}
         </div>
-        <p>{text.text}</p>
+        <p
+          lang={language !== 'original' && translated.has(text.id)
+            ? language
+            : undefined}
+        >
+          {displayText(text) || text.text}
+        </p>
       </article>
     {/each}
     {#if !texts.length}<p class="muted">
@@ -470,10 +546,26 @@
   </div>
   <div class="preview-footer">
     <span class="muted"
-      >{texts.length > 4
-        ? `Showing 4 of ${texts.length}`
-        : `${texts.length} entries`}</span
+      >{isVideo
+        ? language !== 'original' &&
+          (error || ['failed', 'canceled'].includes(translation?.state ?? ''))
+          ? 'Translation stopped'
+          : language !== 'original' && !ready
+            ? `Translating to ${languageNames[language]}… ${translation?.completedSegments ?? 0}/${translation?.totalSegments ?? texts.length}`
+            : language !== 'original'
+              ? `${languageNames[language]} · machine translation`
+              : activeId
+          ? 'Following playback'
+          : 'Play the recording to follow along'
+        : texts.length > 4
+          ? `Showing 4 of ${texts.length}`
+          : `${texts.length} entries`}</span
     >
+    {#if isVideo && language !== 'original' && (error || ['failed', 'canceled'].includes(translation?.state ?? ''))}<button
+        class="secondary"
+        onclick={() => loadTranslation(true)}
+        ><Icon name="refresh" />Retry</button
+      >{/if}
     <button
       class="secondary"
       disabled={!hydrated}
@@ -528,7 +620,7 @@
           {#each ['original', 'en', 'zh-TW'] as target}<button
               class:active={language === target}
               aria-pressed={language === target}
-              disabled={editing}
+              disabled={editing && dirty}
               onclick={() => chooseLanguage(target as typeof language)}
               >{target === 'original'
                 ? 'Original'
@@ -691,8 +783,8 @@
                   maxlength="100"
                   disabled={saving}
                 />{:else}<strong>{speakerLabel(text)}</strong
-                >{#if pendingNames(text).length}<span class="original-speaker"
-                    >Suggested: {pendingNames(text).join(' / ')} - pending review</span
+                >{#if pendingNames(text).length > 1}<span class="original-speaker"
+                    >Suggested: {pendingNames(text).join(' / ')}</span
                   >{/if}{/if}
               {#if text.originalSpeaker !== undefined && text.originalSpeaker !== text.speaker}
                 <span class="original-speaker"
@@ -819,6 +911,9 @@
     padding-top: 1.05rem;
     gap: 0.8rem;
   }
+  .preview-footer > span {
+    margin-right: auto;
+  }
   .preview-footer button {
     font-size: 0.78rem;
   }
@@ -885,6 +980,10 @@
     padding: 0.45rem 0.8rem;
     font-size: 0.8rem;
     border-radius: 5px;
+  }
+  .segmented-control.compact button {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.74rem;
   }
   .segmented-control button.active {
     color: #252520;
@@ -1071,5 +1170,26 @@
     .metadata-fields {
       grid-template-columns: 1fr;
     }
+  }
+  .preview-list.following {
+    position: relative;
+    max-height: 30rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin-inline: -0.6rem;
+  }
+  .preview-list.following .preview-turn {
+    padding: 0.7rem 0.6rem;
+    border-radius: 8px;
+    transition: background 200ms;
+  }
+  .preview-turn.active {
+    background: var(--yellow-soft);
+    border-bottom-color: transparent;
+  }
+  .preview-turn.active p {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
   }
 </style>

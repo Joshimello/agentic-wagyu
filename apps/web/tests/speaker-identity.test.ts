@@ -117,7 +117,7 @@ function frame(time = 1500): Primitive {
   };
 }
 
-test('independent identity pass finds introductions with zero general context questions and never assigns names', async () => {
+test('independent identity pass finds introductions with zero general context questions and applies a single supported name', async () => {
   const stage = fixture();
   stage.context = {
     model: 'regression',
@@ -136,7 +136,18 @@ test('independent identity pass finds introductions with zero general context qu
   validateStage(stage);
   expect(stage.speakerSuggestions).toHaveLength(1);
   expect(stage.speakerSuggestions![0].candidateName).toBe('Ada');
-  expect(stage.primitives).toEqual(original);
+  // The one supported name is applied to the voice; the label stays as the original.
+  expect(stage.speakerSuggestions![0].review).toBe('confirmed');
+  expect(
+    stage.primitives.map((p) => (p.kind === 'text' ? p.text : p.id)),
+  ).toEqual(original.map((p) => (p.kind === 'text' ? p.text : p.id)));
+  const named = stage.primitives.filter(
+    (p) => p.kind === 'text' && p.speaker === 'Ada',
+  );
+  expect(named.length).toBeGreaterThan(0);
+  for (const p of named)
+    if (p.kind === 'text')
+      expect(p.originalSpeaker).toBe(stage.speakerSuggestions![0].speaker);
   expect(stage.context.questions).toEqual([]);
 });
 test('handoffs require preceding OTHER speech and cite the following TARGET voice', async () => {

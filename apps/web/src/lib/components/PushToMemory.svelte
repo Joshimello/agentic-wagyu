@@ -118,10 +118,10 @@
   disabled={disabled || pushing || alreadyPushed || activePush}
   onclick={open}
   ><Icon name={alreadyPushed ? 'success' : 'folder'} />{alreadyPushed
-    ? 'Pushed to memory'
+    ? 'In project'
     : pushing || activePush
-      ? 'Pushing to memory'
-      : 'Push To Memory'}</button
+      ? 'Adding to project'
+      : 'Add to project'}</button
 >
 <dialog
   bind:this={dialog}
@@ -136,7 +136,7 @@
       <header>
         <div>
           <span class="muted">Reviewed evidence</span>
-          <h2 id="push-heading">Push To Memory</h2>
+          <h2 id="push-heading">Add to project</h2>
         </div>
         <button
           type="button"
@@ -220,7 +220,7 @@
             (projectMode === 'new' && !projectName.trim())}
           ><Icon name={pushing ? 'clock' : 'folder'} />{pushing
             ? 'Starting...'
-            : 'Push To Memory'}</button
+            : 'Add to project'}</button
         >
       </footer>
     </div>{/if}

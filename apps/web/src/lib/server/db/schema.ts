@@ -257,6 +257,28 @@ export const knowledgeEvents = pgTable('knowledge_events', {
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
 });
 
+// Projects removed from the workspace lists. Memory, evidence and history stay intact.
+export const hiddenProjects = pgTable('hidden_projects', {
+  nodeId: uuid('node_id').primaryKey(),
+  createdAt: createdAt(),
+});
+// Readers' notes that an item looks wrong. They never change memory.
+export const memoryReports = pgTable('memory_reports', {
+  id: uuid('id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  targetId: uuid('target_id').notNull(),
+  targetText: text('target_text').notNull(),
+  note: text('note').notNull(),
+  reporter: text('reporter'),
+  createdAt: createdAt(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+});
+// A tick on a reviewed task. It records progress and changes no memory.
+export const taskCompletions = pgTable('task_completions', {
+  itemId: uuid('item_id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  createdAt: createdAt(),
+});
 export const memoryNodes = pgTable('memory_nodes', {
   id: uuid('id').primaryKey(),
   kind: text('kind')

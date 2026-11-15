@@ -91,8 +91,8 @@
   }
 </script>
 
-<a class="button-link" href="/"><Icon name="arrow-left" size={16} />Staging</a>
-<h1>Push to memory</h1>
+<a class="button-link" href="/sources"><Icon name="arrow-left" size={16} />Sources</a>
+<h1>Adding to project</h1>
 <section class="card">
   <span class="badge">{push.state}</span>
   <div class="push-progress">

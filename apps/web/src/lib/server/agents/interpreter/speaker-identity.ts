@@ -358,6 +358,30 @@ export async function suggestSpeakerIdentities(
         (voice.status === 'suggested'
           ? 'Tentative names require confirmation'
           : 'No attributable identity evidence was found');
+      // One supported name is applied without asking. Conflicting or weak
+      // evidence, and voices someone already renamed, keep their label.
+      const open = stage.speakerSuggestions.filter(
+        (s) =>
+          s.speaker === group.originalSpeaker &&
+          !s.review &&
+          (s.voiceTranscriptIds ?? s.transcriptIds).some((id) =>
+            group.turns.some((t) => t.id === id),
+          ),
+      );
+      const names = [...new Set(open.map((s) => s.candidateName))];
+      if (
+        names.length === 1 &&
+        group.speaker === group.originalSpeaker &&
+        open.some((s) => s.confidence !== 'low')
+      ) {
+        for (const turn of group.turns) {
+          if (turn.originalSpeaker === undefined)
+            turn.originalSpeaker = turn.speaker;
+          turn.speaker = names[0];
+        }
+        for (const s of open) s.review = 'confirmed';
+        voice.reason = `Named ${names[0]} automatically from identity evidence`;
+      }
     } catch (error) {
       options.signal?.throwIfAborted();
       budgetExhausted = error instanceof UsageBudgetExceeded;
