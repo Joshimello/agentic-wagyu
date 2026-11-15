@@ -113,6 +113,27 @@
       "when": 1791796369300,
       "tag": "0015_even_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794700000000,
+      "tag": "0016_hidden_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794800000000,
+      "tag": "0017_memory_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0018_task_completions",
+      "breakpoints": true
     }
   ]
 }

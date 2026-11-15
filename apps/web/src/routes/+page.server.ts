@@ -7,19 +7,24 @@ import {
   reviewHistoryVersion,
 } from '../lib/server/services/changes';
 import { listUploads } from '../lib/server/services/uploads';
+import { hiddenProjectIds } from '../lib/server/services/hidden-projects';
 
 export async function load() {
-  const [memory, choices, history, pending, uploads] = await Promise.all([
+  const [memory, choices, history, pending, uploads, hidden] = await Promise.all([
     organizationView(),
     comparisonChoices(),
     approvedHistory(await reviewHistoryVersion()),
     pendingReviews(),
     listUploads(),
+    hiddenProjectIds(),
   ]);
   const approved = latestApproved(history);
   return {
     sources: uploads.length,
-    projects: memory.projects.map((project) => {
+    removed: memory.projects
+      .filter((p) => hidden.has(p.id))
+      .map((p) => ({ id: p.id, title: p.current.title })),
+    projects: memory.projects.filter((p) => !hidden.has(p.id)).map((project) => {
       const meetings =
         choices.projects.find((p) => p.id === project.id)?.meetings ?? [];
       const mine = approved.filter((v) => v.projectId === project.id);
@@ -31,6 +36,11 @@ export async function load() {
         title: project.current.title,
         summary: project.current.summary,
         meetings: meetings.length,
+        // The newest meeting that has a captured frame supplies the picture.
+        picture:
+          [...meetings]
+            .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+            .find((m) => m.frameAssetId)?.frameAssetId ?? null,
         thumbnail:
           uploads.find(
             (u) =>

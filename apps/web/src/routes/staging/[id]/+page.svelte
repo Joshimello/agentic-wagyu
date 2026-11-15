@@ -7,7 +7,6 @@
   import Icon from '../../../lib/components/Icon.svelte';
   import LineSidebar from '../../../lib/components/LineSidebar.svelte';
   import Disclosure from '../../../lib/components/Disclosure.svelte';
-  import Select from '../../../lib/components/Select.svelte';
   import Menu from '../../../lib/components/Menu.svelte';
   import Tooltip from '../../../lib/components/Tooltip.svelte';
   import ProgressBar from '../../../lib/components/ProgressBar.svelte';
@@ -120,7 +119,10 @@
     { value: 'current', label: 'Current revision' },
     ...detail.revisions.map((r) => ({
       value: r.id,
-      label: `${new Date(r.createdAt).toLocaleString()} / ${r.id.slice(0, 8)}`,
+      label: new Date(r.createdAt).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
     })),
   ]);
   onMount(() => {
@@ -403,6 +405,19 @@
           ><Icon name="folder" />Offline bundle</a
         >
       </Menu>{/if}
+    {#if stage && detail.revisions.length > 1}<Menu
+        label="History"
+        icon="history"
+      >
+        {#each revisions as r}<button
+            aria-pressed={selection === r.value}
+            onclick={() => (selection = r.value)}
+            ><Icon
+              name={selection === r.value ? 'check' : 'history'}
+              size={15}
+            />{r.label}</button
+          >{/each}
+      </Menu>{/if}
     <Menu label="More" icon="more">
       <button
         disabled={busy || retryPending || retrying || removed}
@@ -464,7 +479,14 @@
         : detail.memory.state.replaceAll('_', ' ')}</span
   >
 </div>
-<div class="status-row" role="status">
+<div
+  class="status-row"
+  class:quiet={!busy &&
+    !['failed', 'canceled'].includes(detail.run.state) &&
+    !(stage && !stage.coverage.complete) &&
+    !(stage && selection !== 'current' && !current)}
+  role="status"
+>
   {#if busy || ['failed', 'canceled'].includes(detail.run.state)}
     <span
       class="status-dot"
@@ -486,13 +508,11 @@
   {#if !busy && stage && !stage.coverage.complete}<span class="review-needed"
       ><Icon name="warning" size={14} />Partial extraction</span
     >{/if}
-  {#if stage}<div class="revision-picker">
-      <Icon name="history" size={16} /><Select
-        label="Revision"
-        options={revisions}
-        bind:value={selection}
-      />
-    </div>{/if}
+  {#if stage && selection !== 'current' && !current}<span class="older"
+      ><Icon name="history" size={14} />You are viewing an earlier revision</span
+    ><button class="secondary small" onclick={() => (selection = 'current')}
+      >Back to current</button
+    >{/if}
 </div>
 {#if busy || retryPending}<div class="processing-strip">
     <ProgressBar
@@ -660,14 +680,14 @@
             title={`Speaker suggestions (${speakerSuggestions.length})`}
             icon="info"
             ><p class="muted">
-              Suggested names remain tentative until you confirm them in the
-              full transcript. Original speaker labels stay separate.
+              Clear names are applied automatically. Change one in the full
+              transcript; original speaker labels are kept.
             </p>
             {#each speakerSuggestions as suggestion}<article>
                 <div class="suggestion-heading">
                   <strong>{suggestion.speaker}</strong><span
                     >{suggestion.review === 'confirmed'
-                      ? 'Confirmed'
+                      ? 'Named'
                       : suggestion.review === 'rejected'
                         ? 'Rejected suggestion:'
                         : 'Possibly'}
@@ -835,17 +855,16 @@
     gap: 0.35rem;
     color: #956400;
   }
-  .revision-picker {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-left: auto;
-    min-width: 12rem;
-    max-width: 100%;
+  .status-row.quiet {
+    padding: 0;
+    margin: 1.25rem 0 1.5rem;
+    border-bottom: 0;
   }
-  .revision-picker :global(.select-field) {
-    min-width: 0;
-    flex: 1;
+  .older {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--yellow-ink);
   }
   .review-layout {
     display: grid;
@@ -1039,11 +1058,6 @@
     .header-actions {
       gap: 0.4rem;
       width: 100%;
-    }
-    .revision-picker {
-      margin-left: 0;
-      width: 100%;
-      min-width: 0;
     }
     .status-row {
       margin-bottom: 1rem;

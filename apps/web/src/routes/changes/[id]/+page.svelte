@@ -2,10 +2,12 @@
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { shortDate } from '../../../lib/dates';
+  import Icon from '../../../lib/components/Icon.svelte';
   import ChangeProposalReview from '../../../lib/components/ChangeProposalReview.svelte';
   let { data } = $props();
   let error = $state(''),
     busy = $state(false);
+  let reviewed = $derived(data.proposals.filter((p) => p.review).length);
   let pending = $derived(['queued', 'processing'].includes(data.job.state));
   onMount(() => {
     const timer = setInterval(() => {
@@ -34,19 +36,22 @@
 </script>
 
 <svelte:head><title>Review meeting changes | Chronicler</title></svelte:head>
-<a href="/changes">← What changed</a>
+<a class="back" href="/changes"
+  ><Icon name="arrow-left" size={14} />Changes</a
+>
 <h1>Review changes</h1>
-<div class="pair card">
-  <p>
-    <strong>Earlier</strong><br />{data.job.scope.earlier.filename}<br /><span
-      >{shortDate(data.job.scope.earlier.date)}</span
-    >
-  </p>
-  <p>
-    <strong>Later</strong><br />{data.job.scope.later.filename}<br /><span
-      >{shortDate(data.job.scope.later.date)}</span
-    >
-  </p>
+<div class="pair">
+  <span
+    ><strong>{data.job.scope.earlier.filename}</strong><small
+      >{shortDate(data.job.scope.earlier.date)}</small
+    ></span
+  >
+  <Icon name="arrow-right" size={18} />
+  <span
+    ><strong>{data.job.scope.later.filename}</strong><small
+      >{shortDate(data.job.scope.later.date)}</small
+    ></span
+  >
 </div>
 {#if pending}<section class="card">
     <p aria-live="polite">{data.job.progress}</p>
@@ -67,9 +72,18 @@
       {#each data.job.warnings as warning}<li>{warning}</li>{/each}
     </ul>
   </details>{/if}
-{#if data.job.state === 'completed'}<p class="muted">
-    Nothing becomes project state until you approve it.
-  </p>
+{#if data.job.state === 'completed'}
+  {#if data.proposals.length}<div class="progress">
+      <span
+        ><strong>{reviewed} of {data.proposals.length}</strong> reviewed</span
+      >
+      <span class="track" aria-hidden="true"
+        ><span
+          style:width={`${(reviewed / data.proposals.length) * 100}%`}
+        ></span></span
+      >
+      <span class="muted">Nothing is saved to the project until you approve it.</span>
+    </div>{/if}
   {#if !data.proposals.length}<section class="card">
       No supported new or changed decisions or commitments were established.
     </section>{/if}{/if}
@@ -84,27 +98,61 @@
 <style>
   h1 {
     font-size: 28px;
-    margin: 20px 0;
+    margin: 12px 0 10px;
   }
   p {
     margin: 16px 0;
   }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
   .pair {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin: 20px 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    margin: 0 0 1.4rem;
+    color: var(--muted);
     overflow-wrap: anywhere;
+  }
+  .pair span {
+    display: grid;
+  }
+  .pair strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .pair small {
+    font-size: 0.78rem;
+  }
+  .progress {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin: 0 0 1.2rem;
+    font-size: 0.85rem;
+  }
+  .track {
+    flex: 0 1 12rem;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .track span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transition: width 300ms var(--ease-out);
   }
   ul {
     margin: 20px 0;
     padding-left: 20px;
-  }
-  @media (max-width: 650px) {
-    .pair {
-      grid-template-columns: 1fr;
-      gap: 0;
-    }
   }
   .notes {
     margin: 16px 0;

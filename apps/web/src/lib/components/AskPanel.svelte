@@ -17,7 +17,7 @@
     state: string;
     progress?: string | null;
     error?: string | null;
-    input: { question: string };
+    input: { question: string; projectId?: string };
     answer?: {
       status: string;
       claims: {
@@ -32,8 +32,118 @@
     } | null;
   };
   type Message = { key: string; question: string; run?: Run; error?: string };
+  type Past = {
+    id: string;
+    question: string;
+    state: string;
+    scope: { projectId?: string };
+    createdAt: string;
+  };
 
-  let { scope }: { scope: { projectId?: string; label: string } } = $props();
+  let {
+    scope,
+    projects = [],
+  }: {
+    scope: { projectId?: string; label: string };
+    projects?: { id: string; title: string }[];
+  } = $props();
+  // The panel follows the project page you are on, until you pick another.
+  let selected = $state('');
+  $effect(() => {
+    selected = scope.projectId ?? '';
+  });
+  $effect(() => {
+    if (!askPanel.focus) return;
+    selected = askPanel.focus;
+    askPanel.focus = undefined;
+    view = 'chat';
+  });
+  const title = (id?: string) =>
+    (id && projects.find((p) => p.id === id)?.title) || 'All projects';
+  let picking = $state(false),
+    picker = $state<HTMLDivElement>();
+  let view = $state<'chat' | 'history'>('chat'),
+    past = $state<Past[] | null>(null),
+    pastError = $state('');
+  const minWidth = 320,
+    defaultWidth = 416,
+    widthKey = 'chronicler.ask.width';
+  let width = $state(defaultWidth),
+    dragging = $state(false);
+  const clampWidth = (value: number) =>
+    Math.round(
+      Math.max(minWidth, Math.min(value, Math.max(minWidth, innerWidth * 0.6))),
+    );
+  function saveWidth() {
+    try {
+      localStorage.setItem(widthKey, String(width));
+    } catch {}
+  }
+  function drag(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    dragging = true;
+    const move = (e: PointerEvent) =>
+      (width = clampWidth(innerWidth - e.clientX));
+    const stop = () => {
+      dragging = false;
+      handle.removeEventListener('pointermove', move);
+      saveWidth();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop, { once: true });
+    handle.addEventListener('pointercancel', stop, { once: true });
+  }
+  function nudge(event: KeyboardEvent) {
+    const step =
+      event.key === 'ArrowLeft' ? 24 : event.key === 'ArrowRight' ? -24 : 0;
+    if (!step) return;
+    event.preventDefault();
+    width = clampWidth(width + step);
+    saveWidth();
+  }
+  async function openHistory() {
+    view = 'history';
+    pastError = '';
+    try {
+      const response = await fetch('/api/research');
+      if (!response.ok) throw new Error();
+      past = await response.json();
+    } catch {
+      pastError = 'Could not load earlier questions.';
+    }
+  }
+  async function openPast(item: Past) {
+    view = 'chat';
+    if (!messages.some((m) => m.run?.id === item.id)) {
+      messages.push({ key: item.id, question: item.question });
+      const message = messages[messages.length - 1];
+      try {
+        const response = await fetch(`/api/research/${item.id}`);
+        if (!response.ok) throw new Error();
+        message.run = await response.json();
+        remember();
+      } catch {
+        message.error = 'Could not open this answer.';
+      }
+    }
+    await tick();
+    thread
+      ?.querySelector(`[data-run="${item.id}"]`)
+      ?.scrollIntoView({ block: 'start' });
+  }
+  function newChat() {
+    messages = [];
+    view = 'chat';
+    remember();
+    input?.focus();
+  }
+  const when = (value: string) =>
+    new Date(value).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
   let messages = $state<Message[]>([]),
     draft = $state(''),
     thread = $state<HTMLDivElement>(),
@@ -42,7 +152,7 @@
   const pending = (m: Message) =>
     !m.error && (!m.run || ['queued', 'processing'].includes(m.run.state));
   const suggestions = $derived(
-    scope.projectId
+    selected
       ? [
           { label: "What's still open?", text: 'What is still open or unfinished in this project?' },
           { label: 'Prepare next meeting', text: nextMeetingQuestion },
@@ -65,7 +175,10 @@
     await tick();
     if (thread) thread.scrollTop = thread.scrollHeight;
   }
-  async function send(question: string, projectId = scope.projectId) {
+  async function send(
+    question: string,
+    projectId: string | undefined = selected,
+  ) {
     const text = question.trim();
     if (!text) return;
     const key = crypto.randomUUID();
@@ -128,6 +241,15 @@
   };
 
   onMount(() => {
+    try {
+      const saved = Number(localStorage.getItem(widthKey));
+      if (saved) width = clampWidth(saved);
+    } catch {}
+    const outside = (event: PointerEvent) => {
+      if (picking && picker && !picker.contains(event.target as Node))
+        picking = false;
+    };
+    document.addEventListener('pointerdown', outside);
     let ids: string[] = [];
     try {
       ids = JSON.parse(sessionStorage.getItem(storeKey) ?? '[]');
@@ -151,10 +273,14 @@
       for (const message of messages)
         if (message.run && pending(message)) void refresh(message);
     }, 1500);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('pointerdown', outside);
+    };
   });
   $effect(() => {
     if (!askPanel.queue.length) return;
+    view = 'chat';
     const waiting = askPanel.queue.splice(0);
     for (const item of waiting) void send(item.question, item.projectId);
   });
@@ -164,30 +290,129 @@
 </script>
 
 {#if askPanel.open}
-  <aside class="ask-panel" id="ask-panel" aria-label="Ask">
+  <aside
+    class="ask-panel"
+    class:dragging
+    id="ask-panel"
+    aria-label="Ask"
+    style:width={`${width}px`}
+  >
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize Ask panel"
+      aria-valuemin={minWidth}
+      aria-valuenow={width}
+      tabindex="0"
+      onpointerdown={drag}
+      onkeydown={nudge}
+      ondblclick={() => {
+        width = defaultWidth;
+        saveWidth();
+      }}
+    ></div>
     <header>
-      <span class="scope"
-        ><Icon name="folder" size={15} /><strong>{scope.label}</strong></span
-      >
+      {#if view === 'history'}
+        <button class="ghost back" onclick={() => (view = 'chat')}
+          ><Icon name="arrow-left" size={15} />Back to chat</button
+        >
+      {:else}
+        <div class="picker" bind:this={picker}>
+          <button
+            class="ghost scope"
+            aria-haspopup="listbox"
+            aria-expanded={picking}
+            onclick={() => (picking = !picking)}
+            onkeydown={(e) => e.key === 'Escape' && (picking = false)}
+            ><Icon name="folder" size={15} /><strong>{title(selected)}</strong
+            ><Icon name="chevron-down" size={13} /></button
+          >
+          {#if picking}
+            <ul class="menu" role="listbox" aria-label="Ask about">
+              {#each [{ id: '', title: 'All projects' }, ...projects] as p (p.id)}
+                <li role="option" aria-selected={selected === p.id}>
+                  <button
+                    class="ghost"
+                    onclick={() => {
+                      selected = p.id;
+                      picking = false;
+                      input?.focus();
+                    }}
+                    ><span>{p.title}</span>{#if selected === p.id}<Icon
+                        name="check"
+                        size={14}
+                      />{/if}</button
+                  >
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
       <span class="head-actions">
-        <a href="/ask">History</a>
+        {#if view === 'chat'}
+          {#if messages.length}<button
+              class="ghost icon"
+              aria-label="New chat"
+              title="New chat"
+              onclick={newChat}><Icon name="plus" size={16} /></button
+            >{/if}
+          <button
+            class="ghost icon"
+            aria-label="History"
+            title="History"
+            onclick={openHistory}><Icon name="history" size={16} /></button
+          >
+        {/if}
         <button
-          class="secondary icon-button"
+          class="ghost icon"
           aria-label="Close Ask"
+          title="Close"
           onclick={() => (askPanel.open = false)}
           ><Icon name="close" size={16} /></button
         >
       </span>
     </header>
+    {#if view === 'history'}
+      <div class="thread history">
+        <h2>Earlier questions</h2>
+        {#if pastError}<p class="error" role="alert">{pastError}</p>
+        {:else if !past}<p class="working">
+            <span class="pulse" aria-hidden="true"></span>Loading…
+          </p>
+        {:else if !past.length}<p class="quiet">
+            Questions you ask will be kept here.
+          </p>
+        {:else}
+          {#each past as item (item.id)}
+            <button class="ghost past" onclick={() => openPast(item)}>
+              <span class="past-q"
+                >{item.question === nextMeetingQuestion
+                  ? 'Prepare next meeting'
+                  : item.question}</span
+              >
+              <span class="past-meta"
+                >{title(item.scope?.projectId)} · {when(
+                  item.createdAt,
+                )}{item.state === 'completed' ? '' : ` · ${item.state}`}</span
+              >
+            </button>
+          {/each}
+        {/if}
+      </div>
+    {:else}
     <div class="thread" bind:this={thread} aria-live="polite">
       {#if !messages.length}
         <div class="empty">
-          <strong>Ask about your meetings</strong>
+          <strong>Ask about {selected ? title(selected) : 'your meetings'}</strong>
           <p>Answers link to the exact moment in the recording or slide.</p>
         </div>
       {/if}
       {#each messages as message (message.key)}
-        <p class="mine">
+        <p class="mine" data-run={message.run?.id}>
           {message.question === nextMeetingQuestion
             ? 'Prepare next meeting'
             : message.question}
@@ -248,7 +473,7 @@
                 </ul>
               </details>
             {/if}
-            <a class="full" href={`/ask/${message.run.id}`}>Full answer</a>
+            <a class="full" href={`/ask/${message.run.id}`}>Evidence details</a>
           {:else}
             <p class="error" role="alert">
               {message.run?.error ?? 'This question did not finish.'}
@@ -281,9 +506,9 @@
           bind:this={input}
           bind:value={draft}
           aria-label="Question"
-          placeholder={scope.projectId
+          placeholder={selected
             ? 'Ask about this project'
-            : 'Ask about your meetings'}
+            : 'Ask about all projects'}
           maxlength="4000"
           autocomplete="off"
         />
@@ -292,13 +517,16 @@
         >
       </form>
     </div>
+    {/if}
   </aside>
 {/if}
 
 <style>
   .ask-panel {
     flex: none;
-    width: min(26rem, 38vw);
+    position: relative;
+    /* Never wider than the saved size allows on a smaller window. */
+    max-width: max(320px, 60vw);
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -307,11 +535,43 @@
     font-size: 0.85rem;
     animation: ask-in 260ms var(--ease-out);
   }
+  .ask-panel.dragging {
+    user-select: none;
+  }
   @keyframes ask-in {
     from {
       transform: translateX(1rem);
       opacity: 0.4;
     }
+  }
+  .resizer {
+    position: absolute;
+    left: -5px;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: col-resize;
+    z-index: 70;
+    touch-action: none;
+  }
+  .resizer::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  .resizer:hover::after,
+  .resizer:focus-visible::after,
+  .dragging .resizer::after {
+    opacity: 1;
+  }
+  .resizer:focus-visible {
+    outline: none;
   }
   header {
     flex: none;
@@ -319,14 +579,37 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.6rem;
-    padding: 0.6rem 0.6rem 0.6rem 1rem;
+    min-height: 3.4rem;
+    padding: 0.5rem 0.6rem 0.5rem 0.7rem;
     border-bottom: 1px solid var(--border);
   }
-  .scope {
+  .ghost {
+    background: none;
+    border: 0;
+    color: var(--ink);
+    font-weight: 400;
+    font-size: inherit;
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+    transition: background 150ms;
+  }
+  .ghost:hover {
+    background: var(--canvas);
+    color: var(--ink);
+  }
+  .ghost.icon {
+    color: var(--muted);
+    padding: 0.45rem;
+  }
+  .picker {
+    position: relative;
     min-width: 0;
+  }
+  .scope {
+    max-width: 100%;
     color: var(--muted);
   }
   .scope strong {
@@ -336,15 +619,72 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 10;
+    width: max-content;
+    min-width: 14rem;
+    max-width: min(22rem, 80vw);
+    max-height: 60vh;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0.3rem;
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.1);
+  }
+  .menu button {
+    width: 100%;
+    justify-content: space-between;
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+  }
+  .menu li[aria-selected='true'] button {
+    color: var(--blue-ink);
+    font-weight: 500;
+  }
   .head-actions {
     display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.1rem;
     flex: none;
   }
-  .head-actions a {
-    color: var(--muted);
+  .history {
+    gap: 0.2rem;
+  }
+  .history h2 {
     font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+    margin: 0 0 0.4rem 0.5rem;
+  }
+  .past {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    text-align: left;
+    padding: 0.55rem 0.5rem;
+    width: 100%;
+  }
+  .past-q {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+  .past-meta,
+  .quiet {
+    color: var(--muted);
+    font-size: 0.74rem;
+  }
+  .quiet {
+    margin-left: 0.5rem;
   }
   .thread {
     flex: 1;
@@ -509,17 +849,24 @@
     width: 2.1rem;
     height: 2.1rem;
     padding: 0;
-    display: grid;
-    place-items: center;
+    /* The shared button rule packs content to the left; centre the arrow. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 0.6rem;
     flex: none;
   }
   @media (max-width: 900px) {
+    .resizer {
+      display: none;
+    }
     .ask-panel {
       position: absolute;
       inset: 0;
-      width: auto;
-      z-index: 50;
+      width: auto !important;
+      max-width: none;
+      /* Full-screen on a small window: sit above the page header. */
+      z-index: 80;
       border-left: 0;
     }
   }

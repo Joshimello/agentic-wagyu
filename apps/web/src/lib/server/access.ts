@@ -290,7 +290,13 @@ export function authorize(
       { error: 'Cross-site requests cannot change this workspace.' },
       { status: 403 },
     );
-  if (role === 'viewer')
+  // A viewer may report a mistake or tick a task: neither changes memory.
+  const report =
+    request.method === 'POST' && url.pathname === '/api/memory/reports';
+  const tick =
+    (request.method === 'POST' || request.method === 'DELETE') &&
+    /^\/api\/memory\/tasks\/[0-9a-f-]+\/done$/.test(url.pathname);
+  if (role === 'viewer' && !report && !tick)
     return Response.json(
       { error: 'This account can inspect the workspace but not change it.' },
       { status: 403 },

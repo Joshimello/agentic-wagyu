@@ -256,6 +256,31 @@ test('the viewer can inspect but not change anything', () => {
     ).toBe(403);
 });
 
+test('the viewer can report a mistake or tick a task and nothing else', () => {
+  const post = (path: string, origin = 'https://demo.example') =>
+    authorize(
+      request(path, { method: 'POST', headers: { ...viewer, origin } }),
+      env,
+    );
+  expect(post('/api/memory/reports')).toBe('viewer');
+  expect(status(post('/api/memory/reports/0d0c'))).toBe(403);
+  expect(status(post('/api/memory/reports', 'https://elsewhere.example'))).toBe(
+    403,
+  );
+  const task = '/api/memory/tasks/0d0c0000-0000-4000-8000-000000000000';
+  expect(post(`${task}/done`)).toBe('viewer');
+  expect(
+    authorize(
+      request(`${task}/done`, {
+        method: 'DELETE',
+        headers: { ...viewer, origin: 'https://demo.example' },
+      }),
+      env,
+    ),
+  ).toBe('viewer');
+  expect(status(post(task))).toBe(403);
+});
+
 test('a signed-in browser cannot be used by another site to make changes', () => {
   expect(
     status(

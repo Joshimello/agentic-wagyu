@@ -3,7 +3,14 @@
 export const askPanel = $state({
   open: false,
   queue: [] as { question: string; projectId?: string }[],
+  /** A project the panel should switch to the next time it opens. */
+  focus: undefined as string | undefined,
 });
+
+export function askAbout(projectId: string) {
+  askPanel.focus = projectId;
+  askPanel.open = true;
+}
 
 export function askInPanel(question: string, projectId?: string) {
   askPanel.open = true;

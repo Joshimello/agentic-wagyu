@@ -6,8 +6,15 @@
   let {
     label,
     icon = 'more',
+    compact = false,
     children,
-  }: { label: string; icon?: string; children: Snippet } = $props();
+  }: {
+    label: string;
+    icon?: string;
+    /** Icon-only trigger; the label is still announced. */
+    compact?: boolean;
+    children: Snippet;
+  } = $props();
   const uniqueId = $props.id();
   let open = $state(false);
   let ready = $state(false);
@@ -86,6 +93,9 @@
   <button
     bind:this={trigger}
     class="menu-trigger secondary"
+    class:compact
+    aria-label={compact ? label : undefined}
+    title={compact ? label : undefined}
     type="button"
     disabled={!ready}
     aria-busy={!ready}
@@ -99,7 +109,7 @@
       }
     }}
   >
-    <Icon name={icon} size={18} /><span>{label}</span>
+    <Icon name={icon} size={18} />{#if !compact}<span>{label}</span>{/if}
   </button>
   {#if open}
     <div
@@ -128,6 +138,25 @@
     gap: 0.4rem;
     padding: 0.55rem 0.8rem;
     font-size: 0.84rem;
+  }
+  .menu-trigger.compact {
+    padding: 0.35rem;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+  .menu-trigger.compact:hover,
+  .menu-trigger.compact[aria-expanded='true'] {
+    background: var(--canvas);
+    color: var(--ink);
+  }
+  .menu-panel :global(.danger) {
+    color: var(--red-ink);
+  }
+  .menu-panel :global(hr) {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
   }
   .menu-panel {
     position: absolute;

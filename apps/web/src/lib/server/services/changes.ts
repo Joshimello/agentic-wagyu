@@ -125,6 +125,10 @@ export async function comparisonChoices() {
           filename: row.filename,
           label: row.stage.metadata.label,
           date: row.stage.metadata.sourceTimeOrigin === 'user' ? row.stage.metadata.sourceTime : null,
+          // A captured frame serves as the meeting picture.
+          frameAssetId:
+            row.stage.primitives.find((p) => p.kind === 'image')?.assetId ??
+            null,
         },
       ];
     });

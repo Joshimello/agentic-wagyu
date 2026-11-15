@@ -86,7 +86,7 @@
     </Disclosure>{/if}
 </section>
 {#if data.project}
-  {#if data.project.toReview}<a class="review-banner" href="/changes"
+  {#if data.project.toReview}<a class="review-banner" href={`/changes?project=${data.node.id}`}
       ><strong
         >{data.project.toReview} proposed change{data.project.toReview === 1
           ? ''
@@ -110,7 +110,9 @@
   <section class="card listing">
     <div class="listing-head">
       <h2>Decisions and commitments</h2>
-      <a class="button-link secondary" href="/changes">What changed</a>
+      <a class="button-link secondary" href={`/memory/map?project=${data.node.id}`}
+        >Open memory</a
+      >
     </div>
     {#each data.project.approved as item}
       <a class="listing-row" href={`/changes/reviews/${item.eventId}`}>
