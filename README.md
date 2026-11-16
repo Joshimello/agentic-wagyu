@@ -1,5 +1,7 @@
 # Chronicler
 
+[中文版](README.zh-TW.md)
+
 Chronicler keeps a research team's decisions, the reasons behind them, tasks and open questions traceable across meetings. It reads meeting recordings and documents, lets a person check the result, proposes what changed between two meetings, and answers questions with citations that open the recording at the cited second.
 
 Nothing becomes project memory until a person approves it.
