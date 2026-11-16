@@ -161,7 +161,7 @@ Route handlers are in `apps/web/src/routes/api`. The media service has an intern
 - Summaries are written in English. Original text and quotes are kept in their own language.
 - PPTX fonts, hidden slides, animations and uncertain OCR are flagged, not reconstructed.
 - No next-meeting brief, and no automatic comparison when a meeting is added.
-- No measured accuracy or time-saving figures exist for this version. Automated quality checks use the same model as a judge and are not a substitute for human review.
+- Automated quality checks use the same model as a judge and are not a substitute for human review.
 
 ## Troubleshooting
 
