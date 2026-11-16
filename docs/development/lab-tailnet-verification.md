@@ -13,7 +13,7 @@ application revision. These are deployment checks, not model-quality results.
   isolated volumes, file-based enrollment secret, userspace mode and restart
   settings.
 - Built `localhost/chronicler-web:chronicler_finals` successfully with the
-  canonical origin `https://chronicler.igvi.cs.nthu.edu.tw`.
+  canonical origin `https://chronicler.example`.
 - Pulled the pinned official Tailscale image and started all six services.
   Database, media, web and sidecar health checks passed; both workers ran.
 - Tested the enrollment helper with an invalid input: it hid the input,

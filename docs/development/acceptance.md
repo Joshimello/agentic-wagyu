@@ -115,7 +115,7 @@ M3 source extraction is functionally accepted. All eight originals passed SHA-25
 | 260629_VLM.pdf | 38 | 98 | 0 | 0 | Complete | 3.03 s |
 | 260720_VLM.pdf | 36 | 108 | 0 | 0 | Complete | 1.80 s |
 | 260804_VLM.pdf | 33 | 89 | 0 | 0 | Complete | 1.92 s |
-| 115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx | 28 | 78 | 4 | 1 | Complete | 4.89 s |
+| 115年度資通所分包_基於VLM的目標選取與語意標註.pptx | 28 | 78 | 4 | 1 | Complete | 4.89 s |
 | ITRI_VLM_Midterm_Report.pdf | 13 | 413 | 0 | 0 | Complete | 0.74 s |
 
 Total extraction/render time: 25.25 seconds, excluding upload, queue waiting, registration and export. `260629_VLM.pptx` is partial because slides 17, 19, 22, 23, 25 and 26 contain animations/media/unsupported objects represented only by still images. Font substitution/render warnings are separate. Matching deck/PDF pairs are grouped by source stem; this does not assert any slide was shown in a meeting. Native text retains its original script; OpenCC remains scoped to ASR.

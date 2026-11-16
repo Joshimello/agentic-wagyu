@@ -10,7 +10,7 @@ mkdir -p "$pilot_root/input" "$pilot_root/reports"
 podman build --target development -t localhost/chronicler-web:checks -f infra/web.Containerfile . >/dev/null
 # A real five-minute excerpt, retaining the original Mandarin audio and meeting frames.
 podman run --rm -v "$fixture_root/recordings:/recordings:ro" -v "$pilot_root/input:/output" --entrypoint ffmpeg localhost/chronicler-media:local -hide_banner -loglevel error -ss 600 -i /recordings/2026-09-08.mp4 -t 300 -c:v libx264 -preset veryfast -crf 25 -c:a aac /output/meeting-excerpt.mp4
-for filename in '260720_VLM.pptx' '115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx' 'ITRI_VLM_Midterm_Report.pdf'; do
+for filename in '260720_VLM.pptx' '115年度資通所分包_基於VLM的目標選取與語意標註.pptx' 'ITRI_VLM_Midterm_Report.pdf'; do
   cp --reflink=auto "$fixture_root/documents/$filename" "$pilot_root/input/$filename"
 done
 ./infra/isolated.sh up -d

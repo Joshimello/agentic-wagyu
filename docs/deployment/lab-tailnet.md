@@ -1,7 +1,7 @@
 # Lab reverse proxy through an isolated Tailscale sidecar
 
 This deployment connects an isolated Chronicler workspace to the lab's HTTPS
-reverse proxy. The browser uses `https://chronicler.igvi.cs.nthu.edu.tw`; it does
+reverse proxy. The browser uses `https://chronicler.example`; it does
 not need a Tailscale client. Run the deployment commands from the repository
 root in the Linux environment that owns the rootless Podman stack.
 
@@ -53,7 +53,7 @@ The wrapper defaults are:
 | Workspace | `chronicler_finals` |
 | Host loopback web port | `5178` |
 | Web image | `localhost/chronicler-web:chronicler_finals` |
-| Canonical browser origin | `https://chronicler.igvi.cs.nthu.edu.tw` |
+| Canonical browser origin | `https://chronicler.example`, set as `CHRONICLER_ORIGIN` in the untracked `infra/tailnet.env` |
 | Tailscale node hostname | `chronicler-finals` |
 | External Podman secret | `chronicler-finals-tailscale-auth` |
 
