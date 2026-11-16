@@ -4,7 +4,7 @@ Date: 2026-10-05 (Asia/Kuala_Lumpur).
 
 Model: `pro6000/qwen38-flash-next`.
 
-Configured base: `https://llm.igvi.cs.nthu.edu.tw`.
+Configured base: `https://llm.example`.
 
 Executed direct HTTP requests with Bun 1.4.2 inside a rootless Podman container. Inputs were synthetic text, a mock lookup tool, and a generated blue/yellow image. Credentials were read from a private mounted configuration file and were not printed. No research files were submitted.
 

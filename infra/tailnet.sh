@@ -4,7 +4,10 @@ cd "$(dirname "$0")/.."
 
 export CHRONICLER_PROJECT="${CHRONICLER_PROJECT:-chronicler_finals}"
 export CHRONICLER_PORT="${CHRONICLER_PORT:-5178}"
-export CHRONICLER_ORIGIN="${CHRONICLER_ORIGIN:-https://chronicler.igvi.cs.nthu.edu.tw}"
+# The public origin is deployment-specific: set CHRONICLER_ORIGIN in the environment
+# or in the untracked infra/tailnet.env (one line: CHRONICLER_ORIGIN=https://...).
+if [[ -z "${CHRONICLER_ORIGIN:-}" && -f infra/tailnet.env ]]; then . infra/tailnet.env; fi
+export CHRONICLER_ORIGIN="${CHRONICLER_ORIGIN:-}"
 export CHRONICLER_WEB_IMAGE="${CHRONICLER_WEB_IMAGE:-localhost/chronicler-web:$CHRONICLER_PROJECT}"
 export CHRONICLER_TAILSCALE_HOSTNAME="${CHRONICLER_TAILSCALE_HOSTNAME:-chronicler-finals}"
 export PODMAN_COMPOSE_PROVIDER="${PODMAN_COMPOSE_PROVIDER:-$HOME/.local/bin/podman-compose}"

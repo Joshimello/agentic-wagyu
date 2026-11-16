@@ -28,10 +28,10 @@
     },
     {
       "id": "l05",
-      "question": "What is the project scope and intended deliverable in 115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx?",
+      "question": "What is the project scope and intended deliverable in 115年度資通所分包_基於VLM的目標選取與語意標註.pptx?",
       "gold": [
         {
-          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註.pptx",
           "title": ".*"
         }
       ],
@@ -42,7 +42,7 @@
       "question": "What technical pipeline is proposed for VLM-based target selection and semantic annotation in the subcontract presentation? Cite original slides.",
       "gold": [
         {
-          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註.pptx",
           "title": ".*"
         }
       ],
@@ -53,7 +53,7 @@
       "question": "Which applications or target scenarios are described in the subcontract presentation, and what constraints are stated?",
       "gold": [
         {
-          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註.pptx",
           "title": ".*"
         }
       ],
@@ -64,7 +64,7 @@
       "question": "Compare the subcontract presentation's proposed work with progress reported in the midterm PDF. Distinguish a proposed capability from demonstrated evidence.",
       "gold": [
         {
-          "source": "115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx",
+          "source": "115年度資通所分包_基於VLM的目標選取與語意標註.pptx",
           "title": ".*"
         },
         { "source": "ITRI_VLM_Midterm_Report.pdf", "title": ".*" }

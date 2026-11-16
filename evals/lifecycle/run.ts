@@ -349,8 +349,8 @@ try {
   if (process.argv.includes('--heldout')) {
     const beforeHoldout = (await memorySnapshot()).version;
     const extra = await upload(
-      '115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx',
-      '115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx',
+      '115年度資通所分包_基於VLM的目標選取與語意標註.pptx',
+      '115年度資通所分包_基於VLM的目標選取與語意標註.pptx',
       null,
     );
     const midterm = await upload(

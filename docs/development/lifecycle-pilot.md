@@ -12,7 +12,7 @@ The pilot used original supplied material, with no synthetic replacement content
 | --- | --- |
 | `2026-09-08.mp4`, 10:00–15:00 excerpt | 300 seconds, 54 timestamped speech segments |
 | `260720_VLM.pptx` | All 36 slides |
-| `115年度資通所分包_基於VLM的目標選取與語意標註_清大_朱宏國.pptx` | All 28 slides |
+| `115年度資通所分包_基於VLM的目標選取與語意標註.pptx` | All 28 slides |
 | `ITRI_VLM_Midterm_Report.pdf` | All 13 pages |
 
 The last two documents had been used during Interpreter development but had not previously been admitted to memory. Their source dates remain unknown rather than inferred from filenames. All four interpretations completed with visible coverage warnings retained for review. This pilot does not establish full-recording transcription or diarization accuracy.

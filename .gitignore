@@ -11,3 +11,4 @@ build/
 reports/
 __pycache__/
 .venv/
+infra/tailnet.env
